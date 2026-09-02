@@ -47,3 +47,4 @@ next-env.d.ts
 *.permission-final-backup
 *.pre-golive-backup
 *.pre-golive-build-backup
+*.metadata-backup
