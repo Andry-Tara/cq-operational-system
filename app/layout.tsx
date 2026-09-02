@@ -8,9 +8,39 @@ const defaultUrl = process.env.VERCEL_URL
   : "http://localhost:3000";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(defaultUrl),
-  title: "Next.js and Supabase Starter Kit",
-  description: "The fastest way to build apps with Next.js and Supabase",
+  metadataBase: new URL("https://ops.chongqinghotpot.id"),
+
+  title: {
+    default: "Resto Operational System",
+    template: "%s | Resto Operational System",
+  },
+
+  description:
+    "Restaurant Operations Portal for Chong Qing Hot Pot and Ding Ding Hot Pot.",
+
+  applicationName:
+    "Resto Operational System",
+
+  openGraph: {
+    title: "Resto Operational System",
+    description:
+      "Restaurant Operations Portal · Chong Qing Hot Pot · Ding Ding Hot Pot",
+    url: "https://ops.chongqinghotpot.id",
+    siteName: "Resto Operational System",
+    type: "website",
+  },
+
+  twitter: {
+    card: "summary",
+    title: "Resto Operational System",
+    description:
+      "Restaurant Operations Portal · Chong Qing Hot Pot · Ding Ding Hot Pot",
+  },
+
+  robots: {
+    index: false,
+    follow: false,
+  },
 };
 
 const geistSans = Geist({
