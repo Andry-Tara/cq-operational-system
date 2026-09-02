@@ -16,6 +16,8 @@ import {
   AutoRefresh,
 } from "@/components/auto-refresh";
 
+import ReopenReportButton from "./reports/reopen-report-button";
+
 
 function one(value: any) {
   return Array.isArray(value)
@@ -167,6 +169,13 @@ export default async function ProtectedPage({
     permissionCodes.includes(
       "reports.view"
     );
+
+  const canReopenReport =
+    isAdmin ||
+    permissionCodes.includes(
+      "reports.reopen"
+    );
+
 
   const allOutletAccess =
     isAdmin ||
@@ -1073,142 +1082,494 @@ export default async function ProtectedPage({
 
 
         {/* TODAY OUTLETS */}
-        <section className="mt-6 overflow-hidden rounded-[26px] border border-neutral-200 bg-white shadow-sm">
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-100 px-6 py-5">
+        <section className="mt-6 overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-sm md:rounded-[26px]">
+
+          <div className="flex items-center justify-between gap-4 border-b border-neutral-100 px-4 py-4 sm:px-6 sm:py-5">
 
             <div>
+
               <p className="text-[10px] font-black uppercase tracking-[0.15em] text-neutral-400">
+
                 Today
+
               </p>
 
-              <h2 className="mt-1 text-xl font-bold">
+              <h2 className="mt-1 text-lg font-black tracking-tight text-neutral-950 sm:text-xl">
+
                 Outlet Status
+
               </h2>
+
             </div>
 
-            <p className="text-xs font-semibold text-neutral-400">
-              {
-                outlets.length
-              }{" "}
+            <p className="shrink-0 text-xs font-semibold text-neutral-400">
+
+              {outlets.length}{" "}
               outlet
-              {outlets.length ===
-              1
+              {outlets.length === 1
                 ? ""
                 : "s"}
+
             </p>
 
           </div>
 
 
-          <div className="hidden grid-cols-[1.5fr_.8fr_.6fr_.9fr] gap-4 bg-neutral-50 px-6 py-3 text-[10px] font-black uppercase tracking-wide text-neutral-400 md:grid">
-            <div>
-              Outlet
-            </div>
-            <div>
-              Status
-            </div>
-            <div>
-              Issues
-            </div>
-            <div>
-              Report
-            </div>
+          {/* ==================================================
+              MOBILE / TABLET
+          ================================================== */}
+
+          <div className="divide-y divide-neutral-100 lg:hidden">
+
+            {todayRows.map(
+              (row) => {
+
+                const normalizedStatus =
+                  String(
+                    row.status || ""
+                  )
+                    .trim()
+                    .toLowerCase()
+                    .replace(
+                      /\s+/g,
+                      "_"
+                    );
+
+                const isCompletedRow =
+                  [
+                    "completed",
+                    "submitted",
+                  ].includes(
+                    normalizedStatus
+                  );
+
+                return (
+
+                  <div
+                    key={row.outlet.id}
+                    className="px-4 py-5 sm:px-6"
+                  >
+
+                    {/* TOP */}
+
+                    <div className="flex items-start justify-between gap-3">
+
+                      <div className="flex min-w-0 items-center gap-3">
+
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-red-50 text-[11px] font-black text-red-700">
+
+                          {
+                            row.outlet.code
+                          }
+
+                        </div>
+
+                        <div className="min-w-0">
+
+                          <p className="truncate text-[15px] font-black text-neutral-950">
+
+                            {
+                              row.outlet.name
+                            }
+
+                          </p>
+
+                          <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+
+                            {
+                              row.outlet.code
+                            }
+
+                          </p>
+
+                        </div>
+
+                      </div>
+
+                      <div className="shrink-0">
+
+                        <StatusBadge
+                          status={
+                            row.status
+                          }
+                        />
+
+                      </div>
+
+                    </div>
+
+
+                    {/* INFO */}
+
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+
+                      <div className="rounded-2xl bg-neutral-50 px-4 py-3">
+
+                        <p className="text-[9px] font-black uppercase tracking-wide text-neutral-400">
+
+                          Issues
+
+                        </p>
+
+                        {row.issueCount > 0 ? (
+
+                          <p className="mt-1 text-sm font-black text-red-700">
+
+                            {
+                              row.issueCount
+                            }{" "}
+                            Issue
+                            {row.issueCount === 1
+                              ? ""
+                              : "s"}
+
+                          </p>
+
+                        ) : (
+
+                          <p className="mt-1 text-sm font-black text-neutral-700">
+
+                            0
+
+                          </p>
+
+                        )}
+
+                      </div>
+
+
+                      <div className="min-w-0 rounded-2xl bg-neutral-50 px-4 py-3">
+
+                        <p className="text-[9px] font-black uppercase tracking-wide text-neutral-400">
+
+                          Report
+
+                        </p>
+
+                        {row.report ? (
+
+                          <p className="mt-1 truncate text-xs font-bold text-neutral-700">
+
+                            {
+                              row.report
+                                .report_number
+                            }
+
+                          </p>
+
+                        ) : (
+
+                          <p className="mt-1 text-xs font-semibold text-neutral-400">
+
+                            Not submitted
+
+                          </p>
+
+                        )}
+
+                      </div>
+
+                    </div>
+
+
+                    {/* ACTION */}
+
+                    {row.report && (
+
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2 [&>button]:w-full [&>button]:justify-center">
+
+                        {row.report
+                          .pdf_storage_path &&
+                        canReports ? (
+
+                          <a
+                            href={`/api/reports/${row.report.id}/pdf`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex min-h-11 items-center justify-center rounded-xl bg-neutral-900 px-4 py-3 text-xs font-black text-white transition hover:bg-black"
+                          >
+
+                            View Report
+
+                          </a>
+
+                        ) : (
+
+                          <div className="flex min-h-11 items-center justify-center rounded-xl bg-neutral-100 px-4 py-3 text-xs font-bold text-neutral-400">
+
+                            No PDF
+
+                          </div>
+
+                        )}
+
+
+                        {canReopenReport &&
+                          isCompletedRow && (
+
+                            <ReopenReportButton
+                              reportId={
+                                row.report.id
+                              }
+                              reportNumber={
+                                row.report
+                                  .report_number
+                              }
+                            />
+
+                          )}
+
+                      </div>
+
+                    )}
+
+                  </div>
+
+                );
+
+              }
+            )}
+
           </div>
 
 
-          {todayRows.map(
-            (row) => (
-              <div
-                key={
-                  row.outlet.id
-                }
-                className="grid gap-4 border-b border-neutral-100 px-6 py-5 last:border-b-0 md:grid-cols-[1.5fr_.8fr_.6fr_.9fr] md:items-center"
-              >
+          {/* ==================================================
+              DESKTOP
+          ================================================== */}
 
-                <div className="flex items-center gap-3">
+          <div className="hidden lg:block">
 
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-[10px] font-black text-red-700">
-                    {
-                      row.outlet.code
-                    }
-                  </div>
+            <div className="grid grid-cols-[1.45fr_.75fr_.6fr_1fr_1fr] gap-4 border-b border-neutral-100 bg-neutral-50 px-6 py-3 text-[10px] font-black uppercase tracking-wide text-neutral-400">
 
-                  <div>
-                    <p className="font-bold">
-                      {
-                        row.outlet.name
-                      }
-                    </p>
-
-                    <p className="mt-0.5 text-[10px] text-neutral-400">
-                      {
-                        row.outlet.code
-                      }
-                    </p>
-                  </div>
-
-                </div>
-
-                <div>
-                  <StatusBadge
-                    status={
-                      row.status
-                    }
-                  />
-                </div>
-
-                <div>
-                  {row.issueCount >
-                  0 ? (
-                    <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">
-                      {
-                        row.issueCount
-                      }{" "}
-                      Issue
-                    </span>
-                  ) : (
-                    <span className="text-sm font-semibold text-neutral-400">
-                      0
-                    </span>
-                  )}
-                </div>
-
-                <div>
-                  {row.report ? (
-                    row.report
-                      .pdf_storage_path &&
-                    canReports ? (
-                      <a
-                        href={`/api/reports/${row.report.id}/pdf`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs font-bold text-red-700"
-                      >
-                        View Report →
-                      </a>
-                    ) : (
-                      <span className="break-all text-xs font-semibold text-neutral-500">
-                        {
-                          row.report.report_number
-                        }
-                      </span>
-                    )
-                  ) : (
-                    <span className="text-xs text-neutral-300">
-                      -
-                    </span>
-                  )}
-                </div>
-
+              <div>
+                Outlet
               </div>
-            )
-          )}
+
+              <div>
+                Status
+              </div>
+
+              <div>
+                Issues
+              </div>
+
+              <div>
+                Report
+              </div>
+
+              <div>
+                Action
+              </div>
+
+            </div>
+
+
+            {todayRows.map(
+              (row) => {
+
+                const normalizedStatus =
+                  String(
+                    row.status || ""
+                  )
+                    .trim()
+                    .toLowerCase()
+                    .replace(
+                      /\s+/g,
+                      "_"
+                    );
+
+                const isCompletedRow =
+                  [
+                    "completed",
+                    "submitted",
+                  ].includes(
+                    normalizedStatus
+                  );
+
+                return (
+
+                  <div
+                    key={row.outlet.id}
+                    className="grid grid-cols-[1.45fr_.75fr_.6fr_1fr_1fr] items-center gap-4 border-b border-neutral-100 px-6 py-5 last:border-b-0"
+                  >
+
+                    {/* OUTLET */}
+
+                    <div className="flex min-w-0 items-center gap-3">
+
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[10px] font-black text-red-700">
+
+                        {
+                          row.outlet.code
+                        }
+
+                      </div>
+
+                      <div className="min-w-0">
+
+                        <p className="truncate font-bold text-neutral-950">
+
+                          {
+                            row.outlet.name
+                          }
+
+                        </p>
+
+                        <p className="mt-0.5 text-[10px] text-neutral-400">
+
+                          {
+                            row.outlet.code
+                          }
+
+                        </p>
+
+                      </div>
+
+                    </div>
+
+
+                    {/* STATUS */}
+
+                    <div>
+
+                      <StatusBadge
+                        status={
+                          row.status
+                        }
+                      />
+
+                    </div>
+
+
+                    {/* ISSUES */}
+
+                    <div>
+
+                      {row.issueCount > 0 ? (
+
+                        <span className="inline-flex rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">
+
+                          {
+                            row.issueCount
+                          }{" "}
+                          Issue
+                          {row.issueCount ===
+                          1
+                            ? ""
+                            : "s"}
+
+                        </span>
+
+                      ) : (
+
+                        <span className="text-sm font-semibold text-neutral-400">
+
+                          0
+
+                        </span>
+
+                      )}
+
+                    </div>
+
+
+                    {/* REPORT */}
+
+                    <div className="min-w-0">
+
+                      {row.report ? (
+
+                        <p className="truncate text-xs font-semibold text-neutral-600">
+
+                          {
+                            row.report
+                              .report_number
+                          }
+
+                        </p>
+
+                      ) : (
+
+                        <span className="text-xs text-neutral-300">
+
+                          -
+
+                        </span>
+
+                      )}
+
+                    </div>
+
+
+                    {/* ACTION */}
+
+                    <div>
+
+                      {row.report ? (
+
+                        <div className="flex flex-wrap items-center gap-2">
+
+                          {row.report
+                            .pdf_storage_path &&
+                          canReports && (
+
+                            <a
+                              href={`/api/reports/${row.report.id}/pdf`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center rounded-xl bg-neutral-900 px-3.5 py-2.5 text-[11px] font-black text-white transition hover:bg-black"
+                            >
+
+                              View Report
+
+                            </a>
+
+                          )}
+
+
+                          {canReopenReport &&
+                            isCompletedRow && (
+
+                              <ReopenReportButton
+                                reportId={
+                                  row.report.id
+                                }
+                                reportNumber={
+                                  row.report
+                                    .report_number
+                                }
+                              />
+
+                            )}
+
+                        </div>
+
+                      ) : (
+
+                        <span className="text-xs text-neutral-300">
+
+                          -
+
+                        </span>
+
+                      )}
+
+                    </div>
+
+                  </div>
+
+                );
+
+              }
+            )}
+
+          </div>
 
         </section>
 
 
-        {/* RECENT */}
+{/* RECENT */}
         {canReports && (
           <section className="mt-6 rounded-[26px] border border-neutral-200 bg-white p-6 shadow-sm md:p-7">
 
