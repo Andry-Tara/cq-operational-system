@@ -1177,69 +1177,138 @@ export default function ClosingKitchenClient({
       const reportText =
         buildReportText();
 
-      const isMobile =
-        /Android|iPhone|iPad|iPod/i.test(
-          navigator.userAgent
-        );
+      const shareTitle =
+        `Closing Report - ${outlet.name}`;
 
       // ======================================================
-      // MOBILE
-      // PDF can be sent directly using native share sheet.
+      // MOBILE / NATIVE SHARE
+      //
+      // Preferred:
+      // PDF + FULL approved report text in one share action.
       // ======================================================
 
-      if (
-        isMobile &&
-        navigator.share &&
-        navigator.canShare?.({
-          files: [file],
-        })
-      ) {
-        try {
-          await navigator.share({
-            title:
-              `Closing ${outlet.name}`,
-            text:
-              reportText,
-            files: [file],
-          });
+      if (navigator.share) {
 
-          return;
-        } catch (error: any) {
-          if (
-            error?.name ===
-            "AbortError"
-          ) {
+        const canShareFiles =
+          typeof navigator.canShare ===
+            "function"
+            ? navigator.canShare({
+                files: [file],
+              })
+            : true;
+
+        if (canShareFiles) {
+
+          // ---------------------------------------------------
+          // FIRST ATTEMPT
+          // PDF + FULL TEXT
+          // ---------------------------------------------------
+
+          try {
+            await navigator.share({
+              title:
+                shareTitle,
+
+              text:
+                reportText,
+
+              files: [
+                file,
+              ],
+            });
+
             return;
+
+          } catch (
+            combinedError: any
+          ) {
+
+            if (
+              combinedError?.name ===
+              "AbortError"
+            ) {
+              return;
+            }
+
+            console.warn(
+              "Combined PDF + text share failed:",
+              combinedError
+            );
           }
 
-          console.error(
-            "Native PDF share failed:",
-            error
-          );
+
+          // ---------------------------------------------------
+          // FALLBACK
+          // Keep PDF attachment.
+          // Copy the FULL report text first.
+          // ---------------------------------------------------
+
+          try {
+            await navigator.clipboard.writeText(
+              reportText
+            );
+          } catch (
+            clipboardError
+          ) {
+            console.warn(
+              "Unable to copy report text:",
+              clipboardError
+            );
+          }
+
+
+          try {
+            await navigator.share({
+              title:
+                shareTitle,
+
+              files: [
+                file,
+              ],
+            });
+
+            return;
+
+          } catch (
+            fileShareError: any
+          ) {
+
+            if (
+              fileShareError?.name ===
+              "AbortError"
+            ) {
+              return;
+            }
+
+            console.warn(
+              "PDF-only share failed:",
+              fileShareError
+            );
+          }
         }
       }
 
+
       // ======================================================
-      // DESKTOP
+      // LAST FALLBACK
       //
-      // WhatsApp Web does not allow a web page to inject a
-      // local PDF attachment automatically.
-      //
-      // So:
-      // 1. Download PDF
-      // 2. Copy report text
-      // 3. Open WhatsApp Web
+      // Browser cannot share file attachment.
+      // Download PDF + copy full report + open WhatsApp text.
       // ======================================================
 
-      downloadFile(file);
+      downloadFile(
+        file
+      );
 
       try {
         await navigator.clipboard.writeText(
           reportText
         );
-      } catch (clipboardError) {
+      } catch (
+        clipboardError
+      ) {
         console.warn(
-          "Clipboard unavailable:",
+          "Unable to copy report text:",
           clipboardError
         );
       }
@@ -1257,21 +1326,21 @@ export default function ClosingKitchenClient({
 
       setTimeout(() => {
         alert(
-          "PDF Report sudah didownload dan WhatsApp sudah dibuka.\n\n" +
-          "Report text juga sudah dicopy.\n\n" +
-          "Silakan pilih Group WhatsApp lalu attach PDF yang baru didownload."
+          "PDF Report sudah didownload. Full report text juga sudah dicopy. Attach PDF ke WhatsApp jika browser tidak dapat melampirkan file secara otomatis."
         );
-      }, 500);
+      }, 400);
 
-    } catch (error: any) {
+    } catch (
+      error: any
+    ) {
       console.error(
-        "Share PDF error:",
+        "Share report error:",
         error
       );
 
       alert(
         error?.message ||
-          "Unable to prepare PDF report."
+          "Unable to prepare report."
       );
     }
   }
