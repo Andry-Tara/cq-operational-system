@@ -48,3 +48,5 @@ next-env.d.ts
 *.pre-golive-backup
 *.pre-golive-build-backup
 *.metadata-backup
+*.social-backup
+*.question-ui-backup

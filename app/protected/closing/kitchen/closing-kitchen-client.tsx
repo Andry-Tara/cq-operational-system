@@ -1553,12 +1553,12 @@ export default function ClosingKitchenClient({
                   </div>
 
                   <div>
-                    <h2 className="text-2xl font-bold">
+                    <h2 className="text-xl font-black leading-tight tracking-tight text-neutral-950 sm:text-2xl">
                       {group.name}
                     </h2>
 
                     {group.description && (
-                      <p className="mt-1 text-sm text-neutral-500">
+                      <p className="mt-1.5 text-sm font-medium leading-5 text-neutral-700">
                         {
                           group.description
                         }
@@ -1942,7 +1942,7 @@ export default function ClosingKitchenClient({
       </div>
 
       <div className="sticky bottom-0 mt-10 border-t border-black/5 bg-[#f4f4f4]/95 py-4 backdrop-blur">
-        <div className="rounded-[22px] border border-black/5 bg-white p-4 shadow-lg">
+        <div className="rounded-[22px] border border-black/5 bg-white p-4 text-neutral-950 shadow-lg">
           {submitting && (
             <div className="mb-4 rounded-xl bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700">
               {submitStatus}
