@@ -1,0 +1,2084 @@
+"use client";
+
+import Link from "next/link";
+import { useMemo, useState, useEffect } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { buildOpeningPdf } from "@/lib/pdf/opening-report";
+
+type Group = {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  sort_order: number;
+};
+
+type Question = {
+  id: string;
+  question_group_id: string | null;
+  code: string;
+  question_text: string;
+  help_text: string | null;
+  question_type: string;
+  is_required: boolean;
+  unit: string | null;
+  min_value: number | null;
+  max_value: number | null;
+  sort_order: number;
+  config: Record<string, any> | null;
+};
+
+type AnswerState = {
+  value?: boolean | number | string;
+
+  notes?: string;
+
+  correctiveAction?: string;
+
+  // New / replacement photo selected by user
+  photo?: File;
+
+  // Existing photo from saved report
+  existingStoragePath?: string;
+
+  existingStorageBucket?: string;
+
+  existingOriginalFilename?: string | null;
+
+  existingMimeType?: string | null;
+
+  existingFileSize?: number | null;
+
+  // Existing photo downloaded from Storage.
+  // Used for PDF regeneration and preview.
+  existingPhotoFile?: File;
+};
+
+type SubmitResult = {
+  reportNumber: string;
+  submittedAt: string;
+  answerCount: number;
+  photoCount: number;
+  issueCount: number;
+  completed: boolean;
+  pdfStoragePath: string;
+};
+
+
+
+function PhotoEvidencePreview({
+  file,
+  label,
+}: {
+  file?: File;
+  label: string;
+}) {
+  const [previewUrl, setPreviewUrl] =
+    useState<string | null>(null);
+
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl(null);
+      return;
+    }
+
+    const url =
+      URL.createObjectURL(file);
+
+    setPreviewUrl(url);
+
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [file]);
+
+  if (!previewUrl) {
+    return null;
+  }
+
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-neutral-100">
+        <img
+          src={previewUrl}
+          alt={label}
+          className="h-full w-full object-contain"
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-3 border-t border-neutral-100 px-4 py-3">
+        <p className="truncate text-xs font-medium text-neutral-500">
+          {file?.name ?? ""}
+        </p>
+
+        <span className="shrink-0 text-xs font-bold text-emerald-700">
+          {label}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ProgressSummaryItem({
+  label,
+  value,
+  complete,
+}: {
+  label: string;
+  value: string;
+  complete: boolean;
+}) {
+  return (
+    <div className="text-neutral-900">
+      <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+        {label}
+      </p>
+
+      <div className="mt-2 flex items-center gap-3">
+        <span className="text-3xl font-bold tracking-tight text-neutral-900">
+          {value}
+        </span>
+
+        {complete && (
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+            COMPLETE
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function OperationClient({
+  outlet,
+  groups,
+  questions,
+}: {
+  outlet: {
+    id: string;
+    code: string;
+    name: string;
+  };
+  groups: Group[];
+  questions: Question[];
+}) {
+  const supabase = createClient();
+
+  const [answers, setAnswers] =
+    useState<Record<string, AnswerState>>({});
+
+  const [submitting, setSubmitting] =
+    useState(false);
+
+  const [submitStatus, setSubmitStatus] =
+    useState("");
+
+  const [errorMessage, setErrorMessage] =
+    useState("");
+
+  const [result, setResult] =
+    useState<SubmitResult | null>(null);
+
+  const [sessionData, setSessionData] =
+    useState<any>(null);
+
+  const [loadingExisting, setLoadingExisting] =
+    useState(true);
+
+  // ==========================================================
+  // LOAD / RESUME EXISTING REPORT
+  // ==========================================================
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadExistingReport() {
+      try {
+        setLoadingExisting(true);
+        setErrorMessage("");
+
+        const response =
+          await fetch(
+            "/api/operations/OPENING/KITCHEN/session",
+            {
+              method: "POST",
+              cache: "no-store",
+            }
+          );
+
+        const session =
+          await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            session.error ||
+              "Unable to load Opening session"
+          );
+        }
+
+        if (cancelled) return;
+
+        setSessionData(session);
+
+        const loadedAnswers:
+          Record<string, AnswerState> = {};
+
+        for (
+          const saved of
+          session.existingAnswers ?? []
+        ) {
+          const nextAnswer:
+            AnswerState = {
+              value:
+                saved.value,
+
+              notes:
+                saved.notes || "",
+
+              correctiveAction:
+                saved.correctiveAction || "",
+            };
+
+          if (
+            saved.existingPhoto
+              ?.storagePath
+          ) {
+            nextAnswer.existingStoragePath =
+              saved.existingPhoto.storagePath;
+
+            nextAnswer.existingStorageBucket =
+              saved.existingPhoto.storageBucket ||
+              "operational-photos";
+
+            nextAnswer.existingOriginalFilename =
+              saved.existingPhoto.originalFilename;
+
+            nextAnswer.existingMimeType =
+              saved.existingPhoto.mimeType;
+
+            nextAnswer.existingFileSize =
+              saved.existingPhoto.fileSize;
+
+            const {
+              data: photoBlob,
+              error: photoError,
+            } = await supabase.storage
+              .from(
+                saved.existingPhoto
+                  .storageBucket ||
+                  "operational-photos"
+              )
+              .download(
+                saved.existingPhoto
+                  .storagePath
+              );
+
+            if (
+              !photoError &&
+              photoBlob
+            ) {
+              const filename =
+                saved.existingPhoto
+                  .originalFilename ||
+                "existing-photo.jpg";
+
+              nextAnswer.existingPhotoFile =
+                new File(
+                  [photoBlob],
+                  filename,
+                  {
+                    type:
+                      saved.existingPhoto
+                        .mimeType ||
+                      photoBlob.type ||
+                      "image/jpeg",
+                  }
+                );
+            }
+          }
+
+          loadedAnswers[
+            saved.questionId
+          ] = nextAnswer;
+        }
+
+        if (!cancelled) {
+          setAnswers(
+            loadedAnswers
+          );
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setErrorMessage(
+            error?.message ||
+              "Unable to resume report."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingExisting(false);
+        }
+      }
+    }
+
+    loadExistingReport();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+
+  function setQuestionValue(
+    questionId: string,
+    value: boolean | number | string
+  ) {
+    setAnswers((prev) => ({
+      ...prev,
+      [questionId]: {
+        ...prev[questionId],
+        value,
+      },
+    }));
+  }
+
+  function setExtraField(
+    questionId: string,
+    field: "notes" | "correctiveAction",
+    value: string
+  ) {
+    setAnswers((prev) => ({
+      ...prev,
+      [questionId]: {
+        ...prev[questionId],
+        [field]: value,
+      },
+    }));
+  }
+
+  function setPhoto(
+    questionId: string,
+    file?: File
+  ) {
+    setAnswers((prev) => ({
+      ...prev,
+      [questionId]: {
+        ...prev[questionId],
+        photo: file,
+      },
+    }));
+  }
+
+  function isAnswered(
+    question: Question
+  ) {
+    const answer =
+      answers[question.id];
+
+    if (!answer) return false;
+
+    if (
+      question.question_type ===
+      "yes_no"
+    ) {
+      return (
+        typeof answer.value ===
+        "boolean"
+      );
+    }
+
+    if (
+      question.question_type ===
+      "temperature"
+    ) {
+      return (
+        typeof answer.value ===
+          "number" &&
+        Number.isFinite(answer.value)
+      );
+    }
+
+    return (
+      answer.value !== undefined &&
+      answer.value !== ""
+    );
+  }
+
+  function isException(
+    question: Question
+  ) {
+    const answer =
+      answers[question.id];
+
+    if (!answer) return false;
+
+    if (
+      question.question_type ===
+      "yes_no"
+    ) {
+      return answer.value === false;
+    }
+
+    if (
+      question.question_type ===
+      "temperature"
+    ) {
+      if (
+        typeof answer.value !==
+        "number"
+      ) {
+        return false;
+      }
+
+      if (
+        question.min_value !== null &&
+        answer.value <
+          Number(
+            question.min_value
+          )
+      ) {
+        return true;
+      }
+
+      if (
+        question.max_value !== null &&
+        answer.value >
+          Number(
+            question.max_value
+          )
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  function issueFieldsComplete(
+    question: Question
+  ) {
+    if (!isException(question)) {
+      return true;
+    }
+
+    const answer =
+      answers[question.id];
+
+    return Boolean(
+      answer?.notes?.trim() &&
+        answer?.correctiveAction?.trim()
+    );
+  }
+
+  const answeredCount =
+    useMemo(
+      () =>
+        questions.filter(isAnswered)
+          .length,
+      [answers, questions]
+    );
+
+  const photoCount =
+    useMemo(
+      () =>
+        questions.filter(
+          (question) =>
+            Boolean(
+              answers[question.id]?.photo ||
+              answers[question.id]?.existingStoragePath
+            )
+        ).length,
+      [answers, questions]
+    );
+
+  const issueCount =
+    useMemo(
+      () =>
+        questions.filter(
+          isException
+        ).length,
+      [answers, questions]
+    );
+
+  const issueCompleteCount =
+    useMemo(
+      () =>
+        questions.filter(
+          (question) =>
+            isException(question) &&
+            issueFieldsComplete(
+              question
+            )
+        ).length,
+      [answers, questions]
+    );
+
+  const totalQuestions =
+    questions.length;
+
+  const overallComplete =
+    !loadingExisting &&
+    Boolean(sessionData) &&
+    answeredCount === totalQuestions &&
+    photoCount === totalQuestions &&
+    issueCompleteCount === issueCount;
+
+  const progress =
+    totalQuestions === 0
+      ? 0
+      : Math.round(
+          ((answeredCount +
+            photoCount) /
+            (totalQuestions * 2)) *
+            100
+        );
+
+
+  // ==========================================================
+  // REOPEN NOTICE
+  // ==========================================================
+
+  const isReopenedSession =
+    Boolean(sessionData?.isReopened) ||
+    String(
+      sessionData?.status ||
+      sessionData?.reportStatus ||
+      sessionData?.report?.status ||
+      ""
+    ).toLowerCase() === "reopened";
+
+  const reopenReason =
+    sessionData?.reopen?.reason ||
+    sessionData?.reopenReason ||
+    sessionData?.reopen_reason ||
+    sessionData?.report?.reopen_reason ||
+    "Report dibuka kembali oleh Administrator untuk diperbaiki.";
+
+  const reopenedAtRaw =
+    sessionData?.reopen?.reopenedAt ||
+    sessionData?.reopenedAt ||
+    sessionData?.reopened_at ||
+    sessionData?.report?.reopened_at ||
+    null;
+
+  const reopenedAtText = (() => {
+    if (!reopenedAtRaw) {
+      return null;
+    }
+
+    try {
+      return new Intl.DateTimeFormat(
+        "id-ID",
+        {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: "Asia/Jakarta",
+        }
+      ).format(
+        new Date(reopenedAtRaw)
+      );
+    } catch {
+      return null;
+    }
+  })();
+
+  
+  const reopenQuestionIdSet =
+    useMemo(
+      () =>
+        new Set<string>(
+          Array.isArray(
+            sessionData?.reopen
+              ?.questionIds
+          )
+            ? sessionData.reopen
+                .questionIds
+            : []
+        ),
+      [
+        sessionData?.reopen
+          ?.questionIds,
+      ]
+    );
+
+  async function handleSubmit() {
+    if (
+      !overallComplete ||
+      submitting
+    ) {
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setErrorMessage("");
+      setSubmitStatus(
+        "Preparing Opening report..."
+      );
+
+      // ======================================================
+      // USE PRELOADED REPORT SESSION
+      // ======================================================
+
+      const session =
+        sessionData;
+
+      if (!session) {
+        throw new Error(
+          "Opening session belum siap. Silakan tunggu sebentar."
+        );
+      }
+
+      const {
+        reportId,
+        reportSectionId,
+      } = session;
+
+      let pdfStoragePath = "";
+
+      // ======================================================
+      // UPLOAD PHOTOS
+      // ======================================================
+
+      const submissionAnswers: any[] =
+        [];
+
+      for (
+        let index = 0;
+        index < questions.length;
+        index++
+      ) {
+        const question =
+          questions[index];
+
+        const answer =
+          answers[question.id];
+
+        if (
+          !answer?.photo &&
+          !answer?.existingStoragePath
+        ) {
+          throw new Error(
+            `Photo evidence belum ada: ${question.question_text}`
+          );
+        }
+
+        let storagePath =
+          answer.existingStoragePath || "";
+
+        let originalFilename =
+          answer.existingOriginalFilename ||
+          null;
+
+        let mimeType =
+          answer.existingMimeType ||
+          null;
+
+        let fileSize =
+          answer.existingFileSize ||
+          null;
+
+        // ====================================================
+        // NEW / REPLACEMENT PHOTO
+        // ====================================================
+
+        if (answer.photo) {
+          setSubmitStatus(
+            `Uploading photo ${index + 1} of ${questions.length}...`
+          );
+
+          const file =
+            answer.photo;
+
+          const extension =
+            file.name
+              .split(".")
+              .pop()
+              ?.toLowerCase() ||
+            "jpg";
+
+          const safeCode =
+            question.code
+              .replace(
+                /[^a-zA-Z0-9_-]/g,
+                "-"
+              )
+              .toLowerCase();
+
+          storagePath =
+            `report-sections/${reportSectionId}/` +
+            `${safeCode}/` +
+            `${crypto.randomUUID()}.${extension}`;
+
+          const {
+            error: uploadError,
+          } = await supabase.storage
+            .from(
+              "operational-photos"
+            )
+            .upload(
+              storagePath,
+              file,
+              {
+                cacheControl:
+                  "3600",
+
+                upsert:
+                  false,
+
+                contentType:
+                  file.type ||
+                  undefined,
+              }
+            );
+
+          if (uploadError) {
+            throw new Error(
+              `Upload gagal untuk "${question.question_text}": ${uploadError.message}`
+            );
+          }
+
+          originalFilename =
+            file.name;
+
+          mimeType =
+            file.type;
+
+          fileSize =
+            file.size;
+        }
+
+        submissionAnswers.push({
+          questionId:
+            question.id,
+
+          value:
+            answer.value,
+
+          notes:
+            answer.notes ||
+            null,
+
+          correctiveAction:
+            answer.correctiveAction ||
+            null,
+
+          storagePath,
+
+          originalFilename,
+
+          mimeType,
+
+          fileSize,
+        });
+      }
+
+      // ======================================================
+      // GENERATE PDF REPORT
+      // ======================================================
+
+      setSubmitStatus(
+        "Generating PDF report..."
+      );
+
+      
+      // ======================================================
+      // PDF ANSWERS
+      //
+      // New photo:
+      //   use answer.photo
+      //
+      // Existing reopened photo:
+      //   use existingPhotoFile downloaded from Storage
+      // ======================================================
+
+      const pdfAnswers:
+        Record<string, AnswerState> = {};
+
+      for (const question of questions) {
+        const answer =
+          answers[question.id];
+
+        if (!answer) continue;
+
+        pdfAnswers[
+          question.id
+        ] = {
+          ...answer,
+
+          photo:
+            answer.photo ||
+            answer.existingPhotoFile,
+        };
+      }
+
+      const pdfBytes =
+        await buildOpeningPdf({
+          reportNumber:
+            session.reportNumber,
+          outletName:
+            outlet.name,
+          submittedBy:
+            "CQ Operational User",
+          groups,
+          questions,
+          answers:
+            pdfAnswers,
+
+        });
+
+      const pdfBlob =
+        new Blob(
+          [new Uint8Array(pdfBytes)],
+          {
+            type: "application/pdf",
+          }
+        );
+
+      pdfStoragePath =
+        `reports/${reportId}/` +
+        `${session.reportNumber}.pdf`;
+
+      const {
+        error: pdfUploadError,
+      } = await supabase.storage
+        .from(
+          "operational-reports"
+        )
+        .upload(
+          pdfStoragePath,
+          pdfBlob,
+          {
+            contentType:
+              "application/pdf",
+            cacheControl:
+              "3600",
+            upsert: true,
+          }
+        );
+
+      if (pdfUploadError) {
+        throw new Error(
+          `PDF upload gagal: ${pdfUploadError.message}`
+        );
+      }
+
+      const {
+        error: pdfUpdateError,
+      } = await supabase
+        .from("reports")
+        .update({
+          pdf_storage_path:
+            pdfStoragePath,
+          pdf_generated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          "id",
+          reportId
+        );
+
+      if (pdfUpdateError) {
+        throw new Error(
+          `PDF metadata gagal disimpan: ${pdfUpdateError.message}`
+        );
+      }
+
+      // ======================================================
+      // SAVE ANSWERS + SUBMIT
+      // ======================================================
+
+      setSubmitStatus(
+        "Saving checklist..."
+      );
+
+      const submitResponse =
+        await fetch(
+          "/api/operations/OPENING/KITCHEN/submit",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              reportId,
+              reportSectionId,
+              answers:
+                submissionAnswers,
+            }),
+          }
+        );
+
+      const submitData =
+        await submitResponse.json();
+
+      if (!submitResponse.ok) {
+        throw new Error(
+          submitData.error ||
+            "Unable to submit Opening"
+        );
+      }
+
+      setSubmitStatus(
+        "Opening report saved."
+      );
+
+      setResult({
+        reportNumber:
+          submitData.reportNumber,
+        submittedAt:
+          submitData.submittedAt,
+        answerCount:
+          submitData.answerCount,
+        photoCount:
+          submitData.photoCount,
+        issueCount:
+          submitData.issueCount,
+        completed:
+          submitData.completed,
+        pdfStoragePath,
+      });
+
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
+
+    } catch (error: any) {
+      console.error(error);
+
+      setErrorMessage(
+        error?.message ||
+          "Something went wrong."
+      );
+
+      setSubmitStatus("");
+
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function buildReportText() {
+    if (!result) return "";
+
+    const submittedDate =
+      new Date(result.submittedAt);
+
+    const date =
+      new Intl.DateTimeFormat(
+        "id-ID",
+        {
+          dateStyle: "long",
+          timeZone: "Asia/Jakarta",
+        }
+      ).format(submittedDate);
+
+    const time =
+      new Intl.DateTimeFormat(
+        "id-ID",
+        {
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: "Asia/Jakarta",
+        }
+      ).format(submittedDate);
+
+    const lines: string[] = [
+      "*OPENING REPORT*",
+      "*CHONG QING HOT POT*",
+      "",
+      `📍 Outlet: ${outlet.name}`,
+      `📅 Date: ${date}`,
+      `⏰ Submitted: ${time} WIB`,
+      "🏷 Section: BOH / Kitchen",
+      "",
+      "*SUMMARY*",
+      `- Checklist: ${result.answerCount}/${totalQuestions}`,
+      `- Photo Evidence: ${result.photoCount}`,
+      `- Issues: ${result.issueCount}`,
+      `- Status: ${result.completed ? "Completed" : "Submitted"}`,
+      "",
+    ];
+
+    for (const group of groups) {
+      const groupQuestions =
+        questions.filter(
+          (question) =>
+            question.question_group_id === group.id
+        );
+
+      if (!groupQuestions.length) {
+        continue;
+      }
+
+      lines.push(
+        `*${group.name.toUpperCase()}*`
+      );
+
+      for (const question of groupQuestions) {
+        const answer =
+          answers[question.id];
+
+        const exception =
+          isException(question);
+
+        let valueText = "";
+
+        if (
+          question.question_type === "temperature"
+        ) {
+          valueText =
+            `: ${answer?.value}${question.unit ?? ""}`;
+        }
+
+        lines.push(
+          `- ${question.question_text}${valueText} ${exception ? "❌" : "✅"}`
+        );
+
+        if (
+          exception &&
+          answer?.notes?.trim()
+        ) {
+          lines.push(
+            `  _Notes: ${answer.notes.trim()}_`
+          );
+        }
+
+        if (
+          exception &&
+          answer?.correctiveAction?.trim()
+        ) {
+          lines.push(
+            `  _Corrective: ${answer.correctiveAction.trim()}_`
+          );
+        }
+      }
+
+      lines.push("");
+    }
+
+    lines.push(
+      "*REPORT INFO*",
+      `- Report ID: ${result.reportNumber}`,
+      `- Photo Evidence: ${result.photoCount}`,
+      `- Issues: ${result.issueCount}`,
+      "",
+      "*OPENING COMPLETED*"
+    );
+
+    return lines.join("\n");
+  }
+
+  async function copyReport() {
+    const text =
+      buildReportText();
+
+    try {
+      await navigator.clipboard.writeText(
+        text
+      );
+
+      alert(
+        "Report text copied."
+      );
+    } catch {
+      alert(
+        "Unable to copy report."
+      );
+    }
+  }
+
+  async function getPdfFile() {
+    if (!result?.pdfStoragePath) {
+      throw new Error(
+        "PDF report belum tersedia."
+      );
+    }
+
+    const {
+      data,
+      error,
+    } = await supabase.storage
+      .from(
+        "operational-reports"
+      )
+      .download(
+        result.pdfStoragePath
+      );
+
+    if (error || !data) {
+      throw new Error(
+        error?.message ||
+          "Unable to download PDF."
+      );
+    }
+
+    return new File(
+      [data],
+      `${result.reportNumber}.pdf`,
+      {
+        type: "application/pdf",
+      }
+    );
+  }
+
+  function downloadFile(
+    file: File
+  ) {
+    const url =
+      URL.createObjectURL(file);
+
+    const anchor =
+      document.createElement("a");
+
+    anchor.href = url;
+    anchor.download =
+      file.name;
+
+    document.body.appendChild(
+      anchor
+    );
+
+    anchor.click();
+
+    anchor.remove();
+
+    setTimeout(
+      () =>
+        URL.revokeObjectURL(url),
+      1000
+    );
+  }
+
+  async function downloadPdf() {
+    try {
+      const file =
+        await getPdfFile();
+
+      downloadFile(file);
+    } catch (error: any) {
+      alert(
+        error?.message ||
+          "Unable to download PDF."
+      );
+    }
+  }
+
+  async function sharePdf() {
+    try {
+      const file =
+        await getPdfFile();
+
+      const reportText =
+        buildReportText();
+
+      const isMobile =
+        /Android|iPhone|iPad|iPod/i.test(
+          navigator.userAgent
+        );
+
+      // ======================================================
+      // MOBILE
+      // PDF can be sent directly using native share sheet.
+      // ======================================================
+
+      if (
+        isMobile &&
+        navigator.share &&
+        navigator.canShare?.({
+          files: [file],
+        })
+      ) {
+        try {
+          await navigator.share({
+            title:
+              `Opening ${outlet.name}`,
+            text:
+              reportText,
+            files: [file],
+          });
+
+          return;
+        } catch (error: any) {
+          if (
+            error?.name ===
+            "AbortError"
+          ) {
+            return;
+          }
+
+          console.error(
+            "Native PDF share failed:",
+            error
+          );
+        }
+      }
+
+      // ======================================================
+      // DESKTOP
+      //
+      // WhatsApp Web does not allow a web page to inject a
+      // local PDF attachment automatically.
+      //
+      // So:
+      // 1. Download PDF
+      // 2. Copy report text
+      // 3. Open WhatsApp Web
+      // ======================================================
+
+      downloadFile(file);
+
+      try {
+        await navigator.clipboard.writeText(
+          reportText
+        );
+      } catch (clipboardError) {
+        console.warn(
+          "Clipboard unavailable:",
+          clipboardError
+        );
+      }
+
+      const whatsappUrl =
+        "https://wa.me/?text=" +
+        encodeURIComponent(
+          reportText
+        );
+
+      window.open(
+        whatsappUrl,
+        "_blank"
+      );
+
+      setTimeout(() => {
+        alert(
+          "PDF Report sudah didownload dan WhatsApp sudah dibuka.\n\n" +
+          "Report text juga sudah dicopy.\n\n" +
+          "Silakan pilih Group WhatsApp lalu attach PDF yang baru didownload."
+        );
+      }, 500);
+
+    } catch (error: any) {
+      console.error(
+        "Share PDF error:",
+        error
+      );
+
+      alert(
+        error?.message ||
+          "Unable to prepare PDF report."
+      );
+    }
+  }
+
+  // ==========================================================
+  // SUCCESS SCREEN
+  // ==========================================================
+
+  if (result) {
+    const submittedTime =
+      new Intl.DateTimeFormat(
+        "id-ID",
+        {
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone:
+            "Asia/Jakarta",
+        }
+      ).format(
+        new Date(
+          result.submittedAt
+        )
+      );
+
+    return (
+      <section className="mt-6">
+        <div className="mx-auto max-w-2xl rounded-[28px] border border-black/5 bg-white p-7 text-center shadow-sm md:p-10">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-3xl text-emerald-700 font-bold">
+            ✓
+          </div>
+
+          <p className="mt-6 text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">
+            Report Saved
+          </p>
+
+          <h2 className="mt-2 text-3xl font-bold tracking-tight text-neutral-900">
+            Opening Completed
+          </h2>
+
+          <p className="mt-2 text-neutral-500">
+            {outlet.name}
+          </p>
+
+          <p className="mt-1 text-sm text-neutral-400">
+            {submittedTime} WIB
+          </p>
+
+          <div className="mt-8 grid grid-cols-3 gap-3 text-neutral-900">
+            <SummaryStat
+              label="Checklist"
+              value={`${result.answerCount}/${totalQuestions}`}
+            />
+
+            <SummaryStat
+              label="Photos"
+              value={`${result.photoCount}`}
+            />
+
+            <SummaryStat
+              label="Issues"
+              value={`${result.issueCount}`}
+            />
+          </div>
+
+          <div className="mt-6 rounded-2xl bg-neutral-50 px-5 py-4">
+            <p className="text-xs uppercase tracking-wide text-neutral-400">
+              Report ID
+            </p>
+
+            <p className="mt-1 break-all font-semibold text-neutral-900">
+              {result.reportNumber}
+            </p>
+          </div>
+
+          <div className="mt-7 grid gap-3">
+            <button
+              type="button"
+              onClick={
+                sharePdf
+              }
+              className="rounded-xl bg-emerald-600 px-6 py-4 font-semibold text-white transition hover:bg-emerald-700"
+            >
+              📤 Share Report to WhatsApp
+            </button>
+
+            <button
+              type="button"
+              onClick={
+                downloadPdf
+              }
+              className="rounded-xl bg-red-700 px-6 py-4 font-semibold text-white transition hover:bg-red-800"
+            >
+              ⬇ Download PDF
+            </button>
+
+            <button
+              type="button"
+              onClick={
+                copyReport
+              }
+              className="rounded-xl bg-[#222] px-6 py-4 font-semibold text-white transition hover:bg-black"
+            >
+              📋 Copy Report Text
+            </button>
+
+            <Link
+              href="/protected"
+              className="rounded-xl border border-neutral-200 px-6 py-4 font-semibold text-neutral-700 transition hover:bg-neutral-50"
+            >
+              Back to Dashboard
+            </Link>
+          </div>
+
+          <p className="mt-5 text-xs leading-5 text-neutral-400">
+            Share PDF membuka native share sheet pada HP/tablet yang mendukung. Pilih WhatsApp lalu group outlet yang dituju. Pada desktop, PDF akan didownload untuk dilampirkan manual ke WhatsApp Web.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  // ==========================================================
+  // FORM
+  // ==========================================================
+
+  return (
+    <>
+      {isReopenedSession && (
+        <section className="mt-6 overflow-hidden rounded-[24px] border border-amber-200 bg-amber-50 shadow-sm">
+          <div className="p-6 md:p-7">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-4">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-xl font-bold text-amber-800">
+                  ↻
+                </div>
+
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-700">
+                    Report Reopened
+                  </p>
+
+                  <h2 className="mt-1 text-xl font-bold tracking-tight text-neutral-900">
+                    Perlu Perbaikan
+                  </h2>
+
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-600">
+                    Administrator membuka kembali report ini.
+                    Perbaiki checklist atau photo evidence yang diperlukan,
+                    lalu submit kembali report yang sama.
+                  </p>
+                </div>
+              </div>
+
+              <span className="w-fit shrink-0 rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-800">
+                NEEDS CORRECTION
+              </span>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+              <div className="rounded-2xl border border-amber-200/80 bg-white px-5 py-4">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-neutral-400">
+                  Reason
+                </p>
+
+                <p className="mt-2 text-sm font-semibold leading-6 text-neutral-900">
+                  {reopenReason}
+                </p>
+              </div>
+
+              {reopenedAtText && (
+                <div className="rounded-2xl border border-amber-200/80 bg-white px-5 py-4 md:min-w-[190px]">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-neutral-400">
+                    Reopened
+                  </p>
+
+                  <p className="mt-2 text-sm font-semibold text-neutral-900">
+                    {reopenedAtText} WIB
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 flex items-start gap-2 rounded-xl bg-amber-100/70 px-4 py-3">
+              <span className="mt-0.5 text-amber-800">
+                ⚠
+              </span>
+
+              <p className="text-xs font-medium leading-5 text-amber-900">
+                Daily Lock tetap aktif. Resubmit akan memperbarui report ini,
+                bukan membuat report baru.
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <section className="mt-6 rounded-[24px] border border-black/5 bg-white p-6 shadow-sm">
+        <div className="grid gap-6 md:grid-cols-3">
+          <ProgressSummaryItem
+            label="Checklist"
+            value={`${answeredCount}/${totalQuestions}`}
+            complete={
+              answeredCount ===
+              totalQuestions
+            }
+          />
+
+          <ProgressSummaryItem
+            label="Photo Evidence"
+            value={`${photoCount}/${totalQuestions}`}
+            complete={
+              photoCount ===
+              totalQuestions
+            }
+          />
+
+          <ProgressSummaryItem
+            label="Issues"
+            value={`${issueCount}`}
+            complete={
+              issueCompleteCount ===
+              issueCount
+            }
+          />
+        </div>
+
+        <div className="mt-6">
+          <div className="mb-2 flex items-center justify-between text-xs text-neutral-500">
+            <span>
+              Overall Completion
+            </span>
+
+            <span>
+              {progress}%
+            </span>
+          </div>
+
+          <div className="h-3 overflow-hidden rounded-full bg-neutral-100">
+            <div
+              className="h-full rounded-full bg-red-700 transition-all"
+              style={{
+                width:
+                  `${progress}%`,
+              }}
+            />
+          </div>
+        </div>
+      </section>
+
+      {errorMessage && (
+        <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <strong>
+            Submit failed:
+          </strong>{" "}
+          {errorMessage}
+        </div>
+      )}
+
+      <div className="mt-8 space-y-8">
+        {groups.map(
+          (
+            group,
+            groupIndex
+          ) => {
+            const groupQuestions =
+              questions.filter(
+                (question) =>
+                  question.question_group_id ===
+                  group.id
+              );
+
+            return (
+              <section
+                key={group.id}
+              >
+                <div className="mb-4 flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 font-bold text-red-700">
+                    {groupIndex + 1}
+                  </div>
+
+                  <div>
+                    <h2 className="text-xl font-black leading-tight tracking-tight text-neutral-950 sm:text-2xl">
+                      {group.name}
+                    </h2>
+
+                    {group.description && (
+                      <p className="mt-1.5 text-sm font-medium leading-5 text-neutral-700">
+                        {
+                          group.description
+                        }
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {groupQuestions.map(
+                    (
+                      question,
+                      index
+                    ) => {
+                      const answer =
+                        answers[
+                          question.id
+                        ];
+
+                      const exception =
+                        isException(
+                          question
+                        );
+
+                      const needsReview =
+                        question
+                          .config
+                          ?.needs_review ===
+                        true;
+
+                      const needsCorrection =
+                        isReopenedSession &&
+                        reopenQuestionIdSet.has(
+                          question.id
+                        );
+
+
+                      return (
+                        <div
+                          key={
+                            question.id
+                          }
+                          className="rounded-[22px] border border-black/5 bg-white p-6 text-neutral-900 shadow-sm"
+                        >
+                          <div className="flex items-start gap-4">
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-500">
+                              {index +
+                                1}
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start gap-2">
+                                <p className="font-semibold leading-6 text-neutral-900">
+                                  {
+                                    question.question_text
+                                  }
+                                </p>
+
+                                {question.is_required && (
+                                  <span className="text-red-600">
+                                    *
+                                  </span>
+                                )}
+                              </div>
+
+                              {needsCorrection && (
+                                <div className="mt-3">
+                                  <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-800">
+                                    Admin Requested Correction
+                                  </span>
+                                </div>
+                              )}
+
+                              {question.help_text && (
+                                <p className="mt-2 text-sm text-neutral-500">
+                                  {
+                                    question.help_text
+                                  }
+                                </p>
+                              )}
+
+                              {question.question_type ===
+                                "yes_no" && (
+                                <div className="mt-5 grid grid-cols-2 gap-3 md:max-w-md">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setQuestionValue(
+                                        question.id,
+                                        true
+                                      )
+                                    }
+                                    className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${
+                                      answer?.value ===
+                                      true
+                                        ? "border-emerald-600 bg-emerald-600 text-white"
+                                        : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
+                                    }`}
+                                  >
+                                    YES
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setQuestionValue(
+                                        question.id,
+                                        false
+                                      )
+                                    }
+                                    className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${
+                                      answer?.value ===
+                                      false
+                                        ? "border-red-700 bg-red-700 text-white"
+                                        : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
+                                    }`}
+                                  >
+                                    NO
+                                  </button>
+                                </div>
+                              )}
+
+                              {question.question_type ===
+                                "temperature" && (
+                                <div className="mt-5">
+                                  <div className="flex max-w-sm items-center gap-3">
+                                    <input
+                                      type="number"
+                                      step="0.1"
+                                      value={
+                                        typeof answer?.value ===
+                                        "number"
+                                          ? answer.value
+                                          : ""
+                                      }
+                                      onChange={(
+                                        event
+                                      ) =>
+                                        setQuestionValue(
+                                          question.id,
+                                          event
+                                            .target
+                                            .value ===
+                                            ""
+                                            ? ""
+                                            : Number(
+                                                event
+                                                  .target
+                                                  .value
+                                              )
+                                        )
+                                      }
+                                      placeholder="0.0"
+                                      className={`w-40 rounded-xl border px-4 py-3 text-lg font-semibold outline-none ${
+                                        exception
+                                          ? "border-red-300 bg-red-50"
+                                          : "border-neutral-200 bg-white"
+                                      } text-neutral-900`}
+                                    />
+
+                                    <span className="text-neutral-500">
+                                      {
+                                        question.unit
+                                      }
+                                    </span>
+                                  </div>
+
+                                  {question.min_value !==
+                                    null &&
+                                    question.max_value !==
+                                      null && (
+                                      <p className="mt-2 text-xs text-neutral-500">
+                                        Standard{" "}
+                                        {
+                                          question.min_value
+                                        }{" "}
+                                        –{" "}
+                                        {
+                                          question.max_value
+                                        }
+                                        {
+                                          question.unit
+                                        }
+                                      </p>
+                                    )}
+
+                                  {question.min_value ===
+                                    null &&
+                                    question.max_value !==
+                                      null && (
+                                      <p className="mt-2 text-xs text-neutral-500">
+                                        Standard ≤{" "}
+                                        {
+                                          question.max_value
+                                        }
+                                        {
+                                          question.unit
+                                        }
+                                      </p>
+                                    )}
+
+                                  {typeof answer?.value ===
+                                    "number" && (
+                                    <span
+                                      className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                                        exception
+                                          ? "bg-red-50 text-red-700"
+                                          : "bg-emerald-50 text-emerald-700"
+                                      }`}
+                                    >
+                                      {exception
+                                        ? "OUT OF STANDARD"
+                                        : "WITHIN STANDARD"}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              <div className="mt-5 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-neutral-900">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-semibold">
+                                      Photo
+                                      Evidence *
+                                    </p>
+
+                                    <p className="mt-1 text-xs text-neutral-500">
+                                      Wajib
+                                      untuk
+                                      setiap
+                                      pertanyaan
+                                    </p>
+                                  </div>
+
+                                  {(
+                                      answer?.photo ||
+                                      answer?.existingStoragePath
+                                    ) && (
+                                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                      {answer?.photo
+                                          ? "New Photo ✓"
+                                          : "Existing Photo ✓"}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <input
+                                  type="file"
+                                          className={["mt-4 block w-full rounded-xl border border-neutral-200 bg-white p-3 text-sm text-neutral-700 file:mr-4 file:rounded-lg file:border-0 file:bg-neutral-900 file:px-4 file:py-2 file:font-semibold file:text-white hover:file:bg-black", "mt-4 block w-full rounded-xl border border-dashed border-neutral-300 bg-white px-4 py-4 text-sm"].filter(Boolean).join(" ")}
+                                  accept="image/*"
+                                  capture="environment"
+                                  disabled={
+                                    submitting
+                                  }
+                                  onChange={(
+                                    event
+                                  ) =>
+                                    setPhoto(
+                                      question.id,
+                                      event
+                                        .target
+                                        .files?.[0]
+                                    )
+                                  }
+                                  
+                                />
+
+                                {answer?.photo && (
+                                  <p className="mt-2 truncate text-xs text-neutral-500">
+                                    {
+                                      answer
+                                        .photo
+                                        .name
+                                    }
+                                  </p>
+                                )}
+                              </div>
+
+                              {exception && (
+                                <div className="mt-5 rounded-2xl border border-red-100 bg-red-50 p-5">
+                                  <p className="text-sm font-bold text-red-800">
+                                    Action
+                                    Required
+                                  </p>
+
+                                  <p className="mt-1 text-xs text-red-700">
+                                    Jawaban
+                                    ini akan
+                                    dibuat
+                                    sebagai
+                                    operational
+                                    issue.
+                                  </p>
+
+                                  <div className="mt-4 space-y-4">
+                                    <div>
+                                      <label className="text-xs font-semibold text-neutral-600">
+                                        Notes
+                                        *
+                                      </label>
+
+                                      <textarea
+                                        rows={
+                                          3
+                                        }
+                                        value={
+                                          answer?.notes ??
+                                          ""
+                                        }
+                                        onChange={(
+                                          event
+                                        ) =>
+                                          setExtraField(
+                                            question.id,
+                                            "notes",
+                                            event
+                                              .target
+                                              .value
+                                          )
+                                        }
+                                        placeholder="Jelaskan kondisi yang ditemukan..."
+                                        className="mt-2 w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none"
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <label className="text-xs font-semibold text-neutral-600">
+                                        Corrective
+                                        Action
+                                        *
+                                      </label>
+
+                                      <textarea
+                                        rows={
+                                          3
+                                        }
+                                        value={
+                                          answer?.correctiveAction ??
+                                          ""
+                                        }
+                                        onChange={(
+                                          event
+                                        ) =>
+                                          setExtraField(
+                                            question.id,
+                                            "correctiveAction",
+                                            event
+                                              .target
+                                              .value
+                                          )
+                                        }
+                                        placeholder="Tindakan yang sudah dilakukan..."
+                                        className="mt-2 w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {needsReview && (
+                                <div className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-700">
+                                  ⚠
+                                  Wording
+                                  pertanyaan
+                                  ini perlu
+                                  direview
+                                  Admin.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                  )}
+                </div>
+              </section>
+            );
+          }
+        )}
+      </div>
+
+      <div className="sticky bottom-0 mt-10 border-t border-black/5 bg-[#f4f4f4]/95 py-4 backdrop-blur">
+        <div className="rounded-[22px] border border-black/5 bg-white p-4 text-neutral-950 shadow-lg">
+          {submitting && (
+            <div className="mb-4 rounded-xl bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700">
+              {submitStatus}
+            </div>
+          )}
+
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-semibold">
+                Opening
+                Checklist
+              </p>
+
+              <p className="mt-1 text-xs text-neutral-500">
+                {
+                  answeredCount
+                }
+                /
+                {
+                  totalQuestions
+                }{" "}
+                answers ·{" "}
+                {
+                  photoCount
+                }
+                /
+                {
+                  totalQuestions
+                }{" "}
+                photos
+                {issueCount >
+                0
+                  ? ` · ${issueCount} issue(s)`
+                  : ""}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={
+                handleSubmit
+              }
+              disabled={
+                !overallComplete ||
+                submitting
+              }
+              className={`rounded-xl px-7 py-4 text-sm font-bold transition ${
+                overallComplete &&
+                !submitting
+                  ? "bg-red-700 text-white hover:bg-red-800"
+                  : "cursor-not-allowed bg-neutral-200 text-neutral-400"
+              }`}
+            >
+              {submitting
+                ? "Submitting..."
+                : "Submit Opening"}
+            </button>
+          </div>
+
+          {!overallComplete &&
+            !submitting && (
+              <div className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-700">
+                {answeredCount !==
+                  totalQuestions &&
+                  `${
+                    totalQuestions -
+                    answeredCount
+                  } jawaban belum diisi. `}
+
+                {photoCount !==
+                  totalQuestions &&
+                  `${
+                    totalQuestions -
+                    photoCount
+                  } photo evidence belum diupload. `}
+
+                {issueCompleteCount !==
+                  issueCount &&
+                  `${
+                    issueCount -
+                    issueCompleteCount
+                  } issue belum memiliki Notes & Corrective Action.`}
+              </div>
+            )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ProgressItem({
+  label,
+  value,
+  complete,
+}: {
+  label: string;
+  value: string;
+  complete: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-xs uppercase tracking-wide text-neutral-500">
+        {label}
+      </p>
+
+      <div className="mt-2 flex items-center gap-2">
+        <p className="text-2xl font-bold">
+          {value}
+        </p>
+
+        {complete && (
+          <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
+            COMPLETE
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SummaryStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl bg-neutral-50 p-4">
+      <p className="text-xs text-neutral-400">
+        {label}
+      </p>
+
+      <p className="mt-1 text-xl font-bold">
+        {value}
+      </p>
+    </div>
+  );
+}
