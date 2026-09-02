@@ -8,11 +8,15 @@ const defaultUrl = process.env.VERCEL_URL
   : "http://localhost:3000";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://ops.chongqinghotpot.id"),
+  metadataBase: new URL(
+    "https://ops.chongqinghotpot.id"
+  ),
 
   title: {
-    default: "Resto Operational System",
-    template: "%s | Resto Operational System",
+    default:
+      "Resto Operational System",
+    template:
+      "%s | Resto Operational System",
   },
 
   description:
@@ -22,19 +26,38 @@ export const metadata: Metadata = {
     "Resto Operational System",
 
   openGraph: {
-    title: "Resto Operational System",
+    title:
+      "Resto Operational System",
     description:
       "Restaurant Operations Portal · Chong Qing Hot Pot · Ding Ding Hot Pot",
-    url: "https://ops.chongqinghotpot.id",
-    siteName: "Resto Operational System",
-    type: "website",
+    url:
+      "https://ops.chongqinghotpot.id",
+    siteName:
+      "Resto Operational System",
+    type:
+      "website",
+    images: [
+      {
+        url:
+          "/opengraph-image.png",
+        width: 1200,
+        height: 630,
+        alt:
+          "Resto Operational System",
+      },
+    ],
   },
 
   twitter: {
-    card: "summary",
-    title: "Resto Operational System",
+    card:
+      "summary_large_image",
+    title:
+      "Resto Operational System",
     description:
       "Restaurant Operations Portal · Chong Qing Hot Pot · Ding Ding Hot Pot",
+    images: [
+      "/twitter-image.png",
+    ],
   },
 
   robots: {
