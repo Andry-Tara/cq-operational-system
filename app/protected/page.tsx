@@ -164,6 +164,13 @@ export default async function ProtectedPage({
       "closing.submit"
     );
 
+
+  const canOpening =
+    isAdmin ||
+    permissionCodes.includes(
+      "opening.submit"
+    );
+
   const canReports =
     isAdmin ||
     permissionCodes.includes(
@@ -326,6 +333,207 @@ export default async function ProtectedPage({
 
   // ==========================================================
   // CLOSING FORM
+  // ==========================================================
+  // OPENING - ACTIVE OUTLET
+  //
+  // Kept separate from Closing dashboard analytics.
+  // This prevents existing Closing trend / outlet status logic
+  // from changing while Opening is introduced.
+  // ==========================================================
+
+  const {
+    data:
+      openingForm,
+  } =
+    await supabase
+      .from("forms")
+      .select(`
+        id,
+        code,
+        name
+      `)
+      .eq(
+        "organization_id",
+        profile.organization_id
+      )
+      .eq(
+        "code",
+        "OPENING"
+      )
+      .eq(
+        "is_active",
+        true
+      )
+      .maybeSingle();
+
+
+  let openingAssignment:
+    any = null;
+
+  if (
+    openingForm?.id &&
+    activeOutlet?.id
+  ) {
+    const {
+      data,
+    } =
+      await supabase
+        .from(
+          "outlet_form_assignments"
+        )
+        .select(`
+          id,
+          form_version_id,
+          effective_from,
+          effective_until,
+          is_active
+        `)
+        .eq(
+          "outlet_id",
+          activeOutlet.id
+        )
+        .eq(
+          "form_id",
+          openingForm.id
+        )
+        .eq(
+          "is_active",
+          true
+        )
+        .order(
+          "effective_from",
+          {
+            ascending:
+              false,
+          }
+        )
+        .limit(1)
+        .maybeSingle();
+
+    openingAssignment =
+      data;
+  }
+
+
+  const openingBusinessDate =
+    activeOutlet
+      ? businessDate(
+          activeOutlet.timezone ||
+            "Asia/Jakarta"
+        )
+      : today;
+
+
+  let openingReport:
+    any = null;
+
+  if (
+    openingForm?.id &&
+    activeOutlet?.id
+  ) {
+    const {
+      data,
+    } =
+      await supabase
+        .from("reports")
+        .select(`
+          id,
+          report_number,
+          status,
+          business_date,
+          created_at,
+          completed_at,
+          pdf_storage_path
+        `)
+        .eq(
+          "outlet_id",
+          activeOutlet.id
+        )
+        .eq(
+          "form_id",
+          openingForm.id
+        )
+        .eq(
+          "business_date",
+          openingBusinessDate
+        )
+        .order(
+          "created_at",
+          {
+            ascending:
+              false,
+          }
+        )
+        .limit(1)
+        .maybeSingle();
+
+    openingReport =
+      data;
+  }
+
+
+  const openingRawStatus =
+    String(
+      openingReport?.status ||
+        ""
+    )
+      .trim()
+      .toLowerCase();
+
+
+  const openingIsCompleted =
+    [
+      "completed",
+      "submitted",
+    ].includes(
+      openingRawStatus
+    );
+
+
+  const openingIsInProgress =
+    [
+      "draft",
+      "in_progress",
+      "reopened",
+    ].includes(
+      openingRawStatus
+    );
+
+
+  const openingAvailable =
+    Boolean(
+      openingForm?.id &&
+        openingAssignment?.id
+    );
+
+
+  const openingStatus =
+    !openingAvailable
+      ? "UNAVAILABLE"
+      : openingIsCompleted
+        ? "COMPLETED"
+        : openingIsInProgress
+          ? "IN PROGRESS"
+          : "NOT STARTED";
+
+
+  const openingHref =
+    openingIsCompleted
+      ? openingReport
+          ?.pdf_storage_path
+        ? `/api/reports/${openingReport.id}/pdf`
+        : "/protected/reports"
+      : "/protected/operations/OPENING/KITCHEN";
+
+
+  const openingCTA =
+    openingIsCompleted
+      ? "View Report"
+      : openingIsInProgress
+        ? "Resume Opening"
+        : "Start Opening";
+
+
   // ==========================================================
 
   const {
@@ -1079,6 +1287,198 @@ export default async function ProtectedPage({
           </div>
 
         </section>
+
+
+
+        {/* ====================================================
+            OPENING OUTLET
+        ==================================================== */}
+
+        {activeOutlet && (
+          <section className="mt-6 overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-sm md:rounded-[26px]">
+
+            <div className="p-5 sm:p-6 md:p-7">
+
+              <div className="flex items-start justify-between gap-4">
+
+                <div className="flex min-w-0 items-start gap-4">
+
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-amber-50 text-2xl">
+
+                    ☀️
+
+                  </div>
+
+                  <div className="min-w-0">
+
+                    <p className="text-[10px] font-black uppercase tracking-[0.15em] text-amber-700">
+
+                      Daily Operational
+
+                    </p>
+
+                    <h2 className="mt-1 text-xl font-black tracking-tight text-neutral-950 sm:text-2xl">
+
+                      Opening Outlet
+
+                    </h2>
+
+                    <p className="mt-2 text-sm leading-6 text-neutral-500">
+
+                      Kitchen / BOH opening readiness checklist with mandatory photo evidence.
+
+                    </p>
+
+                  </div>
+
+                </div>
+
+
+                <span
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-wide ${
+                    openingStatus ===
+                    "COMPLETED"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : openingStatus ===
+                          "IN PROGRESS"
+                        ? "bg-amber-50 text-amber-700"
+                        : openingStatus ===
+                            "NOT STARTED"
+                          ? "bg-neutral-100 text-neutral-600"
+                          : "bg-neutral-100 text-neutral-400"
+                  }`}
+                >
+
+                  {openingStatus}
+
+                </span>
+
+              </div>
+
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+
+                <div className="rounded-2xl bg-neutral-50 px-4 py-4">
+
+                  <p className="text-[10px] font-black uppercase tracking-wide text-neutral-400">
+
+                    Outlet
+
+                  </p>
+
+                  <p className="mt-1 truncate text-sm font-bold text-neutral-900">
+
+                    {activeOutlet.name}
+
+                  </p>
+
+                </div>
+
+
+                <div className="rounded-2xl bg-neutral-50 px-4 py-4">
+
+                  <p className="text-[10px] font-black uppercase tracking-wide text-neutral-400">
+
+                    Section
+
+                  </p>
+
+                  <p className="mt-1 text-sm font-bold text-neutral-900">
+
+                    Kitchen / BOH
+
+                  </p>
+
+                </div>
+
+              </div>
+
+
+              {openingReport
+                ?.report_number && (
+
+                <div className="mt-3 rounded-2xl border border-neutral-100 px-4 py-4">
+
+                  <p className="text-[10px] font-black uppercase tracking-wide text-neutral-400">
+
+                    Today's Report
+
+                  </p>
+
+                  <p className="mt-1 break-all text-sm font-bold text-neutral-900">
+
+                    {
+                      openingReport
+                        .report_number
+                    }
+
+                  </p>
+
+                </div>
+
+              )}
+
+            </div>
+
+
+            {openingAvailable &&
+            (
+              canOpening ||
+              openingIsCompleted
+            ) ? (
+
+              <Link
+                href={
+                  openingHref
+                }
+                target={
+                  openingIsCompleted &&
+                  openingReport
+                    ?.pdf_storage_path
+                    ? "_blank"
+                    : undefined
+                }
+                className={`flex items-center justify-between border-t px-5 py-4 text-sm font-black transition sm:px-6 md:px-7 ${
+                  openingIsCompleted
+                    ? "border-emerald-100 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    : "border-amber-100 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                }`}
+              >
+
+                <span>
+
+                  {openingCTA}
+
+                </span>
+
+                <span>
+
+                  →
+
+                </span>
+
+              </Link>
+
+            ) : openingAvailable ? (
+
+              <div className="border-t border-neutral-100 bg-neutral-50 px-5 py-4 text-sm font-semibold text-neutral-400 sm:px-6 md:px-7">
+
+                You do not have permission to submit Opening.
+
+              </div>
+
+            ) : (
+
+              <div className="border-t border-neutral-100 bg-neutral-50 px-5 py-4 text-sm font-semibold text-neutral-400 sm:px-6 md:px-7">
+
+                Opening belum tersedia untuk outlet ini.
+
+              </div>
+
+            )}
+
+          </section>
+        )}
 
 
         {/* TODAY OUTLETS */}
