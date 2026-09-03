@@ -996,10 +996,11 @@ export default async function ProtectedPage({
 
 
         {/* SUMMARY */}
-        <section className="mt-5 grid grid-cols-2 gap-3 xl:grid-cols-5 [&>*:last-child]:col-span-2 xl:[&>*:last-child]:col-span-1">
+        <section className="mt-4 grid grid-cols-2 gap-2.5 xl:grid-cols-5 [&>*:last-child]:col-span-2 xl:[&>*:last-child]:col-span-1">
 
           <Metric
             label="Outlets"
+              tone="info"
             value={
               outlets.length
             }
@@ -2101,41 +2102,75 @@ function Metric({
   value: number;
   sub: string;
   tone?:
+    | "info"
     | "neutral"
     | "success"
     | "warning"
     | "danger";
 }) {
   const styles = {
-    neutral:
-      "text-neutral-900",
-    success:
-      "text-emerald-700",
-    warning:
-      "text-amber-700",
-    danger:
-      "text-red-700",
+    info: {
+      shell: "border-sky-100 bg-sky-50/80",
+      icon: "bg-sky-100 text-sky-700",
+      value: "text-sky-800",
+      symbol: "⌂",
+    },
+    neutral: {
+      shell: "border-slate-200 bg-slate-50",
+      icon: "bg-slate-200/70 text-slate-600",
+      value: "text-slate-800",
+      symbol: "○",
+    },
+    success: {
+      shell: "border-emerald-100 bg-emerald-50/80",
+      icon: "bg-emerald-100 text-emerald-700",
+      value: "text-emerald-800",
+      symbol: "✓",
+    },
+    warning: {
+      shell: "border-amber-100 bg-amber-50/80",
+      icon: "bg-amber-100 text-amber-700",
+      value: "text-amber-800",
+      symbol: "◷",
+    },
+    danger: {
+      shell: "border-red-100 bg-red-50/80",
+      icon: "bg-red-100 text-red-700",
+      value: "text-red-800",
+      symbol: "!",
+    },
   };
 
+  const style = styles[tone];
+
   return (
-    <div className="rounded-[22px] border border-neutral-200 bg-white p-5 shadow-sm">
+    <div
+      className={`rounded-[16px] border p-3 shadow-sm ${style.shell}`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[8px] font-black uppercase tracking-[0.12em] text-neutral-500">
+          {label}
+        </p>
 
-      <p className="text-[9px] font-black uppercase tracking-[0.14em] text-neutral-400">
-        {label}
-      </p>
+        <span
+          className={`flex h-6 w-6 items-center justify-center rounded-lg text-[10px] font-black ${style.icon}`}
+        >
+          {style.symbol}
+        </span>
+      </div>
 
-      <p className={`mt-3 text-3xl font-black tracking-tight ${styles[tone]}`}>
+      <p
+        className={`mt-1.5 text-[25px] font-black leading-none tracking-tight ${style.value}`}
+      >
         {value}
       </p>
 
-      <p className="mt-1 truncate text-xs text-neutral-400">
+      <p className="mt-1 truncate text-[9px] font-semibold text-neutral-500">
         {sub}
       </p>
-
     </div>
   );
 }
-
 
 function StatusBadge({
   status,

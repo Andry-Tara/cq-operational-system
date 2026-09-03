@@ -277,7 +277,7 @@ export default function ReportsHistoryClient({
         }
       />
 
-      <div className="mx-auto max-w-[1480px] px-5 py-7 md:px-8 md:py-10">
+      <div className="mx-auto max-w-[1480px] px-4 py-5 sm:px-5 sm:py-7 md:px-8 md:py-10">
 
         {/* TITLE */}
         <div>
@@ -285,18 +285,18 @@ export default function ReportsHistoryClient({
             Operational Reports
           </p>
 
-          <h1 className="mt-2 text-3xl font-bold tracking-tight md:text-4xl">
+          <h1 className="mt-1 text-[28px] font-black tracking-tight md:text-4xl">
             Reports History
           </h1>
 
           <p className="mt-2 text-sm leading-6 text-neutral-500">
-            Monitor closing submissions, issues and report completion by outlet.
+            Closing submissions, issues and outlet completion.
           </p>
         </div>
 
 
         {/* SUMMARY */}
-        <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="mt-4 grid grid-cols-2 gap-2.5 xl:grid-cols-4">
 
           <SummaryCard
             label="Completed"
@@ -338,12 +338,12 @@ export default function ReportsHistoryClient({
 
 
         {/* FILTER */}
-        <section className="mt-6 rounded-[24px] border border-neutral-200 bg-white p-5 shadow-sm md:p-6">
+        <section className="mt-4 rounded-[18px] border border-neutral-200 bg-white p-3.5 shadow-sm md:p-5">
 
-          <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr_1fr]">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1.1fr_1fr_1fr]">
 
             {/* DATE */}
-            <div>
+            <div className="col-span-2 lg:col-span-1">
               <div className="flex items-center justify-between gap-3">
 
                 <span className="text-[10px] font-black uppercase tracking-wide text-neutral-400">
@@ -364,7 +364,7 @@ export default function ReportsHistoryClient({
 
               </div>
 
-              <div className="relative mt-2 h-12 overflow-hidden rounded-xl border border-neutral-200 bg-white transition focus-within:border-red-300">
+              <div className="relative mt-1.5 h-10 overflow-hidden rounded-[11px] border border-neutral-200 bg-neutral-50 transition focus-within:border-red-300">
 
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-between px-4">
 
@@ -467,7 +467,7 @@ export default function ReportsHistoryClient({
                       .value
                   )
                 }
-                className="mt-2 h-12 w-full rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-700 outline-none transition focus:border-red-300"
+                className="mt-1.5 h-10 w-full rounded-[11px] border border-neutral-200 bg-neutral-50 px-2.5 text-[11px] font-bold text-neutral-700 outline-none transition focus:border-red-300"
               >
                 <option value="ALL">
                   {user.allOutletAccess
@@ -520,7 +520,7 @@ export default function ReportsHistoryClient({
                       .value
                   )
                 }
-                className="mt-2 h-12 w-full rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-700 outline-none transition focus:border-red-300"
+                className="mt-1.5 h-10 w-full rounded-[11px] border border-neutral-200 bg-neutral-50 px-2.5 text-[11px] font-bold text-neutral-700 outline-none transition focus:border-red-300"
               >
                 <option value="ALL">
                   All Status
@@ -548,9 +548,9 @@ export default function ReportsHistoryClient({
 
 
         {/* REPORT LIST */}
-        <section className="mt-6 overflow-hidden rounded-[26px] border border-neutral-200 bg-white shadow-sm">
+        <section className="mt-4 overflow-hidden rounded-[18px] border border-neutral-200 bg-white shadow-sm md:rounded-[22px]">
 
-          <div className="border-b border-neutral-100 px-6 py-5">
+          <div className="border-b border-neutral-100 px-4 py-3.5 md:px-5 md:py-4">
 
             <div className="flex flex-wrap items-center justify-between gap-3">
 
@@ -559,7 +559,7 @@ export default function ReportsHistoryClient({
                   Daily Closing
                 </p>
 
-                <h2 className="mt-1 text-xl font-bold">
+                <h2 className="mt-0.5 text-[15px] font-black md:text-lg">
                   {formatDate(
                     selectedDate
                   )}
@@ -582,7 +582,7 @@ export default function ReportsHistoryClient({
           </div>
 
 
-          <div className="hidden grid-cols-[1.5fr_.8fr_1fr_.7fr_.7fr_.8fr] gap-4 border-b border-neutral-100 bg-neutral-50 px-6 py-4 text-[10px] font-black uppercase tracking-wide text-neutral-400 lg:grid">
+          <div className="hidden grid-cols-[1.5fr_.8fr_1fr_.7fr_.7fr_.8fr] gap-4 border-b border-neutral-100 bg-neutral-50 px-5 py-3 text-[9px] font-black uppercase tracking-wide text-neutral-400 lg:grid">
 
             <div>
               Outlet
@@ -607,7 +607,7 @@ export default function ReportsHistoryClient({
 
 
           {!filteredRows.length ? (
-            <div className="px-6 py-16 text-center text-sm text-neutral-400">
+            <div className="px-4 py-10 text-center text-xs text-neutral-400">
               No data found for this filter.
             </div>
           ) : (
@@ -621,13 +621,13 @@ export default function ReportsHistoryClient({
                   key={
                     outlet.id
                   }
-                  className="grid gap-5 border-b border-neutral-100 px-6 py-6 last:border-b-0 lg:grid-cols-[1.5fr_.8fr_1fr_.7fr_.7fr_.8fr] lg:items-center"
+                  className="grid grid-cols-2 gap-3 border-b border-neutral-100 px-4 py-4 last:border-b-0 lg:grid-cols-[1.5fr_.8fr_1fr_.7fr_.7fr_.8fr] lg:items-center lg:gap-4 lg:px-5"
                 >
 
                   {/* OUTLET */}
-                  <div className="flex items-center gap-4">
+                  <div className="col-span-2 flex items-center gap-3 lg:col-span-1">
 
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-xs font-black text-red-700">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-red-50 text-[10px] font-black text-red-700">
                       {
                         outlet.code
                       }
@@ -715,7 +715,7 @@ export default function ReportsHistoryClient({
 
 
                   {/* ACTION */}
-                  <div>
+                  <div className="col-span-2 lg:col-span-1">
                     {report ? (
                       <div className="flex flex-wrap gap-2">
 
@@ -764,7 +764,7 @@ export default function ReportsHistoryClient({
         </section>
 
 
-        <footer className="mt-10 border-t border-neutral-200 py-6 text-xs text-neutral-400">
+        <footer className="mt-6 border-t border-neutral-200 py-4 text-[10px] text-neutral-400">
           Resto Operational System · Reports
         </footer>
 
@@ -791,35 +791,62 @@ function SummaryCard({
     | "danger";
 }) {
   const styles = {
-    success:
-      "text-emerald-700",
-    warning:
-      "text-amber-700",
-    neutral:
-      "text-neutral-700",
-    danger:
-      "text-red-700",
+    success: {
+      shell: "border-emerald-100 bg-emerald-50/80",
+      icon: "bg-emerald-100 text-emerald-700",
+      value: "text-emerald-800",
+      symbol: "✓",
+    },
+    warning: {
+      shell: "border-amber-100 bg-amber-50/80",
+      icon: "bg-amber-100 text-amber-700",
+      value: "text-amber-800",
+      symbol: "◷",
+    },
+    neutral: {
+      shell: "border-slate-200 bg-slate-50",
+      icon: "bg-slate-200/70 text-slate-600",
+      value: "text-slate-800",
+      symbol: "○",
+    },
+    danger: {
+      shell: "border-red-100 bg-red-50/80",
+      icon: "bg-red-100 text-red-700",
+      value: "text-red-800",
+      symbol: "!",
+    },
   };
 
+  const style = styles[variant];
+
   return (
-    <div className="rounded-[22px] border border-neutral-200 bg-white p-5 shadow-sm">
+    <div
+      className={`rounded-[16px] border p-3 shadow-sm ${style.shell}`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[8px] font-black uppercase tracking-[0.12em] text-neutral-500">
+          {label}
+        </p>
 
-      <p className="text-[9px] font-black uppercase tracking-[0.14em] text-neutral-400">
-        {label}
-      </p>
+        <span
+          className={`flex h-6 w-6 items-center justify-center rounded-lg text-[10px] font-black ${style.icon}`}
+        >
+          {style.symbol}
+        </span>
+      </div>
 
-      <p className={`mt-3 text-3xl font-black ${styles[variant]}`}>
+      <p
+        className={`mt-1.5 text-[25px] font-black leading-none tracking-tight ${style.value}`}
+      >
         {value}
       </p>
 
-      <p className="mt-1 text-xs text-neutral-400">
+      <p className="mt-1 truncate text-[9px] font-semibold text-neutral-500">
         {sub}
       </p>
-
     </div>
   );
 }
-
 
 function StatusBadge({
   status,
@@ -831,7 +858,7 @@ function StatusBadge({
     "completed"
   ) {
     return (
-      <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1.5 text-[9px] font-black uppercase text-emerald-700">
+      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-[8px] font-black uppercase text-emerald-700">
         Completed
       </span>
     );
@@ -842,14 +869,14 @@ function StatusBadge({
     "in_progress"
   ) {
     return (
-      <span className="inline-flex rounded-full bg-amber-50 px-3 py-1.5 text-[9px] font-black uppercase text-amber-700">
+      <span className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-[8px] font-black uppercase text-amber-700">
         In Progress
       </span>
     );
   }
 
   return (
-    <span className="inline-flex rounded-full bg-neutral-100 px-3 py-1.5 text-[9px] font-black uppercase text-neutral-500">
+    <span className="inline-flex rounded-full bg-neutral-100 px-2 py-1 text-[8px] font-black uppercase text-neutral-500">
       Not Submitted
     </span>
   );
