@@ -57,6 +57,24 @@ export default async function ProtectedLayout({
       "questions.manage"
     );
 
+  const showOpening =
+    isAdmin ||
+    permissionCodes.includes(
+      "opening.submit"
+    );
+
+  const showClosing =
+    isAdmin ||
+    permissionCodes.includes(
+      "closing.submit"
+    );
+
+  const showReports =
+    isAdmin ||
+    permissionCodes.includes(
+      "reports.view"
+    );
+
   return (
     <div className="min-h-svh bg-[#f5f5f3]">
 
@@ -74,9 +92,20 @@ export default async function ProtectedLayout({
         showAdministration={
           showAdministration
         }
+        showOpening={
+          showOpening
+        }
+        showClosing={
+          showClosing
+        }
+        showReports={
+          showReports
+        }
       />
 
-      {children}
+      <div className="pb-20 md:pb-0">
+        {children}
+      </div>
 
     </div>
   );

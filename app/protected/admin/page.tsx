@@ -7,7 +7,7 @@ const menus = [
     icon: "01",
     title: "Users",
     description:
-      "Create users, assign roles and manage outlet access.",
+      "User, role and outlet access.",
     status: "MANAGE",
   },
   {
@@ -15,7 +15,7 @@ const menus = [
     icon: "02",
     title: "Permissions",
     description:
-      "Manage operational roles and administrator access.",
+      "Roles and system permissions.",
     status: "MANAGE",
   },
   {
@@ -23,7 +23,7 @@ const menus = [
     icon: "03",
     title: "Forms",
     description:
-      "Review forms, versions and outlet assignments.",
+      "Forms, versions and assignments.",
     status: "REVIEW",
   },
   {
@@ -31,58 +31,63 @@ const menus = [
     icon: "04",
     title: "Questions",
     description:
-      "Review checklist questions, groups and validation rules.",
+      "Questions, groups and rules.",
     status: "REVIEW",
   },
 ];
 
 export default async function AdminPage() {
-  await requirePermission("admin.access");
+  await requirePermission(
+    "admin.access"
+  );
 
   return (
-    <main className="mx-auto max-w-[1180px] px-5 py-8 md:px-8 md:py-12">
-      <div className="mb-8">
-        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-red-700">
+    <main className="mx-auto max-w-[1180px] px-4 py-5 sm:px-5 sm:py-7 md:px-8 md:py-10">
+      <div className="mb-5 md:mb-7">
+        <p className="text-[9px] font-black uppercase tracking-[0.16em] text-red-700 sm:text-[10px]">
           Administration
         </p>
 
-        <h1 className="mt-2 text-3xl font-bold tracking-tight text-neutral-950">
+        <h1 className="mt-1.5 text-[28px] font-black tracking-tight text-neutral-950 md:text-3xl">
           System Administration
         </h1>
 
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
-          Manage system users, access permissions and operational form configuration.
+        <p className="mt-1.5 max-w-2xl text-[13px] leading-5 text-neutral-500 md:text-sm md:leading-6">
+          Manage users, permissions and
+          operational configuration.
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-2.5 md:grid-cols-2 md:gap-4">
         {menus.map((menu) => (
           <Link
             key={menu.href}
             href={menu.href}
-            className="group rounded-[24px] border border-neutral-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-red-200 hover:shadow-md"
+            className="group flex items-center gap-3.5 rounded-[16px] border border-neutral-200 bg-white p-3.5 shadow-sm transition hover:border-red-200 hover:shadow-md active:scale-[0.995] md:rounded-[18px] md:p-4"
           >
-            <div className="flex items-start justify-between gap-5">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-red-50 text-xs font-black text-red-700">
-                {menu.icon}
-              </div>
-
-              <span className="rounded-full bg-neutral-100 px-3 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-neutral-500">
-                {menu.status}
-              </span>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] bg-red-50 text-[10px] font-black text-red-700">
+              {menu.icon}
             </div>
 
-            <h2 className="mt-6 text-xl font-bold text-neutral-900 group-hover:text-red-700">
-              {menu.title}
-            </h2>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <h2 className="truncate text-[15px] font-black text-neutral-900 transition group-hover:text-red-700 md:text-base">
+                  {menu.title}
+                </h2>
 
-            <p className="mt-2 text-sm leading-6 text-neutral-500">
-              {menu.description}
-            </p>
+                <span className="hidden rounded-full bg-neutral-100 px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.1em] text-neutral-400 sm:inline-flex">
+                  {menu.status}
+                </span>
+              </div>
 
-            <p className="mt-6 text-xs font-bold text-red-700">
-              Open administration →
-            </p>
+              <p className="mt-0.5 truncate text-[11px] leading-5 text-neutral-500 md:text-xs">
+                {menu.description}
+              </p>
+            </div>
+
+            <span className="shrink-0 text-lg font-light text-neutral-300 transition group-hover:translate-x-0.5 group-hover:text-red-600">
+              →
+            </span>
           </Link>
         ))}
       </div>

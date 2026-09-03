@@ -948,17 +948,17 @@ export default async function ProtectedPage({
         }
       />
 
-      <div className="mx-auto max-w-[1480px] px-5 py-7 md:px-8 md:py-10">
+      <div className="mx-auto max-w-[1480px] px-4 py-5 sm:px-5 sm:py-7 md:px-8 md:py-10">
 
         {/* TITLE */}
-        <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
 
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.17em] text-red-700">
               Operational Overview
             </p>
 
-            <h1 className="mt-2 text-3xl font-bold tracking-tight md:text-4xl">
+            <h1 className="mt-1.5 text-[28px] font-black tracking-tight md:text-4xl">
               Dashboard
             </h1>
 
@@ -971,7 +971,7 @@ export default async function ProtectedPage({
 
           <div className="flex items-center gap-3">
 
-            <div className="rounded-2xl border border-neutral-200 bg-white px-4 py-3">
+            <div className="rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5">
               <p className="text-[9px] font-black uppercase tracking-wide text-neutral-400">
                 Report Scope
               </p>
@@ -984,7 +984,7 @@ export default async function ProtectedPage({
             {canReports && (
               <Link
                 href="/protected/reports"
-                className="inline-flex h-[58px] items-center rounded-2xl bg-neutral-900 px-5 text-sm font-bold text-white transition hover:bg-black"
+                className="inline-flex h-11 items-center rounded-xl bg-neutral-900 px-4 text-xs font-bold text-white transition hover:bg-black"
               >
                 Reports →
               </Link>
@@ -996,7 +996,7 @@ export default async function ProtectedPage({
 
 
         {/* SUMMARY */}
-        <section className="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <section className="mt-5 grid grid-cols-2 gap-3 xl:grid-cols-5 [&>*:last-child]:col-span-2 xl:[&>*:last-child]:col-span-1">
 
           <Metric
             label="Outlets"
@@ -1047,9 +1047,9 @@ export default async function ProtectedPage({
 
 
         {/* TREND + ACTIVE OUTLET */}
-        <section className="mt-6 grid gap-5 xl:grid-cols-[1.6fr_.7fr]">
+        <section className="mt-4 grid gap-4 xl:grid-cols-[1.6fr_.7fr]">
 
-          <div className="rounded-[26px] border border-neutral-200 bg-white p-6 shadow-sm md:p-7">
+          <div className="rounded-[18px] border border-neutral-200 bg-white p-4 shadow-sm sm:p-5 md:rounded-[22px] md:p-6">
 
             <div className="flex flex-wrap items-start justify-between gap-4">
 
@@ -1092,7 +1092,7 @@ export default async function ProtectedPage({
             </div>
 
 
-            <div className="mt-7 flex h-[200px] items-end gap-1.5 border-b border-neutral-200">
+            <div className="mt-5 flex h-[160px] items-end gap-1.5 border-b border-neutral-200 md:mt-7 md:h-[200px]">
 
               {trend.map(
                 (
@@ -1118,7 +1118,7 @@ export default async function ProtectedPage({
                       title={`${item.date} · ${item.rate}% completed · ${item.issues} issues`}
                     >
 
-                      <div className="flex h-[150px] items-end">
+                      <div className="flex h-[115px] items-end md:h-[150px]">
 
                         <div
                           className={`w-full rounded-t-md ${
@@ -1194,7 +1194,7 @@ export default async function ProtectedPage({
 
 
           {/* ACTIVE OUTLET */}
-          <div className="rounded-[26px] border border-neutral-200 bg-white p-6 shadow-sm md:p-7">
+          <div className="rounded-[18px] border border-neutral-200 bg-white p-4 shadow-sm sm:p-5 md:rounded-[22px] md:p-6">
 
             <p className="text-[10px] font-black uppercase tracking-[0.15em] text-neutral-400">
               Active Outlet
@@ -1202,16 +1202,16 @@ export default async function ProtectedPage({
 
             {activeOutlet ? (
               <>
-                <div className="mt-5 flex items-center gap-4">
+                <div className="mt-4 flex items-center gap-3.5">
 
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-sm font-black text-red-700">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-red-50 text-xs font-black text-red-700 md:h-14 md:w-14 md:rounded-2xl md:text-sm">
                     {
                       activeOutlet.code
                     }
                   </div>
 
                   <div className="min-w-0">
-                    <h2 className="truncate text-xl font-bold">
+                    <h2 className="truncate text-lg font-black md:text-xl">
                       {
                         activeOutlet.name
                       }
@@ -1228,7 +1228,7 @@ export default async function ProtectedPage({
 
                 </div>
 
-                <div className="mt-7">
+                <div className="mt-5 md:mt-7">
 
                   {(
                     canClosing ||
@@ -1295,15 +1295,15 @@ export default async function ProtectedPage({
         ==================================================== */}
 
         {activeOutlet && (
-          <section className="mt-6 overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-sm md:rounded-[26px]">
+          <section className="mt-4 overflow-hidden rounded-[18px] border border-neutral-200 bg-white shadow-sm md:mt-6 md:rounded-[22px]">
 
-            <div className="p-5 sm:p-6 md:p-7">
+            <div className="p-4 sm:p-5 md:p-6">
 
               <div className="flex items-start justify-between gap-4">
 
                 <div className="flex min-w-0 items-start gap-4">
 
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-amber-50 text-2xl">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-amber-50 text-xl sm:h-12 sm:w-12">
 
                     ☀️
 
@@ -1317,13 +1317,13 @@ export default async function ProtectedPage({
 
                     </p>
 
-                    <h2 className="mt-1 text-xl font-black tracking-tight text-neutral-950 sm:text-2xl">
+                    <h2 className="mt-0.5 text-lg font-black tracking-tight text-neutral-950 sm:text-xl">
 
                       Opening Outlet
 
                     </h2>
 
-                    <p className="mt-2 text-sm leading-6 text-neutral-500">
+                    <p className="mt-1.5 text-[13px] leading-5 text-neutral-500 sm:text-sm sm:leading-6">
 
                       Kitchen / BOH opening readiness checklist with mandatory photo evidence.
 
@@ -1356,7 +1356,7 @@ export default async function ProtectedPage({
               </div>
 
 
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <div className="mt-4 grid grid-cols-2 gap-2.5 sm:gap-3">
 
                 <div className="rounded-2xl bg-neutral-50 px-4 py-4">
 
@@ -1483,7 +1483,7 @@ export default async function ProtectedPage({
 
         {/* TODAY OUTLETS */}
 
-        <section className="mt-6 overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-sm md:rounded-[26px]">
+        <section className="mt-4 overflow-hidden rounded-[18px] border border-neutral-200 bg-white shadow-sm md:mt-6 md:rounded-[22px]">
 
           <div className="flex items-center justify-between gap-4 border-b border-neutral-100 px-4 py-4 sm:px-6 sm:py-5">
 
@@ -1548,7 +1548,7 @@ export default async function ProtectedPage({
 
                   <div
                     key={row.outlet.id}
-                    className="px-4 py-5 sm:px-6"
+                    className="px-4 py-4 sm:px-6 sm:py-5"
                   >
 
                     {/* TOP */}
