@@ -2288,23 +2288,36 @@ export default function ClosingKitchenClient({
 
                                   {(
                                       answer?.photo ||
-                                      answer?.existingStoragePath
+                                      answer?.existingStoragePath ||
+                                      answer?.existingPhotoFile ||
+                                      answer?.photoSaveStatus === "saved" ||
+                                      answer?.photoSaveStatus === "optimizing" ||
+                                      answer?.photoSaveStatus === "uploading" ||
+                                      answer?.photoSaveStatus === "error"
                                     ) && (
-                                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                                      {answer?.photoSaveStatus ===
-                                        "optimizing"
+                                      <span
+                                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                          answer?.photoSaveStatus === "error"
+                                            ? "bg-red-50 text-red-700"
+                                            : answer?.photoSaveStatus === "optimizing" ||
+                                                answer?.photoSaveStatus === "uploading"
+                                              ? "bg-blue-50 text-blue-700"
+                                              : "bg-emerald-50 text-emerald-700"
+                                        }`}
+                                      >
+                                        {answer?.photoSaveStatus === "optimizing"
                                           ? "Optimizing..."
-                                          : answer?.photoSaveStatus ===
-                                              "uploading"
+                                          : answer?.photoSaveStatus === "uploading"
                                             ? "Uploading..."
-                                            : answer?.photoSaveStatus ===
-                                                "error"
+                                            : answer?.photoSaveStatus === "error"
                                               ? "Upload Failed"
-                                              : answer?.existingStoragePath
-                                                ? "Photo Saved ✓"
+                                              : answer?.existingStoragePath ||
+                                                  answer?.existingPhotoFile ||
+                                                  answer?.photoSaveStatus === "saved"
+                                                ? "Photo Evidence ✓"
                                                 : "New Photo ✓"}
-                                    </span>
-                                  )}
+                                      </span>
+                                    )}
                                 </div>
 
                                 <input
