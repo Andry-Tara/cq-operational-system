@@ -1,6 +1,5 @@
 "use client";
 
-import { compressOperationalPhoto } from "@/lib/operations/compress-photo";
 import Link from "next/link";
 import { useMemo, useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -687,21 +686,12 @@ export default function OperationClient({
         // ====================================================
 
         if (answer.photo) {
-          const originalPhotoFilename =
-            answer.photo.name;
-
-          setSubmitStatus(
-            `Optimizing photo ${index + 1} of ${questions.length}...`
-          );
-
-          const file =
-            await compressOperationalPhoto(
-              answer.photo
-            );
-
           setSubmitStatus(
             `Uploading photo ${index + 1} of ${questions.length}...`
           );
+
+          const file =
+            answer.photo;
 
           const extension =
             file.name
@@ -752,7 +742,7 @@ export default function OperationClient({
           }
 
           originalFilename =
-            originalPhotoFilename;
+            file.name;
 
           mimeType =
             file.type;
