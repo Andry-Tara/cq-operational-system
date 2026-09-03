@@ -13,6 +13,14 @@ type DraftStatus =
   | "saved"
   | "error";
 
+export type DraftPhotoMetadata = {
+  storageBucket: string;
+  storagePath: string;
+  originalFilename: string | null;
+  mimeType: string | null;
+  fileSize: number | null;
+};
+
 type Params = {
   supabase: any;
   reportId?: string | null;
@@ -105,7 +113,7 @@ export function useOperationalDraftAutosave({
         error,
       } = await supabase
         .from("reports")
-        .select("draft_answers")
+        .select("draft_answers,draft_photos")
         .eq("id", reportId)
         .maybeSingle();
 
@@ -171,6 +179,147 @@ export function useOperationalDraftAutosave({
       } else {
         lastSavedRef.current = "{}";
         setDraftStatus("idle");
+      }
+
+      // ====================================================
+      // HYDRATE DRAFT PHOTOS
+      // ====================================================
+
+      const rawPhotos =
+        data?.draft_photos;
+
+      if (
+        rawPhotos &&
+        typeof rawPhotos === "object" &&
+        !Array.isArray(rawPhotos)
+      ) {
+        const entries =
+          Object.entries(
+            rawPhotos as Record<
+              string,
+              DraftPhotoMetadata
+            >
+          );
+
+        const hydratedPhotos =
+          await Promise.all(
+            entries.map(
+              async (
+                [
+                  questionId,
+                  photo,
+                ]
+              ) => {
+                if (
+                  !photo?.storagePath
+                ) {
+                  return null;
+                }
+
+                const bucket =
+                  photo.storageBucket ||
+                  "operational-photos";
+
+                const {
+                  data: blob,
+                  error:
+                    downloadError,
+                } =
+                  await supabase.storage
+                    .from(bucket)
+                    .download(
+                      photo.storagePath
+                    );
+
+                let file:
+                  File | undefined;
+
+                if (
+                  !downloadError &&
+                  blob
+                ) {
+                  file =
+                    new File(
+                      [blob],
+                      photo.originalFilename ||
+                        "draft-photo.jpg",
+                      {
+                        type:
+                          photo.mimeType ||
+                          blob.type ||
+                          "image/jpeg",
+                      }
+                    );
+                }
+
+                return {
+                  questionId,
+                  photo,
+                  file,
+                };
+              }
+            )
+          );
+
+        if (cancelled) {
+          return;
+        }
+
+        setAnswers(
+          (prev: any) => {
+            const next = {
+              ...prev,
+            };
+
+            for (
+              const item
+              of hydratedPhotos
+            ) {
+              if (!item) {
+                continue;
+              }
+
+              const {
+                questionId,
+                photo,
+                file,
+              } = item;
+
+              next[questionId] = {
+                ...next[questionId],
+
+                existingStorageBucket:
+                  photo.storageBucket,
+
+                existingStoragePath:
+                  photo.storagePath,
+
+                existingOriginalFilename:
+                  photo.originalFilename,
+
+                existingMimeType:
+                  photo.mimeType,
+
+                existingFileSize:
+                  photo.fileSize,
+
+                existingPhotoFile:
+                  file,
+
+                photoSaveStatus:
+                  "saved",
+              };
+            }
+
+            return next;
+          }
+        );
+
+        if (
+          entries.length > 0
+        ) {
+          setDraftStatus("saved");
+        }
       }
 
       setHydrated(true);
@@ -283,4 +432,69 @@ export function useOperationalDraftAutosave({
   return {
     draftStatus,
   };
+}
+
+
+export async function persistOperationalDraftPhoto({
+  supabase,
+  reportId,
+  questionId,
+  photo,
+}: {
+  supabase: any;
+  reportId: string;
+  questionId: string;
+  photo: DraftPhotoMetadata;
+}) {
+  const {
+    data,
+    error,
+  } = await supabase
+    .from("reports")
+    .select("draft_photos")
+    .eq("id", reportId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  const current =
+    data?.draft_photos &&
+    typeof data.draft_photos ===
+      "object" &&
+    !Array.isArray(
+      data.draft_photos
+    )
+      ? data.draft_photos
+      : {};
+
+  const next = {
+    ...current,
+    [questionId]:
+      photo,
+  };
+
+  const {
+    data: updated,
+    error: updateError,
+  } = await supabase
+    .from("reports")
+    .update({
+      draft_photos:
+        next,
+    })
+    .eq("id", reportId)
+    .select("id")
+    .maybeSingle();
+
+  if (updateError) {
+    throw updateError;
+  }
+
+  if (!updated) {
+    throw new Error(
+      "Draft photo metadata tidak dapat disimpan."
+    );
+  }
 }

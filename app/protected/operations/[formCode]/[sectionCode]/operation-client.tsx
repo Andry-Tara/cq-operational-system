@@ -1,9 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useOperationalDraftAutosave } from "@/lib/operations/use-operational-draft-autosave";
+import {
+  persistOperationalDraftPhoto,
+  useOperationalDraftAutosave,
+} from "@/lib/operations/use-operational-draft-autosave";
+
+import {
+  compressOperationalPhoto,
+} from "@/lib/operations/compress-operational-photo";
 import { buildOpeningPdf } from "@/lib/pdf/opening-report";
 
 type Group = {
@@ -53,6 +60,14 @@ type AnswerState = {
   // Existing photo downloaded from Storage.
   // Used for PDF regeneration and preview.
   existingPhotoFile?: File;
+
+  photoSaveStatus?:
+    | "optimizing"
+    | "uploading"
+    | "saved"
+    | "error";
+
+  photoSaveError?: string;
 };
 
 type SubmitResult = {
@@ -185,6 +200,14 @@ export default function OperationClient({
 
   const [loadingExisting, setLoadingExisting] =
     useState(true);
+
+  const photoUploadTokenRef =
+    useRef<Record<string, string>>({});
+
+  const photoPersistQueueRef =
+    useRef<Promise<void>>(
+      Promise.resolve()
+    );
 
   const isReopenedDraftSession =
     Boolean(
@@ -388,17 +411,363 @@ export default function OperationClient({
     }));
   }
 
-  function setPhoto(
+  async function setPhoto(
     questionId: string,
     file?: File
   ) {
+    if (!file) {
+      return;
+    }
+
+    // Reopened reports tetap memakai
+    // replacement flow lama yang stabil.
+    if (isReopenedDraftSession) {
+      setAnswers((prev) => ({
+        ...prev,
+        [questionId]: {
+          ...prev[questionId],
+          photo: file,
+        },
+      }));
+
+      return;
+    }
+
+    const reportId =
+      sessionData?.reportId;
+
+    const reportSectionId =
+      sessionData?.reportSectionId;
+
+    const question =
+      questions.find(
+        (item) =>
+          item.id === questionId
+      );
+
+    if (
+      !reportId ||
+      !reportSectionId ||
+      !question
+    ) {
+      setErrorMessage(
+        "Draft session belum siap. Tunggu sebentar lalu ambil foto kembali."
+      );
+
+      return;
+    }
+
+    const previousStoragePath =
+      answers[questionId]
+        ?.existingStoragePath;
+
+    const token =
+      crypto.randomUUID();
+
+    photoUploadTokenRef
+      .current[questionId] =
+        token;
+
+    // Foto langsung tampil di UI.
     setAnswers((prev) => ({
       ...prev,
+
       [questionId]: {
         ...prev[questionId],
+
         photo: file,
+
+        photoSaveStatus:
+          "optimizing",
+
+        photoSaveError:
+          undefined,
       },
     }));
+
+    try {
+      // ===============================================
+      // STEP 1 — COMPRESS
+      // ===============================================
+
+      const optimizedFile =
+        await compressOperationalPhoto(
+          file
+        );
+
+      if (
+        photoUploadTokenRef
+          .current[questionId] !==
+        token
+      ) {
+        return;
+      }
+
+      setAnswers((prev) => ({
+        ...prev,
+
+        [questionId]: {
+          ...prev[questionId],
+
+          photo:
+            optimizedFile,
+
+          photoSaveStatus:
+            "uploading",
+        },
+      }));
+
+
+      // ===============================================
+      // STEP 2 — STORAGE PATH
+      // ===============================================
+
+      const extension =
+        optimizedFile.name
+          .split(".")
+          .pop()
+          ?.toLowerCase() ||
+        "jpg";
+
+      const safeCode =
+        question.code
+          .replace(
+            /[^a-zA-Z0-9_-]/g,
+            "-"
+          )
+          .toLowerCase();
+
+      const storagePath =
+        `report-sections/${reportSectionId}/` +
+        `${safeCode}/` +
+        `draft-${crypto.randomUUID()}.${extension}`;
+
+
+      // ===============================================
+      // STEP 3 — BACKGROUND UPLOAD
+      // ===============================================
+
+      const {
+        error:
+          uploadError,
+      } =
+        await supabase.storage
+          .from(
+            "operational-photos"
+          )
+          .upload(
+            storagePath,
+            optimizedFile,
+            {
+              cacheControl:
+                "3600",
+
+              upsert:
+                false,
+
+              contentType:
+                optimizedFile.type ||
+                undefined,
+            }
+          );
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+
+      // Foto sudah diganti user sebelum
+      // upload sebelumnya selesai.
+      if (
+        photoUploadTokenRef
+          .current[questionId] !==
+        token
+      ) {
+        await supabase.storage
+          .from(
+            "operational-photos"
+          )
+          .remove([
+            storagePath,
+          ]);
+
+        return;
+      }
+
+
+      // ===============================================
+      // STEP 4 — SAVE DRAFT METADATA
+      // ===============================================
+
+      const metadata = {
+        storageBucket:
+          "operational-photos",
+
+        storagePath,
+
+        originalFilename:
+          file.name,
+
+        mimeType:
+          optimizedFile.type ||
+          file.type ||
+          null,
+
+        fileSize:
+          optimizedFile.size ||
+          null,
+      };
+
+
+      // Serialize JSONB updates so two photos
+      // selected quickly do not overwrite
+      // each other's draft metadata.
+      const persistPromise =
+        photoPersistQueueRef
+          .current
+          .catch(() => {
+            // Keep queue alive.
+          })
+          .then(() =>
+            persistOperationalDraftPhoto({
+              supabase,
+              reportId,
+              questionId,
+              photo:
+                metadata,
+            })
+          );
+
+      photoPersistQueueRef.current =
+        persistPromise;
+
+      try {
+        await persistPromise;
+      } catch (
+        metadataError
+      ) {
+        // Storage succeeded but metadata failed.
+        // Remove orphan draft file.
+        await supabase.storage
+          .from(
+            "operational-photos"
+          )
+          .remove([
+            storagePath,
+          ]);
+
+        throw metadataError;
+      }
+
+
+      if (
+        photoUploadTokenRef
+          .current[questionId] !==
+        token
+      ) {
+        return;
+      }
+
+
+      // ===============================================
+      // STEP 5 — CLEAN OLD DRAFT REPLACEMENT
+      // ===============================================
+
+      if (
+        previousStoragePath &&
+        previousStoragePath !==
+          storagePath &&
+        previousStoragePath
+          .split("/")
+          .pop()
+          ?.startsWith(
+            "draft-"
+          )
+      ) {
+        await supabase.storage
+          .from(
+            "operational-photos"
+          )
+          .remove([
+            previousStoragePath,
+          ]);
+      }
+
+
+      // ===============================================
+      // STEP 6 — SUCCESS
+      //
+      // photo = undefined means final Submit
+      // does not need to upload it again.
+      //
+      // existingStoragePath now points to
+      // already-uploaded Storage photo.
+      // ===============================================
+
+      setAnswers((prev) => ({
+        ...prev,
+
+        [questionId]: {
+          ...prev[questionId],
+
+          photo:
+            undefined,
+
+          existingStorageBucket:
+            metadata.storageBucket,
+
+          existingStoragePath:
+            metadata.storagePath,
+
+          existingOriginalFilename:
+            metadata.originalFilename,
+
+          existingMimeType:
+            metadata.mimeType,
+
+          existingFileSize:
+            metadata.fileSize,
+
+          existingPhotoFile:
+            optimizedFile,
+
+          photoSaveStatus:
+            "saved",
+
+          photoSaveError:
+            undefined,
+        },
+      }));
+
+    } catch (error: any) {
+      console.warn(
+        "Background photo save failed:",
+        error
+      );
+
+      // Background upload gagal:
+      // foto lokal tetap disimpan.
+      //
+      // Final Submit lama masih dapat
+      // meng-upload foto ini sebagai fallback.
+      setAnswers((prev) => ({
+        ...prev,
+
+        [questionId]: {
+          ...prev[questionId],
+
+          photo:
+            file,
+
+          photoSaveStatus:
+            "error",
+
+          photoSaveError:
+            error?.message ||
+            "Photo belum tersimpan.",
+        },
+      }));
+    }
   }
 
   function isAnswered(
@@ -548,12 +917,35 @@ export default function OperationClient({
   const totalQuestions =
     questions.length;
 
+  const photoDraftBusyCount =
+    useMemo(
+      () =>
+        questions.filter(
+          (question) =>
+            [
+              "optimizing",
+              "uploading",
+            ].includes(
+              answers[
+                question.id
+              ]
+                ?.photoSaveStatus ||
+                ""
+            )
+        ).length,
+      [
+        answers,
+        questions,
+      ]
+    );
+
   const overallComplete =
     !loadingExisting &&
     Boolean(sessionData) &&
     answeredCount === totalQuestions &&
     photoCount === totalQuestions &&
-    issueCompleteCount === issueCount;
+    issueCompleteCount === issueCount &&
+    photoDraftBusyCount === 0;
 
   const progress =
     totalQuestions === 0
@@ -1899,9 +2291,18 @@ export default function OperationClient({
                                       answer?.existingStoragePath
                                     ) && (
                                     <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                                      {answer?.photo
-                                          ? "New Photo ✓"
-                                          : "Existing Photo ✓"}
+                                      {answer?.photoSaveStatus ===
+                                        "optimizing"
+                                          ? "Optimizing..."
+                                          : answer?.photoSaveStatus ===
+                                              "uploading"
+                                            ? "Uploading..."
+                                            : answer?.photoSaveStatus ===
+                                                "error"
+                                              ? "Upload Failed"
+                                              : answer?.existingStoragePath
+                                                ? "Photo Saved ✓"
+                                                : "New Photo ✓"}
                                     </span>
                                   )}
                                 </div>
