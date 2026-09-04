@@ -2320,26 +2320,44 @@ export default function OperationClient({
                                     )}
                                 </div>
 
-                                <input
-                                  type="file"
-                                          className={["mt-4 block w-full rounded-xl border border-neutral-200 bg-white p-3 text-sm text-neutral-700 file:mr-4 file:rounded-lg file:border-0 file:bg-neutral-900 file:px-4 file:py-2 file:font-semibold file:text-white hover:file:bg-black", "mt-4 block w-full rounded-xl border border-dashed border-neutral-300 bg-white px-4 py-4 text-sm"].filter(Boolean).join(" ")}
-                                  accept="image/*"
-                                  capture="environment"
-                                  disabled={
-                                    submitting
-                                  }
-                                  onChange={(
-                                    event
-                                  ) =>
-                                    setPhoto(
-                                      question.id,
-                                      event
-                                        .target
-                                        .files?.[0]
-                                    )
-                                  }
-                                  
-                                />
+                                <div className="mt-4 grid grid-cols-2 gap-2.5">
+                                  <label className="flex min-h-[52px] cursor-pointer items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 text-center text-xs font-black text-red-700 transition active:scale-[0.99]">
+                                    <span className="text-base">📷</span>
+                                    <span>Take Photo</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      capture="environment"
+                                      disabled={submitting}
+                                      className="sr-only"
+                                      onChange={(event) => {
+                                        const file = event.target.files?.[0];
+                                        if (file) {
+                                          void setPhoto(question.id, file);
+                                        }
+                                        event.currentTarget.value = "";
+                                      }}
+                                    />
+                                  </label>
+
+                                  <label className="flex min-h-[52px] cursor-pointer items-center justify-center gap-2 rounded-xl border border-sky-100 bg-sky-50 px-3 text-center text-xs font-black text-sky-700 transition active:scale-[0.99]">
+                                    <span className="text-base">🖼️</span>
+                                    <span>Gallery / Device</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      disabled={submitting}
+                                      className="sr-only"
+                                      onChange={(event) => {
+                                        const file = event.target.files?.[0];
+                                        if (file) {
+                                          void setPhoto(question.id, file);
+                                        }
+                                        event.currentTarget.value = "";
+                                      }}
+                                    />
+                                  </label>
+                                </div>
 
                                 {answer?.photo && (
                                   <p className="mt-2 truncate text-xs text-neutral-500">
