@@ -886,7 +886,8 @@ export default function OperationClient({
           (question) =>
             Boolean(
               answers[question.id]?.photo ||
-              answers[question.id]?.existingStoragePath
+              answers[question.id]?.existingStoragePath ||
+              answers[question.id]?.existingPhotoFile
             )
         ).length,
       [answers, questions]
@@ -2006,8 +2007,8 @@ export default function OperationClient({
             <div
               className="h-full rounded-full bg-red-700 transition-all"
               style={{
-                width:
-                  `${progress}%`,
+                width: `${progress}%`,
+                minWidth: progress > 0 ? "10px" : "0px",
               }}
             />
           </div>
@@ -2290,6 +2291,9 @@ export default function OperationClient({
                                       answer?.photo ||
                                       answer?.existingStoragePath ||
                                       answer?.existingPhotoFile ||
+                                      answer?.photo ||
+                                      answer?.existingStoragePath ||
+                                      answer?.existingPhotoFile ||
                                       answer?.photoSaveStatus === "saved" ||
                                       answer?.photoSaveStatus === "optimizing" ||
                                       answer?.photoSaveStatus === "uploading" ||
@@ -2321,14 +2325,14 @@ export default function OperationClient({
                                 </div>
 
                                 <div className="mt-4 grid grid-cols-2 gap-2.5">
-                                  <label className="flex min-h-[52px] cursor-pointer items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 text-center text-xs font-black text-red-700 transition active:scale-[0.99]">
+                                  <label className={`flex min-h-[52px] items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 text-center text-xs font-black text-red-700 transition ${submitting || !sessionData?.reportId || !sessionData?.reportSectionId ? "cursor-wait opacity-45" : "cursor-pointer active:scale-[0.99]"}`}>
                                     <span className="text-base">📷</span>
                                     <span>Take Photo</span>
                                     <input
                                       type="file"
                                       accept="image/*"
                                       capture="environment"
-                                      disabled={submitting}
+                                      disabled={submitting || !sessionData?.reportId || !sessionData?.reportSectionId}
                                       className="sr-only"
                                       onChange={(event) => {
                                         const file = event.target.files?.[0];
@@ -2340,13 +2344,13 @@ export default function OperationClient({
                                     />
                                   </label>
 
-                                  <label className="flex min-h-[52px] cursor-pointer items-center justify-center gap-2 rounded-xl border border-sky-100 bg-sky-50 px-3 text-center text-xs font-black text-sky-700 transition active:scale-[0.99]">
+                                  <label className={`flex min-h-[52px] items-center justify-center gap-2 rounded-xl border border-sky-100 bg-sky-50 px-3 text-center text-xs font-black text-sky-700 transition ${submitting || !sessionData?.reportId || !sessionData?.reportSectionId ? "cursor-wait opacity-45" : "cursor-pointer active:scale-[0.99]"}`}>
                                     <span className="text-base">🖼️</span>
                                     <span>Gallery / Device</span>
                                     <input
                                       type="file"
                                       accept="image/*"
-                                      disabled={submitting}
+                                      disabled={submitting || !sessionData?.reportId || !sessionData?.reportSectionId}
                                       className="sr-only"
                                       onChange={(event) => {
                                         const file = event.target.files?.[0];
@@ -2490,6 +2494,7 @@ export default function OperationClient({
                       className="h-full rounded-full bg-red-700 transition-all"
                       style={{
                         width: `${progress}%`,
+                        minWidth: progress > 0 ? "10px" : "0px",
                       }}
                     />
                   </div>
