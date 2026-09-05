@@ -14,6 +14,9 @@ type ProtectedHeaderProps = {
   showOpening: boolean;
   showClosing: boolean;
   showReports: boolean;
+  appVersion: string;
+  buildSha: string;
+  environment: string;
 };
 
 type GlyphKind =
@@ -164,6 +167,9 @@ export function ProtectedHeader({
   showOpening,
   showClosing,
   showReports,
+  appVersion,
+  buildSha,
+  environment,
 }: ProtectedHeaderProps) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] =
@@ -513,6 +519,22 @@ export function ProtectedHeader({
                   className="h-5 w-5 rounded-md object-cover"
                 />
               </button>
+
+              <div className="mx-1 my-2 rounded-xl border border-neutral-100 bg-neutral-50 px-3.5 py-3">
+                <p className="text-[8px] font-black uppercase tracking-[0.14em] text-neutral-400">
+                  Application Version
+                </p>
+
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-neutral-600">
+                  <span>{environment}</span>
+                  <span className="text-neutral-300">·</span>
+                  <span>{appVersion}</span>
+                  <span className="text-neutral-300">·</span>
+                  <span className="font-mono text-[10px]">
+                    {buildSha}
+                  </span>
+                </div>
+              </div>
 
               <div className="my-2 border-t border-neutral-100" />
 
