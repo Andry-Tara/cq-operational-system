@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+
 import { createClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(
   request: NextRequest,
@@ -9,66 +12,162 @@ export async function GET(
     }>;
   }
 ) {
-  const { id } = await context.params;
+  try {
+    const { id } = await context.params;
 
-  const supabase = await createClient();
+    const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    // ========================================================
+    // AUTH
+    // ========================================================
 
-  if (!user) {
-    return NextResponse.redirect(
-      new URL("/auth/login", request.url)
-    );
-  }
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  const { data: report, error } = await supabase
-    .from("reports")
-    .select(`
-      id,
-      pdf_storage_path
-    `)
-    .eq("id", id)
-    .single();
+    if (!user) {
+      return NextResponse.redirect(
+        new URL("/auth/login", request.url)
+      );
+    }
 
-  if (
-    error ||
-    !report?.pdf_storage_path
-  ) {
-    return NextResponse.json(
+    // ========================================================
+    // REPORT
+    //
+    // RLS on reports remains responsible for determining
+    // whether this authenticated user may access the report.
+    // ========================================================
+
+    const {
+      data: report,
+      error: reportError,
+    } = await supabase
+      .from("reports")
+      .select(`
+        id,
+        report_number,
+        pdf_storage_path
+      `)
+      .eq("id", id)
+      .maybeSingle();
+
+    if (
+      reportError ||
+      !report?.pdf_storage_path
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            reportError?.message ||
+            "PDF report tidak ditemukan.",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    // ========================================================
+    // DOWNLOAD PRIVATE PDF FROM SUPABASE
+    //
+    // IMPORTANT:
+    // Do not redirect browser to Supabase signed URL.
+    // The PDF is proxied through our own application domain.
+    // ========================================================
+
+    const {
+      data: pdfBlob,
+      error: downloadError,
+    } = await supabase.storage
+      .from("operational-reports")
+      .download(
+        report.pdf_storage_path
+      );
+
+    if (
+      downloadError ||
+      !pdfBlob
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            downloadError?.message ||
+            "Unable to open PDF.",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    // ========================================================
+    // SAFE FILENAME
+    // ========================================================
+
+    const safeReportNumber =
+      String(
+        report.report_number ||
+          "operational-report"
+      )
+        .replace(
+          /[^a-zA-Z0-9_-]/g,
+          "-"
+        )
+        .replace(
+          /-+/g,
+          "-"
+        );
+
+    const filename =
+      `${safeReportNumber}.pdf`;
+
+    // ========================================================
+    // STREAM PDF THROUGH APPLICATION DOMAIN
+    // ========================================================
+
+    const arrayBuffer =
+      await pdfBlob.arrayBuffer();
+
+    return new NextResponse(
+      arrayBuffer,
       {
-        error: "PDF report tidak ditemukan.",
-      },
-      { status: 404 }
-    );
-  }
+        status: 200,
 
-  const {
-    data: signed,
-    error: signedError,
-  } = await supabase.storage
-    .from("operational-reports")
-    .createSignedUrl(
-      report.pdf_storage_path,
-      60 * 10
+        headers: {
+          "Content-Type":
+            "application/pdf",
+
+          "Content-Disposition":
+            `inline; filename="${filename}"`,
+
+          "Content-Length":
+            String(
+              arrayBuffer.byteLength
+            ),
+
+          "Cache-Control":
+            "private, no-store, max-age=0",
+
+          "X-Content-Type-Options":
+            "nosniff",
+        },
+      }
+    );
+  } catch (error: any) {
+    console.error(
+      "Report PDF proxy error:",
+      error
     );
 
-  if (
-    signedError ||
-    !signed?.signedUrl
-  ) {
     return NextResponse.json(
       {
         error:
-          signedError?.message ||
+          error?.message ||
           "Unable to open PDF.",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
-
-  return NextResponse.redirect(
-    signed.signedUrl
-  );
 }
