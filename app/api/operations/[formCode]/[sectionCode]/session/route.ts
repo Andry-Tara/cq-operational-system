@@ -254,6 +254,79 @@ export async function POST(
     }
 
     // ========================================================
+    // SECTION-SCOPED ACCESS
+    //
+    // Central Kitchen uses one parent report shared by multiple
+    // PICs. can_start_operational_report() only confirms that the
+    // user has access to at least one section in the form.
+    //
+    // This second gate confirms that the requested section itself
+    // belongs to the authenticated PIC before a parent report or
+    // report_section is created/reused.
+    // ========================================================
+
+    if (config.sectionScoped) {
+      const {
+        data: canFillSection,
+        error: canFillSectionError,
+      } = await supabase.rpc(
+        "has_section_permission",
+        {
+          p_outlet_id:
+            outlet.id,
+          p_form_id:
+            form.id,
+          p_section_id:
+            section.id,
+          p_permission:
+            "fill",
+        }
+      );
+
+      if (canFillSectionError) {
+        throw canFillSectionError;
+      }
+
+      const {
+        data: canSubmitSection,
+        error: canSubmitSectionError,
+      } = await supabase.rpc(
+        "has_section_permission",
+        {
+          p_outlet_id:
+            outlet.id,
+          p_form_id:
+            form.id,
+          p_section_id:
+            section.id,
+          p_permission:
+            "submit",
+        }
+      );
+
+      if (canSubmitSectionError) {
+        throw canSubmitSectionError;
+      }
+
+      if (
+        canFillSection !== true &&
+        canSubmitSection !== true
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Anda tidak memiliki akses untuk mengisi section ini.",
+            code:
+              "SECTION_PERMISSION_DENIED",
+          },
+          {
+            status: 403,
+          }
+        );
+      }
+    }
+
+    // ========================================================
     // BUSINESS DATE
     // ========================================================
 
@@ -495,6 +568,43 @@ export async function POST(
 
     let reportSection =
       existingSection;
+
+    // A submitted CK section is final while the shared parent
+    // report remains in progress for other PICs. It can only be
+    // edited again through the explicit reopen flow.
+    if (
+      config.sectionScoped &&
+      reportStatus !== "reopened" &&
+      reportSection &&
+      [
+        "submitted",
+        "reviewed",
+      ].includes(
+        String(
+          reportSection.status || ""
+        ).toLowerCase()
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            `${section.name} sudah disubmit.`,
+          code:
+            "SECTION_ALREADY_SUBMITTED",
+          reportId:
+            report.id,
+          reportNumber:
+            report.report_number,
+          reportSectionId:
+            reportSection.id,
+          reportSectionStatus:
+            reportSection.status,
+        },
+        {
+          status: 409,
+        }
+      );
+    }
 
     if (!reportSection) {
       const {

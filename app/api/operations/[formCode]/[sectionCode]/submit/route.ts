@@ -66,24 +66,31 @@ export async function POST(
     // PERMISSION
     // ========================================================
 
-    const permissionAccess =
-      await checkPermissionApi(
-        config.permissionCode
-      );
+    // Legacy OPENING / CLOSING keep the existing global
+    // application permission gate.
+    //
+    // Central Kitchen is section-scoped and is authorized below
+    // with has_section_permission() against the exact section.
+    if (!config.sectionScoped) {
+      const permissionAccess =
+        await checkPermissionApi(
+          config.permissionCode
+        );
 
-    if (
-      !permissionAccess.ok
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            permissionAccess.error,
-        },
-        {
-          status:
-            permissionAccess.status,
-        }
-      );
+      if (
+        !permissionAccess.ok
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              permissionAccess.error,
+          },
+          {
+            status:
+              permissionAccess.status,
+          }
+        );
+      }
     }
 
     const supabase =
@@ -288,6 +295,79 @@ export async function POST(
           status: 409,
         }
       );
+    }
+
+    // ========================================================
+    // SECTION-SCOPED SUBMIT AUTHORIZATION
+    // ========================================================
+
+    if (config.sectionScoped) {
+      const {
+        data: canSubmitSection,
+        error: canSubmitSectionError,
+      } = await supabase.rpc(
+        "has_section_permission",
+        {
+          p_outlet_id:
+            report.outlet_id,
+          p_form_id:
+            report.form_id,
+          p_section_id:
+            reportSection.section_id,
+          p_permission:
+            "submit",
+        }
+      );
+
+      if (canSubmitSectionError) {
+        throw canSubmitSectionError;
+      }
+
+      if (canSubmitSection !== true) {
+        return NextResponse.json(
+          {
+            error:
+              "Anda tidak memiliki permission untuk submit section ini.",
+            code:
+              "SECTION_SUBMIT_PERMISSION_DENIED",
+          },
+          {
+            status: 403,
+          }
+        );
+      }
+
+      const reportStatus =
+        String(
+          report.status || ""
+        ).toLowerCase();
+
+      const sectionStatus =
+        String(
+          reportSection.status || ""
+        ).toLowerCase();
+
+      if (
+        reportStatus !== "reopened" &&
+        [
+          "submitted",
+          "reviewed",
+        ].includes(
+          sectionStatus
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              `${section.name} sudah disubmit.`,
+            code:
+              "SECTION_ALREADY_SUBMITTED",
+          },
+          {
+            status: 409,
+          }
+        );
+      }
     }
 
     // ========================================================
@@ -1013,7 +1093,9 @@ export async function POST(
       status:
         allCompleted
           ? "completed"
-          : "submitted",
+          : config.sectionScoped
+            ? "in_progress"
+            : "submitted",
 
       completed_at:
         allCompleted
