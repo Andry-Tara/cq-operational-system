@@ -36,7 +36,6 @@ type PageProps = {
 export default async function OperationPage({
   params,
 }: PageProps) {
-
   const {
     formCode,
     sectionCode,
@@ -58,10 +57,6 @@ export default async function OperationPage({
     );
 
 
-  // ==========================================================
-  // VALID OPERATION
-  // ==========================================================
-
   if (!config) {
     return (
       <ErrorState
@@ -72,19 +67,17 @@ export default async function OperationPage({
   }
 
 
-  // ==========================================================
-  // FRONTEND PHASE 1
-  //
-  // Generic backend supports multiple operations,
-  // but new UI is activated for OPENING first.
-  //
-  // Existing Closing production remains untouched.
-  // ==========================================================
+  // Existing Closing Outlet remains on its dedicated
+  // production route. Generic UI is enabled for the
+  // stable Opening route and section-scoped CK forms.
+  const genericUiEnabled =
+    normalizedFormCode ===
+      "OPENING" ||
+    Boolean(
+      config.sectionScoped
+    );
 
-  if (
-    normalizedFormCode !==
-    "OPENING"
-  ) {
+  if (!genericUiEnabled) {
     return (
       <ErrorState
         title="Operation UI Not Enabled"
@@ -95,8 +88,10 @@ export default async function OperationPage({
 
 
   if (
+    normalizedFormCode ===
+      "OPENING" &&
     normalizedSectionCode !==
-    "KITCHEN"
+      "KITCHEN"
   ) {
     return (
       <ErrorState
@@ -107,22 +102,18 @@ export default async function OperationPage({
   }
 
 
-  // ==========================================================
-  // PERMISSION
-  // ==========================================================
-
-  await requirePermission(
-    config.permissionCode
-  );
+  // Legacy Opening keeps the existing app permission gate.
+  // CK is authorized by exact section permission below.
+  if (!config.sectionScoped) {
+    await requirePermission(
+      config.permissionCode
+    );
+  }
 
 
   const supabase =
     await createClient();
 
-
-  // ==========================================================
-  // AUTH
-  // ==========================================================
 
   const {
     data: {
@@ -137,10 +128,6 @@ export default async function OperationPage({
     );
   }
 
-
-  // ==========================================================
-  // PROFILE
-  // ==========================================================
 
   const {
     data: profile,
@@ -162,7 +149,7 @@ export default async function OperationPage({
   if (!profile) {
     return (
       <ErrorState
-        title="Unable to Load Opening"
+        title={`Unable to Load ${config.displayName}`}
         message="Profile user tidak ditemukan."
       />
     );
@@ -174,16 +161,12 @@ export default async function OperationPage({
   ) {
     return (
       <ErrorState
-        title="Unable to Load Opening"
+        title={`Unable to Load ${config.displayName}`}
         message="Organization user tidak ditemukan."
       />
     );
   }
 
-
-  // ==========================================================
-  // ACTIVE OUTLET
-  // ==========================================================
 
   const outlet =
     await getActiveOutlet();
@@ -195,10 +178,6 @@ export default async function OperationPage({
     );
   }
 
-
-  // ==========================================================
-  // OUTLET ACCESS
-  // ==========================================================
 
   const {
     data:
@@ -220,7 +199,7 @@ export default async function OperationPage({
   ) {
     return (
       <ErrorState
-        title="Unable to Load Opening"
+        title={`Unable to Load ${config.displayName}`}
         message={
           outletAccessError.message
         }
@@ -243,12 +222,7 @@ export default async function OperationPage({
   }
 
 
-  // ==========================================================
-  // LOAD OPENING DEFINITION
-  // ==========================================================
-
   try {
-
     const operation =
       await loadOperationDefinition({
         supabase,
@@ -267,166 +241,189 @@ export default async function OperationPage({
       });
 
 
+    if (config.sectionScoped) {
+      const {
+        data: canFill,
+        error: fillError,
+      } = await supabase.rpc(
+        "has_section_permission",
+        {
+          p_outlet_id:
+            outlet.id,
+          p_form_id:
+            operation.form.id,
+          p_section_id:
+            operation.section.id,
+          p_permission:
+            "fill",
+        }
+      );
+
+      if (fillError) {
+        throw fillError;
+      }
+
+      const {
+        data: canSubmit,
+        error: submitError,
+      } = await supabase.rpc(
+        "has_section_permission",
+        {
+          p_outlet_id:
+            outlet.id,
+          p_form_id:
+            operation.form.id,
+          p_section_id:
+            operation.section.id,
+          p_permission:
+            "submit",
+        }
+      );
+
+      if (submitError) {
+        throw submitError;
+      }
+
+      if (
+        canFill !== true &&
+        canSubmit !== true
+      ) {
+        return (
+          <ErrorState
+            title="Section Access Denied"
+            message="Section ini hanya dapat diisi oleh PIC yang ditugaskan."
+          />
+        );
+      }
+    }
+
+
     if (
       !operation.questions
         .length
     ) {
       return (
         <ErrorState
-          title="Unable to Load Opening"
-          message="Belum ada pertanyaan Opening Kitchen."
+          title={`Unable to Load ${config.displayName}`}
+          message={`Belum ada pertanyaan untuk ${operation.section.name}.`}
         />
       );
     }
 
 
+    const sectionDisplayName =
+      config.sectionScoped
+        ? (
+            operation.versionSection
+              .display_name ||
+            operation.section.name
+          )
+        : "Kitchen / BOH";
+
+    const isCentralKitchen =
+      Boolean(
+        config.sectionScoped
+      );
+
+
     return (
       <main className="min-h-screen bg-[#f4f4f4] text-[#202020]">
-
         <div className="mx-auto max-w-[1180px] px-4 py-6 sm:px-5 md:px-8 md:py-10">
 
-          {/* ==================================================
-              OPENING HEADER
-          ================================================== */}
-
           <section className="overflow-hidden rounded-[24px] border border-black/5 bg-white shadow-sm md:rounded-[28px]">
-
             <div className="p-5 sm:p-6 md:p-8">
-
               <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-
                 <div className="flex items-start gap-4">
-
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-2xl">
-
-                    ☀️
-
+                  <div
+                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-2xl ${
+                      isCentralKitchen
+                        ? "bg-red-50"
+                        : "bg-amber-50"
+                    }`}
+                  >
+                    {isCentralKitchen
+                      ? "🏭"
+                      : "☀️"}
                   </div>
 
                   <div>
-
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">
-
-                      Daily Operational
-
+                    <p
+                      className={`text-[10px] font-black uppercase tracking-[0.18em] ${
+                        isCentralKitchen
+                          ? "text-red-700"
+                          : "text-amber-700"
+                      }`}
+                    >
+                      {isCentralKitchen
+                        ? "Central Kitchen"
+                        : "Daily Operational"}
                     </p>
 
                     <h1 className="mt-1 text-2xl font-black tracking-tight text-neutral-950 md:text-3xl">
-
-                      Opening Outlet
-
+                      {config.displayName}
                     </h1>
 
                     <p className="mt-2 text-sm font-medium text-neutral-500">
-
-                      {outlet.name} · Kitchen / BOH
-
+                      {outlet.name} · {sectionDisplayName}
                     </p>
-
                   </div>
-
                 </div>
 
 
                 <div className="flex flex-wrap gap-2">
+                  {isCentralKitchen && (
+                    <Link
+                      href="/protected/central-kitchen"
+                      className="inline-flex items-center justify-center rounded-xl border border-red-100 bg-red-50 px-4 py-2.5 text-xs font-bold text-red-700 transition hover:bg-red-100"
+                    >
+                      CK Sections
+                    </Link>
+                  )}
 
                   <Link
                     href="/protected"
                     className="inline-flex items-center justify-center rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-xs font-bold text-neutral-700 transition hover:bg-neutral-50"
                   >
-
                     Dashboard
-
                   </Link>
 
                   <Link
                     href="/protected/select-outlet"
                     className="inline-flex items-center justify-center rounded-xl bg-neutral-900 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-black"
                   >
-
                     Change Outlet
-
                   </Link>
-
                 </div>
-
               </div>
 
 
               <div className="mt-6 grid grid-cols-3 gap-2 sm:gap-3">
+                <InfoBox
+                  label="Groups"
+                  value={
+                    operation
+                      .groups
+                      .length
+                  }
+                />
 
-                <div className="rounded-2xl bg-neutral-50 px-3 py-3 sm:px-4">
+                <InfoBox
+                  label="Questions"
+                  value={
+                    operation
+                      .questions
+                      .length
+                  }
+                />
 
-                  <p className="text-[9px] font-black uppercase tracking-wide text-neutral-400">
-
-                    Groups
-
-                  </p>
-
-                  <p className="mt-1 text-lg font-black text-neutral-950">
-
-                    {
-                      operation
-                        .groups
-                        .length
-                    }
-
-                  </p>
-
-                </div>
-
-
-                <div className="rounded-2xl bg-neutral-50 px-3 py-3 sm:px-4">
-
-                  <p className="text-[9px] font-black uppercase tracking-wide text-neutral-400">
-
-                    Questions
-
-                  </p>
-
-                  <p className="mt-1 text-lg font-black text-neutral-950">
-
-                    {
-                      operation
-                        .questions
-                        .length
-                    }
-
-                  </p>
-
-                </div>
-
-
-                <div className="rounded-2xl bg-neutral-50 px-3 py-3 sm:px-4">
-
-                  <p className="text-[9px] font-black uppercase tracking-wide text-neutral-400">
-
-                    Version
-
-                  </p>
-
-                  <p className="mt-1 text-lg font-black text-neutral-950">
-
-                    v{
-                      operation
-                        .formVersion
-                        .version_number
-                    }
-
-                  </p>
-
-                </div>
-
+                <InfoBox
+                  label="Version"
+                  value={`v${operation.formVersion.version_number}`}
+                />
               </div>
-
             </div>
-
           </section>
 
-
-          {/* ==================================================
-              CHECKLIST
-          ================================================== */}
 
           <OperationClient
             outlet={{
@@ -439,6 +436,24 @@ export default async function OperationPage({
               name:
                 outlet.name,
             }}
+            operation={{
+              formCode:
+                normalizedFormCode,
+
+              sectionCode:
+                normalizedSectionCode,
+
+              displayName:
+                config.displayName,
+
+              sectionName:
+                sectionDisplayName,
+
+              sectionScoped:
+                Boolean(
+                  config.sectionScoped
+                ),
+            }}
             groups={
               operation.groups
             }
@@ -448,32 +463,48 @@ export default async function OperationPage({
           />
 
         </div>
-
       </main>
     );
 
   } catch (
     error: any
   ) {
-
     return (
       <ErrorState
-        title="Unable to Load Opening"
+        title={`Unable to Load ${config.displayName}`}
         message={
           error?.message ||
-          "Opening belum tersedia."
+          `${config.displayName} belum tersedia.`
         }
         showChangeOutlet
       />
     );
-
   }
 }
 
 
-// ============================================================
-// ERROR
-// ============================================================
+function InfoBox({
+  label,
+  value,
+}: {
+  label: string;
+  value:
+    string |
+    number;
+}) {
+  return (
+    <div className="rounded-2xl bg-neutral-50 px-3 py-3 sm:px-4">
+      <p className="text-[9px] font-black uppercase tracking-wide text-neutral-400">
+        {label}
+      </p>
+
+      <p className="mt-1 text-lg font-black text-neutral-950">
+        {value}
+      </p>
+    </div>
+  );
+}
+
 
 function ErrorState({
   title,
@@ -484,58 +515,39 @@ function ErrorState({
   message: string;
   showChangeOutlet?: boolean;
 }) {
-
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f4f4f4] px-5 py-10 text-[#222]">
-
       <div className="w-full max-w-[680px] rounded-[28px] border border-black/5 bg-white px-7 py-12 text-center shadow-sm md:px-12">
-
         <div className="text-5xl">
-
           ⚠️
-
         </div>
 
         <h1 className="mt-6 text-2xl font-black tracking-tight text-neutral-950 md:text-3xl">
-
           {title}
-
         </h1>
 
         <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-neutral-500 md:text-base">
-
           {message}
-
         </p>
 
         <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-
           {showChangeOutlet && (
-
             <Link
               href="/protected/select-outlet"
               className="rounded-xl bg-red-700 px-6 py-3.5 text-sm font-bold text-white"
             >
-
               Change Outlet
-
             </Link>
-
           )}
 
           <Link
             href="/protected"
             className="rounded-xl bg-neutral-900 px-6 py-3.5 text-sm font-bold text-white"
           >
-
             Back to Dashboard
-
           </Link>
-
         </div>
-
       </div>
-
     </main>
   );
 }

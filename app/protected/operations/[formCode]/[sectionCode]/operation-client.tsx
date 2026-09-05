@@ -172,6 +172,7 @@ function ProgressSummaryItem({
 
 export default function OperationClient({
   outlet,
+  operation,
   groups,
   questions,
 }: {
@@ -180,10 +181,33 @@ export default function OperationClient({
     code: string;
     name: string;
   };
+  operation: {
+    formCode: string;
+    sectionCode: string;
+    displayName: string;
+    sectionName: string;
+    sectionScoped: boolean;
+  };
   groups: Group[];
   questions: Question[];
 }) {
   const supabase = createClient();
+
+  const apiBase =
+    `/api/operations/${operation.formCode}/${operation.sectionCode}`;
+
+  const operationKind =
+    operation.formCode.startsWith(
+      "CLOSING"
+    )
+      ? "Closing"
+      : "Opening";
+
+  const operationLabel =
+    operation.displayName;
+
+  const sectionLabel =
+    operation.sectionName;
 
   const [answers, setAnswers] =
     useState<Record<string, AnswerState>>({});
@@ -288,7 +312,7 @@ export default function OperationClient({
           try {
             const response =
               await fetch(
-                "/api/operations/OPENING/KITCHEN/session",
+                `${apiBase}/session`,
                 {
                   method: "POST",
                   cache: "no-store",
@@ -306,7 +330,7 @@ export default function OperationClient({
               const failure: any =
                 new Error(
                   payload?.error ||
-                    "Unable to start Opening session."
+                    `Unable to start ${operationLabel} session.`
                 );
 
               failure.status =
@@ -324,7 +348,7 @@ export default function OperationClient({
             ) {
               const failure: any =
                 new Error(
-                  "Opening session tidak lengkap: reportId / reportSectionId belum tersedia."
+                  `${operationLabel} session tidak lengkap: reportId / reportSectionId belum tersedia.`
                 );
 
               failure.code =
@@ -377,7 +401,7 @@ export default function OperationClient({
           throw (
             sessionFailure ||
             new Error(
-              "Unable to start Opening session."
+              `Unable to start ${operationLabel} session.`
             )
           );
         }
@@ -496,7 +520,11 @@ export default function OperationClient({
     return () => {
       cancelled = true;
     };
-  }, [sessionRetryKey]);
+  }, [
+    apiBase,
+    operationLabel,
+    sessionRetryKey,
+  ]);
 
 
   function retrySession() {
@@ -1219,7 +1247,7 @@ export default function OperationClient({
       setSubmitting(true);
       setErrorMessage("");
       setSubmitStatus(
-        "Preparing Opening report..."
+        `Preparing ${operationLabel}...`
       );
 
       // ======================================================
@@ -1231,7 +1259,7 @@ export default function OperationClient({
 
       if (!session) {
         throw new Error(
-          "Opening session belum siap. Silakan tunggu sebentar."
+          `${operationLabel} session belum siap. Silakan tunggu sebentar.`
         );
       }
 
@@ -1385,114 +1413,111 @@ export default function OperationClient({
       }
 
       // ======================================================
-      // GENERATE PDF REPORT
-      // ======================================================
-
-      setSubmitStatus(
-        "Generating PDF report..."
-      );
-
-      
-      // ======================================================
-      // PDF ANSWERS
+      // PDF REPORT
       //
-      // New photo:
-      //   use answer.photo
-      //
-      // Existing reopened photo:
-      //   use existingPhotoFile downloaded from Storage
+      // Existing Opening keeps its stable single-section PDF.
+      // CK does NOT generate a parent PDF from one section,
+      // because multiple PICs share the same parent report.
+      // Consolidated CK PDF is handled in a later phase.
       // ======================================================
 
-      const pdfAnswers:
-        Record<string, AnswerState> = {};
-
-      for (const question of questions) {
-        const answer =
-          answers[question.id];
-
-        if (!answer) continue;
-
-        pdfAnswers[
-          question.id
-        ] = {
-          ...answer,
-
-          photo:
-            answer.photo ||
-            answer.existingPhotoFile,
-        };
-      }
-
-      const pdfBytes =
-        await buildOpeningPdf({
-          reportNumber:
-            session.reportNumber,
-          outletName:
-            outlet.name,
-          submittedBy:
-            "CQ Operational User",
-          groups,
-          questions,
-          answers:
-            pdfAnswers,
-
-        });
-
-      const pdfBlob =
-        new Blob(
-          [new Uint8Array(pdfBytes)],
-          {
-            type: "application/pdf",
-          }
+      if (!operation.sectionScoped) {
+        setSubmitStatus(
+          "Generating PDF report..."
         );
 
-      pdfStoragePath =
-        `reports/${reportId}/` +
-        `${session.reportNumber}.pdf`;
+        const pdfAnswers:
+          Record<string, AnswerState> = {};
 
-      const {
-        error: pdfUploadError,
-      } = await supabase.storage
-        .from(
-          "operational-reports"
-        )
-        .upload(
-          pdfStoragePath,
-          pdfBlob,
-          {
-            contentType:
-              "application/pdf",
-            cacheControl:
-              "3600",
-            upsert: true,
-          }
-        );
+        for (const question of questions) {
+          const answer =
+            answers[question.id];
 
-      if (pdfUploadError) {
-        throw new Error(
-          `PDF upload gagal: ${pdfUploadError.message}`
-        );
-      }
+          if (!answer) continue;
 
-      const {
-        error: pdfUpdateError,
-      } = await supabase
-        .from("reports")
-        .update({
-          pdf_storage_path:
+          pdfAnswers[
+            question.id
+          ] = {
+            ...answer,
+
+            photo:
+              answer.photo ||
+              answer.existingPhotoFile,
+          };
+        }
+
+        const pdfBytes =
+          await buildOpeningPdf({
+            reportNumber:
+              session.reportNumber,
+            outletName:
+              outlet.name,
+            submittedBy:
+              "CQ Operational User",
+            groups,
+            questions,
+            answers:
+              pdfAnswers,
+          });
+
+        const pdfBlob =
+          new Blob(
+            [new Uint8Array(pdfBytes)],
+            {
+              type:
+                "application/pdf",
+            }
+          );
+
+        pdfStoragePath =
+          `reports/${reportId}/` +
+          `${session.reportNumber}.pdf`;
+
+        const {
+          error: pdfUploadError,
+        } = await supabase.storage
+          .from(
+            "operational-reports"
+          )
+          .upload(
             pdfStoragePath,
-          pdf_generated_at:
-            new Date().toISOString(),
-        })
-        .eq(
-          "id",
-          reportId
-        );
+            pdfBlob,
+            {
+              contentType:
+                "application/pdf",
+              cacheControl:
+                "3600",
+              upsert: true,
+            }
+          );
 
-      if (pdfUpdateError) {
-        throw new Error(
-          `PDF metadata gagal disimpan: ${pdfUpdateError.message}`
-        );
+        if (pdfUploadError) {
+          throw new Error(
+            `PDF upload gagal: ${pdfUploadError.message}`
+          );
+        }
+
+        const {
+          error: pdfUpdateError,
+        } = await supabase
+          .from("reports")
+          .update({
+            pdf_storage_path:
+              pdfStoragePath,
+            pdf_generated_at:
+              new Date()
+                .toISOString(),
+          })
+          .eq(
+            "id",
+            reportId
+          );
+
+        if (pdfUpdateError) {
+          throw new Error(
+            `PDF metadata gagal disimpan: ${pdfUpdateError.message}`
+          );
+        }
       }
 
       // ======================================================
@@ -1505,7 +1530,7 @@ export default function OperationClient({
 
       const submitResponse =
         await fetch(
-          "/api/operations/OPENING/KITCHEN/submit",
+          `${apiBase}/submit`,
           {
             method: "POST",
             headers: {
@@ -1527,12 +1552,14 @@ export default function OperationClient({
       if (!submitResponse.ok) {
         throw new Error(
           submitData.error ||
-            "Unable to submit Opening"
+            `Unable to submit ${operationLabel}`
         );
       }
 
       setSubmitStatus(
-        "Opening report saved."
+        operation.sectionScoped
+          ? `${sectionLabel} submitted.`
+          : `${operationLabel} report saved.`
       );
 
       setResult({
@@ -1597,13 +1624,13 @@ export default function OperationClient({
       ).format(submittedDate);
 
     const lines: string[] = [
-      "*OPENING REPORT*",
+      `*${operationLabel.toUpperCase()}*`,
       "*CHONG QING HOT POT*",
       "",
       `📍 Outlet: ${outlet.name}`,
       `📅 Date: ${date}`,
       `⏰ Submitted: ${time} WIB`,
-      "🏷 Section: BOH / Kitchen",
+      `🏷 Section: ${sectionLabel}`,
       "",
       "*SUMMARY*",
       `- Checklist: ${result.answerCount}/${totalQuestions}`,
@@ -1676,7 +1703,11 @@ export default function OperationClient({
       `- Photo Evidence: ${result.photoCount}`,
       `- Issues: ${result.issueCount}`,
       "",
-      "*OPENING COMPLETED*"
+      `*${
+        result.completed
+          ? `${operationLabel.toUpperCase()} COMPLETED`
+          : `${sectionLabel.toUpperCase()} SUBMITTED`
+      }*`
     );
 
     return lines.join("\n");
@@ -1786,7 +1817,7 @@ export default function OperationClient({
         buildReportText();
 
       const shareTitle =
-        `Opening Report - ${outlet.name}`;
+        `${operationLabel} - ${sectionLabel} - ${outlet.name}`;
 
       // ======================================================
       // COMPACT FALLBACK TEXT
@@ -2036,12 +2067,20 @@ export default function OperationClient({
           </p>
 
           <h2 className="mt-2 text-3xl font-bold tracking-tight text-neutral-900">
-            Opening Completed
+            {result.completed
+              ? `${operationLabel} Completed`
+              : `${sectionLabel} Submitted`}
           </h2>
 
           <p className="mt-2 text-neutral-500">
             {outlet.name}
           </p>
+
+          {operation.sectionScoped && (
+            <p className="mt-1 text-sm font-semibold text-red-700">
+              {operationLabel} · {sectionLabel}
+            </p>
+          )}
 
           <p className="mt-1 text-sm text-neutral-400">
             {submittedTime} WIB
@@ -2075,25 +2114,29 @@ export default function OperationClient({
           </div>
 
           <div className="mt-7 grid gap-3">
-            <button
-              type="button"
-              onClick={
-                sharePdf
-              }
-              className="rounded-xl bg-emerald-600 px-6 py-4 font-semibold text-white transition hover:bg-emerald-700"
-            >
-              📤 Share Report to WhatsApp
-            </button>
+            {result.pdfStoragePath && (
+              <>
+                <button
+                  type="button"
+                  onClick={
+                    sharePdf
+                  }
+                  className="rounded-xl bg-emerald-600 px-6 py-4 font-semibold text-white transition hover:bg-emerald-700"
+                >
+                  📤 Share Report to WhatsApp
+                </button>
 
-            <button
-              type="button"
-              onClick={
-                downloadPdf
-              }
-              className="rounded-xl bg-red-700 px-6 py-4 font-semibold text-white transition hover:bg-red-800"
-            >
-              ⬇ Download PDF
-            </button>
+                <button
+                  type="button"
+                  onClick={
+                    downloadPdf
+                  }
+                  className="rounded-xl bg-red-700 px-6 py-4 font-semibold text-white transition hover:bg-red-800"
+                >
+                  ⬇ Download PDF
+                </button>
+              </>
+            )}
 
             <button
               type="button"
@@ -2106,16 +2149,28 @@ export default function OperationClient({
             </button>
 
             <Link
-              href="/protected"
+              href={
+                operation.sectionScoped
+                  ? "/protected/central-kitchen"
+                  : "/protected"
+              }
               className="rounded-xl border border-neutral-200 px-6 py-4 font-semibold text-neutral-700 transition hover:bg-neutral-50"
             >
-              Back to Dashboard
+              {operation.sectionScoped
+                ? "Back to CK Sections"
+                : "Back to Dashboard"}
             </Link>
           </div>
 
-          <p className="mt-5 text-xs leading-5 text-neutral-400">
-            Share PDF membuka native share sheet pada HP/tablet yang mendukung. Pilih WhatsApp lalu group outlet yang dituju. Pada desktop, PDF akan didownload untuk dilampirkan manual ke WhatsApp Web.
-          </p>
+          {result.pdfStoragePath ? (
+            <p className="mt-5 text-xs leading-5 text-neutral-400">
+              Share PDF membuka native share sheet pada HP/tablet yang mendukung. Pilih WhatsApp lalu group outlet yang dituju. Pada desktop, PDF akan didownload untuk dilampirkan manual ke WhatsApp Web.
+            </p>
+          ) : (
+            <p className="mt-5 text-xs leading-5 text-neutral-400">
+              Section berhasil disimpan. Consolidated Central Kitchen PDF akan tersedia setelah seluruh required section selesai pada fase report berikutnya.
+            </p>
+          )}
         </div>
       </section>
     );
@@ -2852,7 +2907,9 @@ export default function OperationClient({
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="font-semibold">
-                Opening
+                {operation.sectionScoped
+                  ? sectionLabel
+                  : operationKind}{" "}
                 Checklist
               </p>
 
@@ -2898,7 +2955,9 @@ export default function OperationClient({
             >
               {submitting
                 ? "Submitting..."
-                : "Submit Opening"}
+                : operation.sectionScoped
+                  ? `Submit ${sectionLabel}`
+                  : `Submit ${operationKind}`}
             </button>
           </div>
 
