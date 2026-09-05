@@ -45,6 +45,8 @@ type ReportSection = {
   question_count: number;
   answer_count: number;
   photo_count: number;
+  required_photo_count: number;
+  required_photo_complete_count: number;
 };
 
 
@@ -83,6 +85,8 @@ type Report = {
   question_count: number;
 
   photo_count: number;
+  required_photo_count: number;
+  required_photo_complete_count: number;
 
   issue_count: number;
   open_issue_count: number;
@@ -1330,9 +1334,14 @@ function ReportCard({
       ?.answer_count ??
     0;
 
-  const photoCount =
+  const requiredPhotoCount =
     report
-      ?.photo_count ??
+      ?.required_photo_count ??
+    0;
+
+  const requiredPhotoCompleteCount =
+    report
+      ?.required_photo_complete_count ??
     0;
 
   const answerProgress =
@@ -1439,14 +1448,10 @@ function ReportCard({
           />
 
           <MiniMetric
-            label="Photos"
+            label="Required Photos"
             value={
               report
-                ? questionCount
-                  ? `${photoCount}/${questionCount}`
-                  : String(
-                      photoCount
-                    )
+                ? `${requiredPhotoCompleteCount}/${requiredPhotoCount}`
                 : "-"
             }
           />
@@ -1630,6 +1635,12 @@ function SectionCard({
   const questionCount =
     section.question_count;
 
+  const requiredPhotoCount =
+    section.required_photo_count;
+
+  const requiredPhotoCompleteCount =
+    section.required_photo_complete_count;
+
   const answerProgress =
     percentage(
       section.answer_count,
@@ -1688,13 +1699,11 @@ function SectionCard({
 
         <div>
           <p className="text-[8px] font-black uppercase tracking-[0.1em] text-neutral-400">
-            Photos
+            Required Photos
           </p>
 
           <p className="mt-0.5 text-[11px] font-black text-neutral-700">
-            {questionCount
-              ? `${section.photo_count}/${questionCount}`
-              : section.photo_count}
+            {`${requiredPhotoCompleteCount}/${requiredPhotoCount}`}
           </p>
         </div>
 

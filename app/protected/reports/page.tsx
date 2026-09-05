@@ -2,6 +2,10 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 
+import {
+  isOperationalPhotoRequired,
+} from "@/lib/operations/evidence";
+
 import ReportsHistoryClient from "./reports-history-client";
 
 
@@ -63,6 +67,24 @@ function uniqueIds(
       ) as string[]
     ),
   ];
+}
+
+
+function reportAnswerScalarValue(
+  answerValue: any
+) {
+  if (
+    answerValue &&
+    typeof answerValue === "object" &&
+    !Array.isArray(
+      answerValue
+    ) &&
+    "value" in answerValue
+  ) {
+    return answerValue.value;
+  }
+
+  return answerValue;
 }
 
 
@@ -650,7 +672,11 @@ export default async function ReportsPage() {
         .from("questions")
         .select(`
           id,
-          version_section_id
+          version_section_id,
+          question_type,
+          min_value,
+          max_value,
+          config
         `)
         .in(
           "version_section_id",
@@ -701,7 +727,9 @@ export default async function ReportsPage() {
         )
         .select(`
           id,
-          report_section_id
+          report_section_id,
+          question_id,
+          answer_value
         `)
         .in(
           "report_section_id",
@@ -740,7 +768,8 @@ export default async function ReportsPage() {
         )
         .select(`
           id,
-          report_section_id
+          report_section_id,
+          answer_id
         `)
         .in(
           "report_section_id",
@@ -826,6 +855,12 @@ export default async function ReportsPage() {
     );
 
 
+  const questionsByVersionSection =
+    new Map<
+      string,
+      any[]
+    >();
+
   const questionCountByVersionSection =
     new Map<
       string,
@@ -839,6 +874,20 @@ export default async function ReportsPage() {
     const key =
       question.version_section_id;
 
+    const currentQuestions =
+      questionsByVersionSection.get(
+        key
+      ) ?? [];
+
+    currentQuestions.push(
+      question
+    );
+
+    questionsByVersionSection.set(
+      key,
+      currentQuestions
+    );
+
     questionCountByVersionSection.set(
       key,
       (
@@ -850,6 +899,12 @@ export default async function ReportsPage() {
   }
 
 
+  const answerBySectionQuestion =
+    new Map<
+      string,
+      any
+    >();
+
   const answerCountBySection =
     new Map<
       string,
@@ -860,6 +915,11 @@ export default async function ReportsPage() {
     const answer of
     answerRows
   ) {
+    answerBySectionQuestion.set(
+      `${answer.report_section_id}:${answer.question_id}`,
+      answer
+    );
+
     answerCountBySection.set(
       answer.report_section_id,
       (
@@ -871,6 +931,11 @@ export default async function ReportsPage() {
   }
 
 
+  const photoAnswerIds =
+    new Set<
+      string
+    >();
+
   const photoCountBySection =
     new Map<
       string,
@@ -881,6 +946,14 @@ export default async function ReportsPage() {
     const photo of
     photoRows
   ) {
+    if (
+      photo.answer_id
+    ) {
+      photoAnswerIds.add(
+        photo.answer_id
+      );
+    }
+
     photoCountBySection.set(
       photo.report_section_id,
       (
@@ -966,6 +1039,59 @@ export default async function ReportsPage() {
         reportSection.section_id
       );
 
+    const sectionQuestions =
+      questionsByVersionSection.get(
+        reportSection.version_section_id
+      ) ?? [];
+
+    let requiredPhotoCount =
+      0;
+
+    let requiredPhotoCompleteCount =
+      0;
+
+    for (
+      const question of
+      sectionQuestions
+    ) {
+      const answer =
+        answerBySectionQuestion.get(
+          `${reportSection.id}:${question.id}`
+        );
+
+      const photoRequired =
+        isOperationalPhotoRequired(
+          question,
+          answer
+            ? {
+                value:
+                  reportAnswerScalarValue(
+                    answer.answer_value
+                  ),
+              }
+            : null
+        );
+
+      if (
+        !photoRequired
+      ) {
+        continue;
+      }
+
+      requiredPhotoCount +=
+        1;
+
+      if (
+        answer?.id &&
+        photoAnswerIds.has(
+          answer.id
+        )
+      ) {
+        requiredPhotoCompleteCount +=
+          1;
+      }
+    }
+
     const hydratedSection = {
       id:
         reportSection.id,
@@ -1003,6 +1129,12 @@ export default async function ReportsPage() {
         photoCountBySection.get(
           reportSection.id
         ) ?? 0,
+
+      required_photo_count:
+        requiredPhotoCount,
+
+      required_photo_complete_count:
+        requiredPhotoCompleteCount,
     };
 
     const current =
@@ -1082,6 +1214,34 @@ export default async function ReportsPage() {
             0
           );
 
+        const requiredPhotoCount =
+          sections.reduce(
+            (
+              total,
+              section
+            ) =>
+              total +
+              (
+                section.required_photo_count ??
+                0
+              ),
+            0
+          );
+
+        const requiredPhotoCompleteCount =
+          sections.reduce(
+            (
+              total,
+              section
+            ) =>
+              total +
+              (
+                section.required_photo_complete_count ??
+                0
+              ),
+            0
+          );
+
         return {
           ...report,
 
@@ -1127,6 +1287,12 @@ export default async function ReportsPage() {
 
           photo_count:
             photoCount,
+
+          required_photo_count:
+            requiredPhotoCount,
+
+          required_photo_complete_count:
+            requiredPhotoCompleteCount,
 
           issue_count:
             issueCountByReport.get(
