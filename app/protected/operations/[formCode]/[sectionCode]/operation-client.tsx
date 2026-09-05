@@ -12,6 +12,7 @@ import {
   compressOperationalPhoto,
 } from "@/lib/operations/compress-operational-photo";
 import { buildOpeningPdf } from "@/lib/pdf/opening-report";
+import { buildClosingPdf } from "@/lib/pdf/closing-report";
 import {
   getOperationalEvidenceMode,
   hasOperationalPhotoEvidence,
@@ -76,13 +77,21 @@ type AnswerState = {
 };
 
 type SubmitResult = {
+  reportId: string;
   reportNumber: string;
   submittedAt: string;
   answerCount: number;
   photoCount: number;
   issueCount: number;
   completed: boolean;
+
+  picCompleted: boolean | null;
+  picAssignedCount: number | null;
+  picCompletedCount: number | null;
+  picReadyForPdf: boolean;
+
   pdfStoragePath: string;
+  pdfError: string | null;
 };
 
 
@@ -173,6 +182,7 @@ function ProgressSummaryItem({
 export default function OperationClient({
   outlet,
   operation,
+  pic,
   groups,
   questions,
 }: {
@@ -188,6 +198,13 @@ export default function OperationClient({
     sectionName: string;
     sectionScoped: boolean;
   };
+
+  pic: {
+    id: string;
+    name: string;
+    jobTitle: string | null;
+  };
+
   groups: Group[];
   questions: Question[];
 }) {
@@ -1216,7 +1233,7 @@ export default function OperationClient({
     }
   })();
 
-  
+
   const reopenQuestionIdSet =
     useMemo(
       () =>
@@ -1234,6 +1251,598 @@ export default function OperationClient({
           ?.questionIds,
       ]
     );
+
+  async function generatePicPdf(
+    reportId: string
+  ): Promise<string> {
+    setSubmitStatus(
+      "Preparing your CK report..."
+    );
+
+    // ========================================================
+    // LOAD ALL COMPLETED SECTIONS FOR CURRENT PIC
+    // ========================================================
+
+    const response =
+      await fetch(
+        `/api/operations/${operation.formCode}/pic-report?reportId=${encodeURIComponent(
+          reportId
+        )}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      );
+
+    const data =
+      await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+          "Unable to prepare PIC report."
+      );
+    }
+
+    if (!data.readyForPdf) {
+      throw new Error(
+        "PIC checklist belum lengkap."
+      );
+    }
+
+    const sections:
+      any[] =
+      Array.isArray(
+        data.sections
+      )
+        ? data.sections
+        : [];
+
+    if (!sections.length) {
+      throw new Error(
+        "Tidak ada section untuk PIC PDF."
+      );
+    }
+
+    // ========================================================
+    // FLATTEN:
+    //
+    // CK SECTION
+    //   -> QUESTION GROUP
+    //
+    // becomes:
+    //
+    // MAIN WAREHOUSE · CLEANING
+    // MAIN WAREHOUSE · STORAGE
+    // SECONDARY WAREHOUSE · GENERAL
+    // ========================================================
+
+    const pdfGroups:
+      Group[] = [];
+
+    const pdfQuestions:
+      Question[] = [];
+
+    const pdfAnswers:
+      Record<
+        string,
+        AnswerState
+      > = {};
+
+    const photoItems =
+      sections.flatMap(
+        (
+          section: any
+        ) =>
+          (
+            section.answers ??
+            []
+          ).filter(
+            (
+              answer: any
+            ) =>
+              Boolean(
+                answer.existingPhoto
+                  ?.storagePath
+              )
+          )
+      );
+
+    const totalPhotos =
+      photoItems.length;
+
+    let photoIndex =
+      0;
+
+    for (
+      const section of
+      sections
+    ) {
+      const sectionName =
+        section.displayName ||
+        section.name ||
+        section.code ||
+        "Section";
+
+      const sectionGroups:
+        any[] =
+        Array.isArray(
+          section.groups
+        )
+          ? section.groups
+          : [];
+
+      const sectionQuestions:
+        any[] =
+        Array.isArray(
+          section.questions
+        )
+          ? section.questions
+          : [];
+
+      const sectionAnswers:
+        any[] =
+        Array.isArray(
+          section.answers
+        )
+          ? section.answers
+          : [];
+
+      // ------------------------------------------------------
+      // Synthetic group for questions without question_group_id
+      // ------------------------------------------------------
+
+      const hasUngrouped =
+        sectionQuestions.some(
+          (
+            question: any
+          ) =>
+            !question.question_group_id
+        );
+
+      const generalGroupId =
+        hasUngrouped
+          ? `ck-general-${section.sectionId}`
+          : null;
+
+      if (generalGroupId) {
+        pdfGroups.push({
+          id:
+            generalGroupId,
+
+          code:
+            `${section.code || "SECTION"}-GENERAL`,
+
+          name:
+            `${sectionName} · GENERAL`,
+
+          description:
+            null,
+
+          sort_order:
+            pdfGroups.length,
+        });
+      }
+
+      // ------------------------------------------------------
+      // Existing question groups
+      // ------------------------------------------------------
+
+      for (
+        const group of
+        sectionGroups
+      ) {
+        pdfGroups.push({
+          id:
+            group.id,
+
+          code:
+            group.code ||
+            "",
+
+          name:
+            `${sectionName} · ${group.name}`,
+
+          description:
+            group.description ??
+            null,
+
+          sort_order:
+            pdfGroups.length,
+        });
+      }
+
+      // ------------------------------------------------------
+      // Questions
+      // ------------------------------------------------------
+
+      for (
+        const question of
+        sectionQuestions
+      ) {
+        pdfQuestions.push({
+          id:
+            question.id,
+
+          question_group_id:
+            question.question_group_id ||
+            generalGroupId,
+
+          code:
+            question.code,
+
+          question_text:
+            question.question_text,
+
+          help_text:
+            question.help_text ??
+            null,
+
+          question_type:
+            question.question_type,
+
+          is_required:
+            Boolean(
+              question.is_required
+            ),
+
+          unit:
+            question.unit ??
+            null,
+
+          min_value:
+            question.min_value ??
+            null,
+
+          max_value:
+            question.max_value ??
+            null,
+
+          sort_order:
+            question.sort_order ??
+            0,
+
+          config:
+            question.config ??
+            null,
+        });
+      }
+
+      // ------------------------------------------------------
+      // Answers + photo evidence
+      // ------------------------------------------------------
+
+      for (
+        const saved of
+        sectionAnswers
+      ) {
+        const answer:
+          AnswerState = {
+          notes:
+            saved.notes ||
+            "",
+
+          correctiveAction:
+            saved.correctiveAction ||
+            "",
+        };
+
+        if (
+          saved.value !==
+            null &&
+          saved.value !==
+            undefined
+        ) {
+          answer.value =
+            saved.value;
+        }
+
+        const photo =
+          saved.existingPhoto;
+
+        if (
+          photo?.storagePath
+        ) {
+          photoIndex += 1;
+
+          setSubmitStatus(
+            `Loading CK photo ${photoIndex} of ${totalPhotos}...`
+          );
+
+          const bucket =
+            photo.storageBucket ||
+            "operational-photos";
+
+          const {
+            data:
+              photoBlob,
+            error:
+              photoError,
+          } =
+            await supabase.storage
+              .from(bucket)
+              .download(
+                photo.storagePath
+              );
+
+          if (
+            photoError ||
+            !photoBlob
+          ) {
+            throw new Error(
+              `Unable to load photo evidence: ${
+                photoError?.message ||
+                photo.storagePath
+              }`
+            );
+          }
+
+          const filename =
+            photo.originalFilename ||
+            `ck-photo-${photoIndex}.jpg`;
+
+          answer.photo =
+            new File(
+              [
+                photoBlob,
+              ],
+              filename,
+              {
+                type:
+                  photo.mimeType ||
+                  photoBlob.type ||
+                  "image/jpeg",
+              }
+            );
+        }
+
+        pdfAnswers[
+          saved.questionId
+        ] = answer;
+      }
+    }
+
+    // ========================================================
+    // PDF IDENTITY
+    // ========================================================
+
+    const rawPicName =
+      data.pic?.name ||
+      pic.name ||
+      "PIC";
+
+    const safePicName =
+      String(
+        rawPicName
+      )
+        .normalize(
+          "NFKD"
+        )
+        .replace(
+          /[\u0300-\u036f]/g,
+          ""
+        )
+        .replace(
+          /[^a-zA-Z0-9]+/g,
+          "-"
+        )
+        .replace(
+          /^-+|-+$/g,
+          ""
+        )
+        .toUpperCase() ||
+      "PIC";
+
+    const parentReportNumber =
+      String(
+        data.report
+          ?.reportNumber ||
+        "CK-REPORT"
+      );
+
+    const picReportNumber =
+      `${parentReportNumber}-${safePicName}`;
+
+    // ========================================================
+    // CK REPORT AREA
+    //
+    // Warehouse-only responsibility:
+    //   CENTRAL KITCHEN - STORE
+    //
+    // Any non-warehouse responsibility:
+    //   CENTRAL KITCHEN - PRODUCTION
+    // ========================================================
+
+    const isCentralKitchenStore =
+      sections.length > 0 &&
+      sections.every(
+        (
+          section: any
+        ) => {
+          const sectionIdentity =
+            String(
+              section.displayName ||
+              section.name ||
+              section.code ||
+              ""
+            )
+              .trim()
+              .toUpperCase();
+
+          return sectionIdentity.includes(
+            "WAREHOUSE"
+          );
+        }
+      );
+
+    const reportArea =
+      isCentralKitchenStore
+        ? "CENTRAL KITCHEN - STORE"
+        : "CENTRAL KITCHEN - PRODUCTION";
+
+    // ========================================================
+    // BUILD PDF
+    // ========================================================
+
+    setSubmitStatus(
+      "Generating your CK PDF..."
+    );
+
+    const pdfBytes =
+      operation.formCode.startsWith(
+        "CLOSING"
+      )
+        ? await buildClosingPdf({
+            reportNumber:
+              picReportNumber,
+
+            outletName:
+              data.outlet?.name ||
+              outlet.name,
+
+            submittedBy:
+              rawPicName,
+
+            reportArea,
+
+            groups:
+              pdfGroups,
+
+            questions:
+              pdfQuestions,
+
+            answers:
+              pdfAnswers,
+          })
+        : await buildOpeningPdf({
+            reportNumber:
+              picReportNumber,
+
+            outletName:
+              data.outlet?.name ||
+              outlet.name,
+
+            submittedBy:
+              rawPicName,
+
+            reportArea,
+
+            groups:
+              pdfGroups,
+
+            questions:
+              pdfQuestions,
+
+            answers:
+              pdfAnswers,
+          });
+
+    const pdfBlob =
+      new Blob(
+        [
+          new Uint8Array(
+            pdfBytes
+          ),
+        ],
+        {
+          type:
+            "application/pdf",
+        }
+      );
+
+    // ========================================================
+    // USER-SCOPED STORAGE PATH
+    // ========================================================
+
+    const filename =
+      `${picReportNumber}.pdf`;
+
+    const pdfStoragePath =
+      `reports/${reportId}/pic/${pic.id}/${filename}`;
+
+    setSubmitStatus(
+      "Saving your CK PDF..."
+    );
+
+    const {
+      error:
+        uploadError,
+    } =
+      await supabase.storage
+        .from(
+          "operational-reports"
+        )
+        .upload(
+          pdfStoragePath,
+          pdfBlob,
+          {
+            contentType:
+              "application/pdf",
+
+            cacheControl:
+              "3600",
+
+            upsert:
+              true,
+          }
+        );
+
+    if (uploadError) {
+      throw new Error(
+        `PIC PDF upload gagal: ${uploadError.message}`
+      );
+    }
+
+    // ========================================================
+    // EXPORT METADATA
+    // ========================================================
+
+    const generatedAt =
+      new Date()
+        .toISOString();
+
+    const {
+      error:
+        exportError,
+    } =
+      await supabase
+        .from(
+          "report_pic_exports"
+        )
+        .upsert(
+          {
+            report_id:
+              reportId,
+
+            user_id:
+              pic.id,
+
+            pic_name:
+              rawPicName,
+
+            pdf_storage_path:
+              pdfStoragePath,
+
+            pdf_generated_at:
+              generatedAt,
+
+            updated_at:
+              generatedAt,
+          },
+          {
+            onConflict:
+              "report_id,user_id",
+          }
+        );
+
+    if (exportError) {
+      throw new Error(
+        `PIC PDF metadata gagal disimpan: ${exportError.message}`
+      );
+    }
+
+    return pdfStoragePath;
+  }
 
   async function handleSubmit() {
     if (
@@ -1556,13 +2165,54 @@ export default function OperationClient({
         );
       }
 
-      setSubmitStatus(
-        operation.sectionScoped
-          ? `${sectionLabel} submitted.`
-          : `${operationLabel} report saved.`
-      );
+      let picPdfError:
+        string | null = null;
+
+      if (
+        operation.sectionScoped &&
+        Boolean(
+          submitData.picReadyForPdf
+        )
+      ) {
+        try {
+          pdfStoragePath =
+            await generatePicPdf(
+              reportId
+            );
+
+          setSubmitStatus(
+            "Your CK PDF is ready."
+          );
+        } catch (
+          pdfGenerationError: any
+        ) {
+          console.error(
+            "PIC PDF generation failed:",
+            pdfGenerationError
+          );
+
+          picPdfError =
+            pdfGenerationError?.message ||
+            "PIC PDF gagal dibuat.";
+
+          // Checklist has already been submitted successfully.
+          // PDF failure must not make the submit appear failed.
+          setSubmitStatus(
+            `${sectionLabel} submitted, but PIC PDF could not be generated.`
+          );
+        }
+      } else {
+        setSubmitStatus(
+          operation.sectionScoped
+            ? `${sectionLabel} submitted.`
+            : `${operationLabel} report saved.`
+        );
+      }
 
       setResult({
+        reportId:
+          submitData.reportId,
+
         reportNumber:
           submitData.reportNumber,
         submittedAt:
@@ -1575,7 +2225,24 @@ export default function OperationClient({
           submitData.issueCount,
         completed:
           submitData.completed,
-        pdfStoragePath,
+
+          picCompleted:
+            submitData.picCompleted ?? null,
+
+          picAssignedCount:
+            submitData.picAssignedCount ?? null,
+
+          picCompletedCount:
+            submitData.picCompletedCount ?? null,
+
+          picReadyForPdf:
+            Boolean(
+              submitData.picReadyForPdf
+            ),
+
+          pdfStoragePath,
+          pdfError:
+            picPdfError,
       });
 
       window.scrollTo({
@@ -1713,11 +2380,257 @@ export default function OperationClient({
     return lines.join("\n");
   }
 
+  // ==========================================================
+  // CK CONSOLIDATED PIC REPORT TEXT
+  //
+  // Used after all sections assigned to the current PIC
+  // are complete. Detailed checklist stays in the PDF.
+  // ==========================================================
+
+  async function buildPicConsolidatedReportText() {
+
+    if (!result) return "";
+
+    const response =
+      await fetch(
+        `/api/operations/${operation.formCode}/pic-report?reportId=${encodeURIComponent(
+          result.reportId
+        )}`,
+        {
+          cache: "no-store",
+        }
+      );
+
+    const data =
+      await response.json();
+
+    if (
+      !response.ok ||
+      !data?.readyForPdf
+    ) {
+      throw new Error(
+        data?.error ||
+          "Unable to prepare consolidated CK summary."
+      );
+    }
+
+    const sections: any[] =
+      Array.isArray(
+        data.sections
+      )
+        ? data.sections
+        : [];
+
+    const submittedDate =
+      new Date(
+        result.submittedAt
+      );
+
+    const timezone =
+      data.outlet?.timezone ||
+      "Asia/Jakarta";
+
+    const date =
+      new Intl.DateTimeFormat(
+        "id-ID",
+        {
+          dateStyle: "long",
+          timeZone: timezone,
+        }
+      ).format(
+        submittedDate
+      );
+
+    const time =
+      new Intl.DateTimeFormat(
+        "id-ID",
+        {
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: timezone,
+        }
+      ).format(
+        submittedDate
+      );
+
+    const rawPicName =
+      data.pic?.name ||
+      pic.name ||
+      "PIC";
+
+    const safePicName =
+      String(rawPicName)
+        .normalize("NFKD")
+        .replace(
+          /[\u0300-\u036f]/g,
+          ""
+        )
+        .replace(
+          /[^a-zA-Z0-9]+/g,
+          "-"
+        )
+        .replace(
+          /^-+|-+$/g,
+          ""
+        )
+        .toUpperCase() ||
+      "PIC";
+
+    const parentReportNumber =
+      String(
+        data.report?.reportNumber ||
+        result.reportNumber
+      );
+
+    const picReportNumber =
+      `${parentReportNumber}-${safePicName}`;
+
+    let totalQuestions = 0;
+    let totalAnswers = 0;
+    let totalPhotos = 0;
+    let totalIssues = 0;
+
+    const sectionSummaryLines:
+      string[] = [];
+
+    for (
+      const section of
+      sections
+    ) {
+
+      const sectionName =
+        section.displayName ||
+        section.name ||
+        section.code ||
+        "Section";
+
+      const sectionQuestions:
+        any[] =
+        Array.isArray(
+          section.questions
+        )
+          ? section.questions
+          : [];
+
+      const sectionAnswers:
+        any[] =
+        Array.isArray(
+          section.answers
+        )
+          ? section.answers
+          : [];
+
+      const questionCount =
+        sectionQuestions.length;
+
+      const answerCount =
+        sectionAnswers.length;
+
+      const photoCount =
+        sectionAnswers.filter(
+          (answer: any) =>
+            Boolean(
+              answer.existingPhoto
+                ?.storagePath
+            )
+        ).length;
+
+      const issueCount =
+        sectionAnswers.filter(
+          (answer: any) =>
+            answer.isCompliant ===
+            false
+        ).length;
+
+      totalQuestions +=
+        questionCount;
+
+      totalAnswers +=
+        answerCount;
+
+      totalPhotos +=
+        photoCount;
+
+      totalIssues +=
+        issueCount;
+
+      sectionSummaryLines.push(
+        `- ${sectionName}: ${answerCount}/${questionCount} | Photos: ${photoCount} | Issues: ${issueCount}`
+      );
+    }
+
+    const assignedCount =
+      Number(
+        data.picAssignedCount
+      ) ||
+      sections.length;
+
+    const completedCount =
+      Number(
+        data.picCompletedCount
+      ) ||
+      sections.length;
+
+    const operationTitle =
+      String(
+        data.operation?.displayName ||
+        operationLabel
+      ).toUpperCase();
+
+    const lines:
+      string[] = [
+        `*${operationTitle}*`,
+        "*CHONG QING HOT POT*",
+        "",
+        `📍 Outlet: ${data.outlet?.name || outlet.name}`,
+        `👤 PIC: ${rawPicName}`,
+        `📅 Date: ${date}`,
+        `⏰ Submitted: ${time} WIB`,
+        `🏷 Sections Completed: ${completedCount}/${assignedCount}`,
+        "",
+        "*OVERALL SUMMARY*",
+        `- Total Checklist: ${totalAnswers}/${totalQuestions}`,
+        `- Photo Evidence: ${totalPhotos}`,
+        `- Issues: ${totalIssues}`,
+        "- Status: Completed",
+        "",
+        "*SECTION SUMMARY*",
+        ...sectionSummaryLines,
+        "",
+        "*REPORT INFO*",
+        `- Report ID: ${picReportNumber}`,
+        `- PIC: ${rawPicName}`,
+        `- Sections: ${completedCount}/${assignedCount}`,
+        "",
+        `✅ *${operationTitle} COMPLETED*`,
+      ];
+
+    return lines.join(
+      "\n"
+    );
+
+  }
+
+  async function getReportTextForSharing() {
+
+    if (
+      operation.sectionScoped &&
+      result?.picReadyForPdf
+    ) {
+      return await buildPicConsolidatedReportText();
+    }
+
+    return buildReportText();
+
+  }
+
   async function copyReport() {
-    const text =
-      buildReportText();
 
     try {
+
+      const text =
+        await getReportTextForSharing();
+
       await navigator.clipboard.writeText(
         text
       );
@@ -1725,11 +2638,21 @@ export default function OperationClient({
       alert(
         "Report text copied."
       );
-    } catch {
-      alert(
-        "Unable to copy report."
+
+    } catch (error: any) {
+
+      console.error(
+        "Unable to copy report:",
+        error
       );
+
+      alert(
+        error?.message ||
+          "Unable to copy report."
+      );
+
     }
+
   }
 
   async function getPdfFile() {
@@ -1814,7 +2737,7 @@ export default function OperationClient({
         await getPdfFile();
 
       const reportText =
-        buildReportText();
+        await getReportTextForSharing();
 
       const shareTitle =
         `${operationLabel} - ${sectionLabel} - ${outlet.name}`;
@@ -2035,6 +2958,87 @@ export default function OperationClient({
     }
   }
 
+  async function retryPicPdfGeneration() {
+    if (
+      !result ||
+      !operation.sectionScoped ||
+      !result.picReadyForPdf
+    ) {
+      return;
+    }
+
+    try {
+      setSubmitStatus(
+        "Retrying your CK PDF..."
+      );
+
+      setResult(
+        (
+          current
+        ) =>
+          current
+            ? {
+                ...current,
+                pdfError:
+                  null,
+              }
+            : current
+      );
+
+      const newPdfStoragePath =
+        await generatePicPdf(
+          result.reportId
+        );
+
+      setResult(
+        (
+          current
+        ) =>
+          current
+            ? {
+                ...current,
+                pdfStoragePath:
+                  newPdfStoragePath,
+                pdfError:
+                  null,
+              }
+            : current
+      );
+
+      setSubmitStatus(
+        "Your CK PDF is ready."
+      );
+    } catch (
+      error: any
+    ) {
+      console.error(
+        "PIC PDF retry failed:",
+        error
+      );
+
+      const message =
+        error?.message ||
+        "PIC PDF gagal dibuat.";
+
+      setResult(
+        (
+          current
+        ) =>
+          current
+            ? {
+                ...current,
+                pdfError:
+                  message,
+              }
+            : current
+      );
+
+      setSubmitStatus(
+        "Checklist submitted. PIC PDF generation failed."
+      );
+    }
+  }
+
   // ==========================================================
   // SUCCESS SCREEN
   // ==========================================================
@@ -2063,13 +3067,19 @@ export default function OperationClient({
           </div>
 
           <p className="mt-6 text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">
-            Report Saved
+            {operation.sectionScoped
+              ? "Checklist Saved"
+              : "Report Saved"}
           </p>
 
           <h2 className="mt-2 text-3xl font-bold tracking-tight text-neutral-900">
-            {result.completed
-              ? `${operationLabel} Completed`
-              : `${sectionLabel} Submitted`}
+            {operation.sectionScoped
+              ? result.picCompleted
+                ? "PIC Checklist Completed"
+                : `${sectionLabel} Submitted`
+              : result.completed
+                ? `${operationLabel} Completed`
+                : `${sectionLabel} Submitted`}
           </h2>
 
           <p className="mt-2 text-neutral-500">
@@ -2113,6 +3123,83 @@ export default function OperationClient({
             </p>
           </div>
 
+          {operation.sectionScoped && (
+            <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 px-5 py-5 text-left">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-neutral-400">
+                    PIC Progress
+                  </p>
+
+                  <p className="mt-1 font-bold text-neutral-900">
+                    {pic.name}
+                  </p>
+                </div>
+
+                <span className="shrink-0 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-[11px] font-bold tracking-wide text-neutral-700">
+                  {result.pdfStoragePath
+                    ? "PDF READY"
+                    : result.picReadyForPdf
+                      ? result.pdfError
+                        ? "PDF FAILED"
+                        : "PDF PENDING"
+                      : "IN PROGRESS"}
+                </span>
+              </div>
+
+              <div className="mt-5 flex items-center justify-between text-sm">
+                <span className="font-medium text-neutral-500">
+                  Sections completed
+                </span>
+
+                <span className="font-bold text-neutral-900">
+                  {result.picCompletedCount ?? 0}
+                  {" / "}
+                  {result.picAssignedCount ?? 0}
+                </span>
+              </div>
+
+              <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-neutral-200">
+                <div
+                  className="h-full rounded-full bg-red-700 transition-all"
+                  style={{
+                    width: `${Math.round(
+                      (
+                        (result.picCompletedCount ?? 0) /
+                        Math.max(
+                          result.picAssignedCount ?? 0,
+                          1
+                        )
+                      ) * 100
+                    )}%`,
+                  }}
+                />
+              </div>
+
+              {result.picCompleted && (
+                <p className="mt-3 text-sm font-semibold text-emerald-700">
+                  ✓ All required sections assigned to you are complete.
+                </p>
+              )}
+
+              {result.pdfError && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-amber-800">
+                    PDF Generation Failed
+                  </p>
+
+                  <p className="mt-1 break-words text-sm leading-5 text-amber-900">
+                    {result.pdfError}
+                  </p>
+
+                  <p className="mt-2 text-xs leading-5 text-amber-700">
+                    Checklist sudah tersimpan. Anda tidak perlu submit section kembali.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="mt-7 grid gap-3">
             {result.pdfStoragePath && (
               <>
@@ -2137,6 +3224,20 @@ export default function OperationClient({
                 </button>
               </>
             )}
+
+            {operation.sectionScoped &&
+              result.picReadyForPdf &&
+              !result.pdfStoragePath && (
+                <button
+                  type="button"
+                  onClick={
+                    retryPicPdfGeneration
+                  }
+                  className="rounded-xl border border-amber-300 bg-amber-50 px-6 py-4 font-semibold text-amber-900 transition hover:bg-amber-100"
+                >
+                  ↻ Retry Generate PDF
+                </button>
+              )}
 
             <button
               type="button"
@@ -2168,7 +3269,13 @@ export default function OperationClient({
             </p>
           ) : (
             <p className="mt-5 text-xs leading-5 text-neutral-400">
-              Section berhasil disimpan. Consolidated Central Kitchen PDF akan tersedia setelah seluruh required section selesai pada fase report berikutnya.
+              {operation.sectionScoped
+                ? result.picReadyForPdf
+                  ? result.pdfError
+                    ? "Checklist PIC sudah lengkap, tetapi PDF belum berhasil dibuat. Gunakan Retry Generate PDF di atas."
+                    : "Checklist PIC sudah lengkap. PDF PIC sedang dipersiapkan."
+                  : "Section berhasil disimpan. PDF PIC akan dibuat otomatis setelah seluruh required section yang ditugaskan kepada Anda selesai."
+                : "Report berhasil disimpan."}
             </p>
           )}
         </div>

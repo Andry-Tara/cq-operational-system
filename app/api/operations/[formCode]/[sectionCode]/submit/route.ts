@@ -1028,7 +1028,7 @@ export async function POST(
         "report_sections"
       )
       .select(
-        "section_id"
+        "section_id, submitted_by"
       )
       .eq(
         "report_id",
@@ -1074,6 +1074,123 @@ export async function POST(
       ].every(
         (id) =>
           completedIds.has(
+            id
+          )
+      );
+
+    // ========================================================
+    // CURRENT PIC COMPLETION
+    //
+    // Parent CK completion remains based on ALL required
+    // sections above.
+    //
+    // PIC completion is separate:
+    // - only required sections assigned to this user
+    // - assignment source = user_section_permissions.can_submit
+    // - the section must have actually been submitted by
+    //   the current authenticated user
+    // ========================================================
+
+    let picAssignedIds =
+      new Set<string>();
+
+    if (
+      config.sectionScoped &&
+      requiredIds.size > 0
+    ) {
+      const {
+        data:
+          picPermissionRows,
+        error:
+          picPermissionError,
+      } = await supabase
+        .from(
+          "user_section_permissions"
+        )
+        .select(
+          "section_id"
+        )
+        .eq(
+          "user_id",
+          user.id
+        )
+        .eq(
+          "outlet_id",
+          report.outlet_id
+        )
+        .eq(
+          "form_id",
+          report.form_id
+        )
+        .eq(
+          "can_submit",
+          true
+        )
+        .in(
+          "section_id",
+          [
+            ...requiredIds,
+          ]
+        );
+
+      if (
+        picPermissionError
+      ) {
+        throw picPermissionError;
+      }
+
+      picAssignedIds =
+        new Set(
+          (
+            picPermissionRows ??
+            []
+          ).map(
+            (
+              item: any
+            ) =>
+              item.section_id
+          )
+        );
+    }
+
+    const picCompletedIds =
+      new Set(
+        (
+          completedSections ??
+          []
+        )
+          .filter(
+            (
+              item: any
+            ) =>
+              item.submitted_by ===
+                user.id &&
+              picAssignedIds.has(
+                item.section_id
+              )
+          )
+          .map(
+            (
+              item: any
+            ) =>
+              item.section_id
+          )
+      );
+
+    const picAssignedCount =
+      picAssignedIds.size;
+
+    const picCompletedCount =
+      picCompletedIds.size;
+
+    const picCompleted =
+      config.sectionScoped &&
+      picAssignedCount > 0 &&
+      [
+        ...picAssignedIds,
+      ].every(
+        (id) =>
+          picCompletedIds.has(
             id
           )
       );
@@ -1142,6 +1259,14 @@ export async function POST(
       "/protected/reports"
     );
 
+    if (
+      config.sectionScoped
+    ) {
+      revalidatePath(
+        "/protected/central-kitchen"
+      );
+    }
+
     revalidatePath(
       `/protected/operations/${config.formCode}/${normalizedSectionCode}`
     );
@@ -1159,6 +1284,26 @@ export async function POST(
 
       completed:
         allCompleted,
+
+      picCompleted:
+        config.sectionScoped
+          ? picCompleted
+          : null,
+
+      picAssignedCount:
+        config.sectionScoped
+          ? picAssignedCount
+          : null,
+
+      picCompletedCount:
+        config.sectionScoped
+          ? picCompletedCount
+          : null,
+
+      picReadyForPdf:
+        config.sectionScoped
+          ? picCompleted
+          : false,
 
       answerCount:
         answers.length,

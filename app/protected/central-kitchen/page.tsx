@@ -1,4 +1,6 @@
 import Link from "next/link";
+
+import PicReportActions from "./pic-report-actions";
 import { redirect } from "next/navigation";
 
 import {
@@ -488,6 +490,68 @@ export default async function CentralKitchenPage() {
     );
 
 
+  // ==========================================================
+  // CURRENT USER PIC PDF EXPORTS
+  //
+  // Keep completed PIC reports accessible after refresh or
+  // returning to the Central Kitchen page.
+  // ==========================================================
+
+  const {
+    data: picExports,
+    error: picExportsError,
+  } = reportIds.length
+    ? await supabase
+        .from(
+          "report_pic_exports"
+        )
+        .select(`
+          report_id,
+          user_id,
+          pic_name,
+          pdf_storage_path,
+          pdf_generated_at
+        `)
+        .in(
+          "report_id",
+          reportIds
+        )
+        .eq(
+          "user_id",
+          user.id
+        )
+    : {
+        data: [],
+        error: null,
+      };
+
+  if (picExportsError) {
+
+    return (
+      <EmptyState
+        title="Unable to Load PIC Report"
+        message={
+          picExportsError.message
+        }
+      />
+    );
+
+  }
+
+  const picExportByReportId =
+    new Map(
+      (
+        picExports ??
+        []
+      ).map(
+        (item: any) => [
+          item.report_id,
+          item,
+        ]
+      )
+    );
+
+
   const {
     data: reportSections,
   } = reportIds.length
@@ -751,6 +815,16 @@ export default async function CentralKitchenPage() {
           items={
             openingCards
           }
+          picExport={
+            openingCards[0]
+              ?.report?.id
+              ? picExportByReportId.get(
+                  openingCards[0]
+                    .report.id
+                ) ??
+                null
+              : null
+          }
         />
 
         <OperationGroup
@@ -759,6 +833,16 @@ export default async function CentralKitchenPage() {
           formCode="CLOSING_CK"
           items={
             closingCards
+          }
+          picExport={
+            closingCards[0]
+              ?.report?.id
+              ? picExportByReportId.get(
+                  closingCards[0]
+                    .report.id
+                ) ??
+                null
+              : null
           }
         />
 
@@ -773,11 +857,13 @@ function OperationGroup({
   subtitle,
   formCode,
   items,
+  picExport,
 }: {
   title: string;
   subtitle: string;
   formCode: string;
   items: any[];
+  picExport: any | null;
 }) {
   if (!items.length) {
     return null;
@@ -791,6 +877,53 @@ function OperationGroup({
         item.status ===
           "REVIEWED"
     ).length;
+
+  const report =
+    items.find(
+      (item: any) =>
+        Boolean(
+          item.report?.id
+        )
+    )?.report ??
+    null;
+
+  const isCentralKitchenStore =
+    items.length > 0 &&
+    items.every(
+      (item: any) => {
+
+        const identity =
+          String(
+            item.versionSection
+              ?.display_name ||
+            item.section?.name ||
+            item.section?.code ||
+            ""
+          )
+            .trim()
+            .toUpperCase();
+
+        return identity.includes(
+          "WAREHOUSE"
+        );
+
+      }
+    );
+
+  const reportArea =
+    isCentralKitchenStore
+      ? "CENTRAL KITCHEN - STORE"
+      : "CENTRAL KITCHEN - PRODUCTION";
+
+  const picReportReady =
+    completed ===
+      items.length &&
+    Boolean(
+      report?.id &&
+      report?.report_number &&
+      picExport
+        ?.pdf_storage_path
+    );
 
   return (
     <section className="mt-5 overflow-hidden rounded-[22px] border border-neutral-200 bg-white shadow-sm">
@@ -813,6 +946,80 @@ function OperationGroup({
           {completed}/{items.length}
         </span>
       </div>
+
+
+      {picReportReady && (
+        <div className="mx-4 mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 sm:mx-5 sm:p-5">
+
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+
+            <div>
+
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-700">
+                ✓ PIC Report Ready
+              </p>
+
+              <h3 className="mt-1 text-lg font-black text-neutral-950">
+                {
+                  picExport
+                    ?.pic_name ||
+                  "PIC"
+                }
+              </h3>
+
+              <p className="mt-1 text-xs font-bold uppercase tracking-wide text-neutral-500">
+                {reportArea}
+              </p>
+
+              <p className="mt-2 text-xs font-semibold text-neutral-600">
+                {completed}/{items.length} Sections Completed
+              </p>
+
+              <p className="mt-1 break-all text-[11px] font-semibold text-neutral-400">
+                {
+                  report
+                    ?.report_number
+                }
+              </p>
+
+            </div>
+
+            <div className="shrink-0 rounded-full bg-emerald-100 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-emerald-700">
+              PDF READY
+            </div>
+
+          </div>
+
+          <div className="mt-4">
+
+            <PicReportActions
+              formCode={
+                formCode
+              }
+              reportId={
+                report.id
+              }
+              reportNumber={
+                report.report_number
+              }
+              pdfStoragePath={
+                picExport
+                  .pdf_storage_path
+              }
+              picName={
+                picExport
+                  .pic_name ||
+                "PIC"
+              }
+              reportArea={
+                reportArea
+              }
+            />
+
+          </div>
+
+        </div>
+      )}
 
 
       <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-3">

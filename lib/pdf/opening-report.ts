@@ -626,6 +626,7 @@ async function drawCoverPage(
     reportNumber,
     outletName,
     submittedBy,
+    reportArea,
     groups,
     questions,
     answers,
@@ -633,6 +634,7 @@ async function drawCoverPage(
     reportNumber: string;
     outletName: string;
     submittedBy: string;
+    reportArea: string;
     groups: Group[];
     questions: Question[];
     answers: Record<string, Answer>;
@@ -676,7 +678,7 @@ async function drawCoverPage(
     color: COLORS.text,
   });
 
-  page.drawText("BOH / KITCHEN", {
+  page.drawText(reportArea, {
     x: PAGE.marginX,
     y: PAGE.height - 190,
     size: 16,
@@ -1281,6 +1283,7 @@ export async function buildOpeningPdf({
   reportNumber,
   outletName,
   submittedBy,
+  reportArea = "BOH / KITCHEN",
   groups,
   questions,
   answers,
@@ -1288,6 +1291,7 @@ export async function buildOpeningPdf({
   reportNumber: string;
   outletName: string;
   submittedBy: string;
+  reportArea?: string;
   groups: Group[];
   questions: Question[];
   answers: Record<string, Answer>;
@@ -1316,6 +1320,7 @@ export async function buildOpeningPdf({
     reportNumber,
     outletName,
     submittedBy,
+    reportArea,
     groups,
     questions: orderedQuestions,
     answers,

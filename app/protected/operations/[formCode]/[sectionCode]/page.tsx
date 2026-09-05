@@ -436,7 +436,18 @@ export default async function OperationPage({
               name:
                 outlet.name,
             }}
-            operation={{
+            pic={{
+                id:
+                  user.id,
+                name:
+                  profile.full_name ||
+                  user.email ||
+                  "CQ Operational User",
+                jobTitle:
+                  profile.job_title ??
+                  null,
+              }}
+              operation={{
               formCode:
                 normalizedFormCode,
 
