@@ -14,6 +14,9 @@ import {
 import {
   checkPermissionApi,
 } from "@/lib/admin/require-admin";
+import {
+  isOperationalPhotoRequired,
+} from "@/lib/operations/evidence";
 
 import {
   getOperationConfig,
@@ -304,7 +307,8 @@ export async function POST(
         is_required,
         unit,
         min_value,
-        max_value
+        max_value,
+        config
       `)
       .eq(
         "version_section_id",
@@ -415,18 +419,26 @@ export async function POST(
         );
       }
 
-      // Photo mandatory for operational checklist questions.
+      // Evidence rule is data-driven for CK; legacy forms fall back to always.
+      const photoRequired =
+        isOperationalPhotoRequired(
+          question,
+          {
+            value:
+              incoming.value,
+          }
+        );
+
       if (
+        photoRequired &&
         !incoming.storagePath
       ) {
         return NextResponse.json(
           {
             error:
-              `Photo evidence belum ada: ${question.question_text}`,
+              `Photo evidence wajib belum ada: ${question.question_text}`,
           },
-          {
-            status: 400,
-          }
+          { status: 400 }
         );
       }
 
@@ -434,6 +446,7 @@ export async function POST(
         `report-sections/${reportSectionId}/`;
 
       if (
+        incoming.storagePath &&
         !incoming.storagePath.startsWith(
           requiredPrefix
         )
@@ -443,9 +456,7 @@ export async function POST(
             error:
               `Invalid photo path for: ${question.question_text}`,
           },
-          {
-            status: 400,
-          }
+          { status: 400 }
         );
       }
 

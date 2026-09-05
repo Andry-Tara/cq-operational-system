@@ -2,6 +2,9 @@ import { revalidatePath } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { checkPermissionApi } from "@/lib/admin/require-admin";
+import {
+  isOperationalPhotoRequired,
+} from "@/lib/operations/evidence";
 
 export async function POST(req: NextRequest) {
   try {
@@ -97,7 +100,8 @@ const supabase = await createClient();
           is_required,
           unit,
           min_value,
-          max_value
+          max_value,
+          config
         `)
         .eq(
           "version_section_id",
@@ -164,11 +168,24 @@ const supabase = await createClient();
         );
       }
 
-      // PHOTO IS REQUIRED FOR ALL CLOSING KITCHEN QUESTIONS
-      if (!incoming.storagePath) {
+      // Evidence rule is data-driven for CK; legacy forms fall back to always.
+      const photoRequired =
+        isOperationalPhotoRequired(
+          question,
+          {
+            value:
+              incoming.value,
+          }
+        );
+
+      if (
+        photoRequired &&
+        !incoming.storagePath
+      ) {
         return NextResponse.json(
           {
-            error: `Photo evidence belum ada: ${question.question_text}`,
+            error:
+              `Photo evidence wajib belum ada: ${question.question_text}`,
           },
           { status: 400 }
         );
@@ -178,13 +195,15 @@ const supabase = await createClient();
         `report-sections/${reportSectionId}/`;
 
       if (
+        incoming.storagePath &&
         !incoming.storagePath.startsWith(
           requiredPrefix
         )
       ) {
         return NextResponse.json(
           {
-            error: `Invalid photo path for: ${question.question_text}`,
+            error:
+              `Invalid photo path for: ${question.question_text}`,
           },
           { status: 400 }
         );

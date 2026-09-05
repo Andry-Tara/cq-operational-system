@@ -12,6 +12,11 @@ import {
   compressOperationalPhoto,
 } from "@/lib/operations/compress-operational-photo";
 import { buildClosingPdf } from "@/lib/pdf/closing-report";
+import {
+  getOperationalEvidenceMode,
+  hasOperationalPhotoEvidence,
+  isOperationalPhotoRequired,
+} from "@/lib/operations/evidence";
 
 type Group = {
   id: string;
@@ -1025,10 +1030,37 @@ export default function ClosingKitchenClient({
       () =>
         questions.filter(
           (question) =>
-            Boolean(
-              answers[question.id]?.photo ||
-              answers[question.id]?.existingStoragePath ||
-              answers[question.id]?.existingPhotoFile
+            hasOperationalPhotoEvidence(
+              answers[question.id]
+            )
+        ).length,
+      [answers, questions]
+    );
+
+  const requiredPhotoCount =
+    useMemo(
+      () =>
+        questions.filter(
+          (question) =>
+            isOperationalPhotoRequired(
+              question,
+              answers[question.id]
+            )
+        ).length,
+      [answers, questions]
+    );
+
+  const requiredPhotoCompleteCount =
+    useMemo(
+      () =>
+        questions.filter(
+          (question) =>
+            isOperationalPhotoRequired(
+              question,
+              answers[question.id]
+            ) &&
+            hasOperationalPhotoEvidence(
+              answers[question.id]
             )
         ).length,
       [answers, questions]
@@ -1085,17 +1117,22 @@ export default function ClosingKitchenClient({
     !loadingExisting &&
     Boolean(sessionData) &&
     answeredCount === totalQuestions &&
-    photoCount === totalQuestions &&
+    requiredPhotoCompleteCount ===
+      requiredPhotoCount &&
     issueCompleteCount === issueCount &&
     photoDraftBusyCount === 0;
 
+  const progressDenominator =
+    totalQuestions +
+    requiredPhotoCount;
+
   const progress =
-    totalQuestions === 0
+    progressDenominator === 0
       ? 0
       : Math.round(
           ((answeredCount +
-            photoCount) /
-            (totalQuestions * 2)) *
+            requiredPhotoCompleteCount) /
+            progressDenominator) *
             100
         );
 
@@ -1224,11 +1261,16 @@ export default function ClosingKitchenClient({
           answers[question.id];
 
         if (
-          !answer?.photo &&
-          !answer?.existingStoragePath
+          isOperationalPhotoRequired(
+            question,
+            answer
+          ) &&
+          !hasOperationalPhotoEvidence(
+            answer
+          )
         ) {
           throw new Error(
-            `Photo evidence belum ada: ${question.question_text}`
+            `Photo evidence wajib belum ada: ${question.question_text}`
           );
         }
 
@@ -2115,11 +2157,11 @@ export default function ClosingKitchenClient({
           />
 
           <ProgressSummaryItem
-            label="Photo Evidence"
-            value={`${photoCount}/${totalQuestions}`}
+            label="Required Photos"
+            value={`${requiredPhotoCompleteCount}/${requiredPhotoCount}`}
             complete={
-              photoCount ===
-              totalQuestions
+              requiredPhotoCompleteCount ===
+              requiredPhotoCount
             }
           />
 
@@ -2231,6 +2273,17 @@ export default function ClosingKitchenClient({
                       const exception =
                         isException(
                           question
+                        );
+
+                      const evidenceMode =
+                        getOperationalEvidenceMode(
+                          question
+                        );
+
+                      const photoRequired =
+                        isOperationalPhotoRequired(
+                          question,
+                          answer
                         );
 
                       const needsReview =
@@ -2431,15 +2484,22 @@ export default function ClosingKitchenClient({
                                 <div className="flex items-center justify-between gap-3">
                                   <div>
                                     <p className="text-sm font-semibold">
-                                      Photo
-                                      Evidence *
+                                      Photo Evidence
+                                      {photoRequired
+                                        ? " *"
+                                        : ""}
                                     </p>
 
                                     <p className="mt-1 text-xs text-neutral-500">
-                                      Wajib
-                                      untuk
-                                      setiap
-                                      pertanyaan
+                                      {evidenceMode ===
+                                      "always"
+                                        ? "Wajib untuk pertanyaan ini"
+                                        : evidenceMode ===
+                                            "on_issue"
+                                          ? photoRequired
+                                            ? "Wajib karena ditemukan issue"
+                                            : "Wajib hanya jika ditemukan issue"
+                                          : "Tidak wajib"}
                                     </p>
                                   </div>
 
@@ -2480,7 +2540,9 @@ export default function ClosingKitchenClient({
                                     )}
                                 </div>
 
-                                <div className="mt-4 grid grid-cols-2 gap-2.5">
+                                {photoRequired && (
+
+                                  <div className="mt-4 grid grid-cols-2 gap-2.5">
                                   <label className={`flex min-h-[52px] items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 text-center text-xs font-black text-red-700 transition ${submitting || !sessionData?.reportId || !sessionData?.reportSectionId ? "cursor-wait opacity-45" : "cursor-pointer active:scale-[0.99]"}`}>
                                     <span className="text-base">📷</span>
                                     <span>Take Photo</span>
@@ -2517,7 +2579,9 @@ export default function ClosingKitchenClient({
                                       }}
                                     />
                                   </label>
-                                </div>
+                                  </div>
+
+                                )}
 
                                 {answer?.photo && (
                                   <p className="mt-2 truncate text-xs text-neutral-500">
@@ -2639,7 +2703,7 @@ export default function ClosingKitchenClient({
                   <p className="truncate text-[12px] font-semibold text-neutral-800">
                     {answeredCount}/{totalQuestions} answers
                     {" · "}
-                    {photoCount}/{totalQuestions} photos
+                    {requiredPhotoCompleteCount}/{requiredPhotoCount} required photos
                     {issueCount > 0
                       ? ` · ${issueCount} issue(s)`
                       : ""}
@@ -2751,13 +2815,13 @@ export default function ClosingKitchenClient({
                 }{" "}
                 answers ·{" "}
                 {
-                  photoCount
+                  requiredPhotoCompleteCount
                 }
                 /
                 {
-                  totalQuestions
+                  requiredPhotoCount
                 }{" "}
-                photos
+                required photos
                 {issueCount >
                 0
                   ? ` · ${issueCount} issue(s)`
@@ -2797,12 +2861,12 @@ export default function ClosingKitchenClient({
                     answeredCount
                   } jawaban belum diisi. `}
 
-                {photoCount !==
-                  totalQuestions &&
+                {requiredPhotoCompleteCount !==
+                  requiredPhotoCount &&
                   `${
-                    totalQuestions -
-                    photoCount
-                  } photo evidence belum diupload. `}
+                    requiredPhotoCount -
+                    requiredPhotoCompleteCount
+                  } required photo evidence belum diupload. `}
 
                 {issueCompleteCount !==
                   issueCount &&
