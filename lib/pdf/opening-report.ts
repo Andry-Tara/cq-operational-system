@@ -365,8 +365,8 @@ async function imageFileToJpeg(
       image.src = objectUrl;
     });
 
-    const maxWidth = 1400;
-    const maxHeight = 1400;
+    const maxWidth = 1100;
+    const maxHeight = 1100;
 
     const ratio = Math.min(
       1,
@@ -401,7 +401,7 @@ async function imageFileToJpeg(
           }
         },
         "image/jpeg",
-        0.72
+        0.58
       );
     });
 

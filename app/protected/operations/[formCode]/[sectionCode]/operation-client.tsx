@@ -1606,119 +1606,179 @@ export default function OperationClient({
         `Opening Report - ${outlet.name}`;
 
       // ======================================================
-      // MOBILE / NATIVE SHARE
+      // COMPACT FALLBACK TEXT
       //
-      // Preferred:
-      // PDF + FULL approved report text in one share action.
+      // Full report tetap menjadi pilihan utama.
+      // Compact version hanya dipakai jika native share
+      // menolak kombinasi PDF + full text.
       // ======================================================
 
-      if (navigator.share) {
+      const compactReportText =
+        reportText.length <= 3200
+          ? reportText
+          : `${reportText.slice(
+              0,
+              3000
+            )}
 
-        const canShareFiles =
-          typeof navigator.canShare ===
-            "function"
-            ? navigator.canShare({
-                files: [file],
-              })
-            : true;
+... Full checklist detail is available in the attached PDF.`;
 
-        if (canShareFiles) {
+      // ======================================================
+      // NATIVE SHARE
+      // ======================================================
 
-          // ---------------------------------------------------
-          // FIRST ATTEMPT
-          // PDF + FULL TEXT
-          // ---------------------------------------------------
+      const canShareFiles =
+        typeof navigator.canShare ===
+        "function"
+          ? navigator.canShare({
+              files: [file],
+            })
+          : true;
 
-          try {
-            await navigator.share({
-              title:
-                shareTitle,
+      if (
+        navigator.share &&
+        canShareFiles
+      ) {
+        // ----------------------------------------------------
+        // ATTEMPT 1
+        // PDF + FULL REPORT TEXT
+        // ----------------------------------------------------
 
-              text:
-                reportText,
+        try {
+          await navigator.share({
+            title:
+              shareTitle,
 
-              files: [
-                file,
-              ],
-            });
+            text:
+              reportText,
 
-            return;
+            files: [
+              file,
+            ],
+          });
 
-          } catch (
-            combinedError: any
+          return;
+        } catch (
+          combinedError: any
+        ) {
+          if (
+            combinedError?.name ===
+            "AbortError"
           ) {
-
-            if (
-              combinedError?.name ===
-              "AbortError"
-            ) {
-              return;
-            }
-
-            console.warn(
-              "Combined PDF + text share failed:",
-              combinedError
-            );
+            return;
           }
 
+          console.warn(
+            "Opening PDF + full text share failed:",
+            combinedError
+          );
+        }
 
-          // ---------------------------------------------------
-          // FALLBACK
-          // Keep PDF attachment.
-          // Copy the FULL report text first.
-          // ---------------------------------------------------
 
-          try {
-            await navigator.clipboard.writeText(
-              reportText
-            );
-          } catch (
+        // ----------------------------------------------------
+        // ATTEMPT 2
+        // PDF + COMPACT REPORT TEXT
+        //
+        // Some Android / iOS share targets reject a large
+        // text payload when a PDF is attached.
+        // ----------------------------------------------------
+
+        try {
+          await navigator.share({
+            title:
+              shareTitle,
+
+            text:
+              compactReportText,
+
+            files: [
+              file,
+            ],
+          });
+
+          return;
+        } catch (
+          compactShareError: any
+        ) {
+          if (
+            compactShareError?.name ===
+            "AbortError"
+          ) {
+            return;
+          }
+
+          console.warn(
+            "Opening PDF + compact text share failed:",
+            compactShareError
+          );
+        }
+
+
+        // ----------------------------------------------------
+        // LAST MOBILE FALLBACK
+        //
+        // Never silently lose the report text.
+        // Copy full text before sharing PDF-only.
+        // ----------------------------------------------------
+
+        let textCopied =
+          false;
+
+        try {
+          await navigator.clipboard.writeText(
+            reportText
+          );
+
+          textCopied =
+            true;
+        } catch (
+          clipboardError
+        ) {
+          console.warn(
+            "Unable to copy Opening report text:",
             clipboardError
+          );
+        }
+
+        if (textCopied) {
+          alert(
+            "Perangkat ini tidak dapat mengirim PDF + text sekaligus. Full report text sudah dicopy. Setelah memilih WhatsApp, paste text pada caption/message."
+          );
+        }
+
+        try {
+          await navigator.share({
+            title:
+              shareTitle,
+
+            files: [
+              file,
+            ],
+          });
+
+          return;
+        } catch (
+          fileShareError: any
+        ) {
+          if (
+            fileShareError?.name ===
+            "AbortError"
           ) {
-            console.warn(
-              "Unable to copy report text:",
-              clipboardError
-            );
-          }
-
-
-          try {
-            await navigator.share({
-              title:
-                shareTitle,
-
-              files: [
-                file,
-              ],
-            });
-
             return;
-
-          } catch (
-            fileShareError: any
-          ) {
-
-            if (
-              fileShareError?.name ===
-              "AbortError"
-            ) {
-              return;
-            }
-
-            console.warn(
-              "PDF-only share failed:",
-              fileShareError
-            );
           }
+
+          console.warn(
+            "Opening PDF-only share failed:",
+            fileShareError
+          );
         }
       }
 
 
       // ======================================================
-      // LAST FALLBACK
+      // DESKTOP / BROWSER FALLBACK
       //
-      // Browser cannot share file attachment.
-      // Download PDF + copy full report + open WhatsApp text.
+      // Download PDF + copy report text + open WhatsApp.
       // ======================================================
 
       downloadFile(
@@ -1733,39 +1793,30 @@ export default function OperationClient({
         clipboardError
       ) {
         console.warn(
-          "Unable to copy report text:",
+          "Unable to copy Opening report text:",
           clipboardError
         );
       }
 
-      const whatsappUrl =
-        "https://wa.me/?text=" +
+      const whatsappText =
         encodeURIComponent(
           reportText
         );
 
       window.open(
-        whatsappUrl,
-        "_blank"
+        `https://wa.me/?text=${whatsappText}`,
+        "_blank",
+        "noopener,noreferrer"
       );
-
-      setTimeout(() => {
-        alert(
-          "PDF Report sudah didownload. Full report text juga sudah dicopy. Attach PDF ke WhatsApp jika browser tidak dapat melampirkan file secara otomatis."
-        );
-      }, 400);
-
-    } catch (
-      error: any
-    ) {
+    } catch (error: any) {
       console.error(
-        "Share report error:",
+        "Opening share report failed:",
         error
       );
 
       alert(
         error?.message ||
-          "Unable to prepare report."
+          "Unable to share Opening report."
       );
     }
   }
