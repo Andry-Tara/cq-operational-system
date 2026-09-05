@@ -11,10 +11,6 @@ import {
 } from "@/lib/active-outlet";
 
 import {
-  checkPermissionApi,
-} from "@/lib/admin/require-admin";
-
-import {
   getOperationConfig,
   normalizeOperationCode,
 } from "@/lib/operations/config";
@@ -65,26 +61,6 @@ export async function POST(
     // ========================================================
     // PERMISSION
     // ========================================================
-
-    const permissionAccess =
-      await checkPermissionApi(
-        config.permissionCode
-      );
-
-    if (
-      !permissionAccess.ok
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            permissionAccess.error,
-        },
-        {
-          status:
-            permissionAccess.status,
-        }
-      );
-    }
 
     const supabase =
       await createClient();
@@ -227,6 +203,55 @@ export async function POST(
       section,
       versionSection,
     } = operation;
+
+
+    // ========================================================
+    // UNIFIED OPERATIONAL PERMISSION
+    //
+    // Same source of truth as reports INSERT RLS.
+    // Prevent app permission and database permission
+    // from disagreeing for Outlet Manager / BOH / FOH.
+    // ========================================================
+
+    const {
+      data: canStartOperationalReport,
+      error: operationalPermissionError,
+    } = await supabase.rpc(
+      "can_start_operational_report",
+      {
+        p_organization_id:
+          outlet.organization_id,
+
+        p_outlet_id:
+          outlet.id,
+
+        p_form_id:
+          form.id,
+
+        p_started_by:
+          user.id,
+      }
+    );
+
+    if (operationalPermissionError) {
+      throw operationalPermissionError;
+    }
+
+    if (
+      canStartOperationalReport !== true
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Anda tidak memiliki permission untuk menjalankan operational report ini.",
+          code:
+            "OPERATION_PERMISSION_DENIED",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
 
     // ========================================================
     // BUSINESS DATE

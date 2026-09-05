@@ -201,6 +201,17 @@ export default function OperationClient({
   const [loadingExisting, setLoadingExisting] =
     useState(true);
 
+  const [
+    sessionRetryKey,
+    setSessionRetryKey,
+  ] = useState(0);
+
+  const sessionReady =
+    Boolean(
+      sessionData?.reportId &&
+      sessionData?.reportSectionId
+    );
+
   const photoUploadTokenRef =
     useRef<Record<string, string>>({});
 
@@ -231,9 +242,7 @@ export default function OperationClient({
       setAnswers,
       enabled:
         !loadingExisting &&
-        Boolean(
-          sessionData?.reportId
-        ) &&
+        sessionReady &&
         !submitting &&
         !result &&
         !isReopenedDraftSession,
@@ -252,28 +261,127 @@ export default function OperationClient({
         setLoadingExisting(true);
         setErrorMessage("");
 
-        const response =
-          await fetch(
-            "/api/operations/OPENING/KITCHEN/session",
-            {
-              method: "POST",
-              cache: "no-store",
+        let session: any =
+          null;
+
+        let sessionFailure: any =
+          null;
+
+        // ====================================================
+        // SESSION RETRY
+        //
+        // Mobile connections can be slow / interrupted.
+        // Also handles a daily-report race where another
+        // request creates the report milliseconds earlier.
+        // ====================================================
+
+        for (
+          let attempt = 1;
+          attempt <= 3;
+          attempt += 1
+        ) {
+          try {
+            const response =
+              await fetch(
+                "/api/operations/OPENING/KITCHEN/session",
+                {
+                  method: "POST",
+                  cache: "no-store",
+                }
+              );
+
+            const payload =
+              await response
+                .json()
+                .catch(
+                  () => ({})
+                );
+
+            if (!response.ok) {
+              const failure: any =
+                new Error(
+                  payload?.error ||
+                    "Unable to start Opening session."
+                );
+
+              failure.status =
+                response.status;
+
+              failure.code =
+                payload?.code;
+
+              throw failure;
             }
-          );
 
-        const session =
-          await response.json();
+            if (
+              !payload?.reportId ||
+              !payload?.reportSectionId
+            ) {
+              const failure: any =
+                new Error(
+                  "Opening session tidak lengkap: reportId / reportSectionId belum tersedia."
+                );
 
-        if (!response.ok) {
-          throw new Error(
-            session.error ||
-              "Unable to load Opening session"
+              failure.code =
+                "SESSION_INCOMPLETE";
+
+              throw failure;
+            }
+
+            session =
+              payload;
+
+            break;
+          } catch (
+            error: any
+          ) {
+            sessionFailure =
+              error;
+
+            const status =
+              Number(
+                error?.status || 0
+              );
+
+            const retryable =
+              !status ||
+              status >= 500 ||
+              error?.code ===
+                "DAILY_REPORT_EXISTS" ||
+              error?.code ===
+                "SESSION_INCOMPLETE";
+
+            if (
+              !retryable ||
+              attempt === 3
+            ) {
+              break;
+            }
+
+            await new Promise(
+              (resolve) =>
+                setTimeout(
+                  resolve,
+                  attempt * 700
+                )
+            );
+          }
+        }
+
+        if (!session) {
+          throw (
+            sessionFailure ||
+            new Error(
+              "Unable to start Opening session."
+            )
           );
         }
 
         if (cancelled) return;
 
-        setSessionData(session);
+        setSessionData(
+          session
+        );
 
         const loadedAnswers:
           Record<string, AnswerState> = {};
@@ -364,6 +472,8 @@ export default function OperationClient({
         }
       } catch (error: any) {
         if (!cancelled) {
+          setSessionData(null);
+
           setErrorMessage(
             error?.message ||
               "Unable to resume report."
@@ -381,13 +491,36 @@ export default function OperationClient({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [sessionRetryKey]);
 
+
+  function retrySession() {
+    if (submitting) {
+      return;
+    }
+
+    setSessionData(null);
+    setErrorMessage("");
+    setLoadingExisting(true);
+
+    setSessionRetryKey(
+      (current) =>
+        current + 1
+    );
+  }
 
   function setQuestionValue(
     questionId: string,
     value: boolean | number | string
   ) {
+
+    if (
+      !sessionReady ||
+      submitting
+    ) {
+      return;
+    }
+
     setAnswers((prev) => ({
       ...prev,
       [questionId]: {
@@ -402,6 +535,14 @@ export default function OperationClient({
     field: "notes" | "correctiveAction",
     value: string
   ) {
+
+    if (
+      !sessionReady ||
+      submitting
+    ) {
+      return;
+    }
+
     setAnswers((prev) => ({
       ...prev,
       [questionId]: {
@@ -2069,9 +2210,24 @@ export default function OperationClient({
       {errorMessage && (
         <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <strong>
-            Submit failed:
+            {sessionReady
+                ? "Submit failed:"
+                : "Session failed:"}
           </strong>{" "}
           {errorMessage}
+
+          {!sessionReady &&
+            !loadingExisting && (
+              <button
+                type="button"
+                onClick={
+                  retrySession
+                }
+                className="mt-3 block rounded-xl border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-700"
+              >
+                Retry Session
+              </button>
+            )}
         </div>
       )}
 
@@ -2553,21 +2709,29 @@ export default function OperationClient({
 
                 <div
                   className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                    draftStatus === "error"
-                      ? "bg-amber-50 text-amber-700"
-                      : draftStatus === "saving" ||
-                          draftStatus === "loading"
+                    !sessionReady
+                      ? loadingExisting
                         ? "bg-blue-50 text-blue-700"
-                        : "bg-emerald-50 text-emerald-700"
+                        : "bg-red-50 text-red-700"
+                      : draftStatus === "error"
+                        ? "bg-amber-50 text-amber-700"
+                        : draftStatus === "saving" ||
+                            draftStatus === "loading"
+                          ? "bg-blue-50 text-blue-700"
+                          : "bg-emerald-50 text-emerald-700"
                   }`}
                 >
-                  {draftStatus === "error"
-                    ? "Draft error"
-                    : draftStatus === "saving"
-                      ? "Saving..."
-                      : draftStatus === "loading"
-                        ? "Loading..."
-                        : "✓ Saved"}
+                  {!sessionReady
+                    ? loadingExisting
+                      ? "Starting..."
+                      : "Session Error"
+                    : draftStatus === "error"
+                      ? "Draft error"
+                      : draftStatus === "saving"
+                        ? "Saving..."
+                        : draftStatus === "loading"
+                          ? "Loading..."
+                          : "✓ Saved"}
                 </div>
               </div>
             </div>
@@ -2583,24 +2747,35 @@ export default function OperationClient({
         >
         <div className="rounded-[22px] border border-black/5 bg-white p-4 text-neutral-950 shadow-lg">
             {!submitting &&
-              draftStatus !== "idle" && (
+              (
+                !sessionReady ||
+                draftStatus !== "idle"
+              ) && (
                 <div
                   className={`mb-3 rounded-xl px-4 py-2 text-xs font-semibold ${
-                    draftStatus === "error"
-                      ? "bg-amber-50 text-amber-700"
-                      : draftStatus === "saving" ||
-                          draftStatus === "loading"
+                    !sessionReady
+                      ? loadingExisting
                         ? "bg-blue-50 text-blue-700"
-                        : "bg-emerald-50 text-emerald-700"
+                        : "bg-red-50 text-red-700"
+                      : draftStatus === "error"
+                        ? "bg-amber-50 text-amber-700"
+                        : draftStatus === "saving" ||
+                            draftStatus === "loading"
+                          ? "bg-blue-50 text-blue-700"
+                          : "bg-emerald-50 text-emerald-700"
                   }`}
                 >
-                  {draftStatus === "loading"
-                    ? "Loading draft..."
-                    : draftStatus === "saving"
-                      ? "Saving draft..."
-                      : draftStatus === "error"
-                        ? "Draft belum tersimpan. Cek koneksi."
-                        : "✓ Draft saved"}
+                  {!sessionReady
+                    ? loadingExisting
+                      ? "Starting operational session..."
+                      : "Operational session belum siap."
+                    : draftStatus === "loading"
+                      ? "Loading draft..."
+                      : draftStatus === "saving"
+                        ? "Saving draft..."
+                        : draftStatus === "error"
+                          ? "Draft belum tersimpan. Cek koneksi."
+                          : "✓ Draft saved"}
                 </div>
               )}
 
