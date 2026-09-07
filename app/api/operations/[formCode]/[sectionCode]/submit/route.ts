@@ -158,8 +158,12 @@ export async function POST(
         report_id,
         section_id,
         version_section_id,
-        status
-      `)
+        status,
+        correction_requested_by,
+        correction_requested_at,
+        correction_reason,
+        correction_question_ids,
+        correction_round`)
       .eq(
         "id",
         reportSectionId
@@ -178,6 +182,65 @@ export async function POST(
         "Report section tidak ditemukan atau tidak dapat diakses."
       );
     }
+
+
+    // ========================================================
+    // SECTION CORRECTION CONTEXT
+    // ========================================================
+
+    const reportSectionStatus =
+      String(
+        reportSection.status ||
+          ""
+      )
+        .trim()
+        .toLowerCase();
+
+    const isSectionCorrection =
+      config.sectionScoped &&
+      reportSectionStatus ===
+        "needs_correction";
+
+    const correctionQuestionIds =
+      Array.isArray(
+        reportSection
+          .correction_question_ids
+      )
+        ? reportSection
+            .correction_question_ids
+            .map(
+              (value: unknown) =>
+                String(
+                  value ||
+                    ""
+                ).trim()
+            )
+            .filter(Boolean)
+        : [];
+
+    const correctionQuestionIdSet =
+      new Set<string>(
+        correctionQuestionIds
+      );
+
+    if (
+      isSectionCorrection &&
+      correctionQuestionIds.length ===
+        0
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Section correction tidak memiliki target pertanyaan.",
+          code:
+            "CORRECTION_TARGETS_MISSING",
+        },
+        {
+          status: 409,
+        }
+      );
+    }
+
 
     // ========================================================
     // REPORT + FORM VALIDATION
@@ -428,13 +491,107 @@ export async function POST(
         )
       );
 
+
+    // ========================================================
+    // TARGETED SECTION CORRECTION SAFETY
+    // ========================================================
+
+    if (isSectionCorrection) {
+      const incomingQuestionIds =
+        answers
+          .map(
+            (answer: any) =>
+              String(
+                answer?.questionId ||
+                  ""
+              ).trim()
+          )
+          .filter(Boolean);
+
+      const invalidQuestionIds =
+        incomingQuestionIds.filter(
+          (
+            questionId: string
+          ) =>
+            !correctionQuestionIdSet.has(
+              questionId
+            )
+        );
+
+      if (
+        invalidQuestionIds.length >
+        0
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Payload correction mencoba mengubah pertanyaan yang tidak dibuka oleh Production Leader.",
+
+            code:
+              "INVALID_CORRECTION_QUESTION_PAYLOAD",
+
+            invalidQuestionIds,
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+
+      const invalidTargetIds =
+        correctionQuestionIds.filter(
+          (
+            questionId: string
+          ) =>
+            !questionMap.has(
+              questionId
+            )
+        );
+
+      if (
+        invalidTargetIds.length >
+        0
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Target correction sudah tidak termasuk pertanyaan aktif section.",
+
+            code:
+              "INVALID_CORRECTION_TARGETS",
+
+            invalidQuestionIds:
+              invalidTargetIds,
+          },
+          {
+            status: 409,
+          }
+        );
+      }
+    }
+
+
     // ========================================================
     // VALIDATION
     // ========================================================
 
     for (
       const question of
-      questions ?? []
+      (
+        isSectionCorrection
+          ? (
+              questions ??
+              []
+            ).filter(
+              (item: any) =>
+                correctionQuestionIdSet.has(
+                  item.id
+                )
+            )
+          : questions ??
+            []
+      )
     ) {
       const incoming:
         any =
@@ -961,37 +1118,88 @@ export async function POST(
     // SUBMIT SECTION
     // ========================================================
 
-    const submittedAt =
+    let submittedAt =
       new Date()
         .toISOString();
 
-    const {
-      error:
-        reportSectionUpdateError,
-    } = await supabase
-      .from(
-        "report_sections"
-      )
-      .update({
-        status:
-          "submitted",
 
-        submitted_by:
-          user.id,
-
-        submitted_at:
-          submittedAt,
-      })
-      .eq(
-        "id",
-        reportSectionId
+    if (isSectionCorrection) {
+      const {
+        data:
+          resubmitRows,
+        error:
+          resubmitError,
+      } = await supabase.rpc(
+        "resubmit_report_section_correction",
+        {
+          p_report_section_id:
+            reportSectionId,
+        }
       );
 
-    if (
-      reportSectionUpdateError
-    ) {
-      throw reportSectionUpdateError;
+
+      if (resubmitError) {
+        throw resubmitError;
+      }
+
+
+      const resubmittedSection =
+        Array.isArray(
+          resubmitRows
+        )
+          ? resubmitRows[0]
+          : resubmitRows;
+
+
+      if (
+        !resubmittedSection
+      ) {
+        throw new Error(
+          "Correction resubmit transition gagal."
+        );
+      }
+
+
+      if (
+        resubmittedSection
+          .submitted_at
+      ) {
+        submittedAt =
+          resubmittedSection
+            .submitted_at;
+      }
+
+    } else {
+      const {
+        error:
+          reportSectionUpdateError,
+      } = await supabase
+        .from(
+          "report_sections"
+        )
+        .update({
+          status:
+            "submitted",
+
+          submitted_by:
+            user.id,
+
+          submitted_at:
+            submittedAt,
+        })
+        .eq(
+          "id",
+          reportSectionId
+        );
+
+
+      if (
+        reportSectionUpdateError
+      ) {
+        throw reportSectionUpdateError;
+      }
     }
+
 
     // ========================================================
     // ALL REQUIRED SECTIONS
@@ -1195,6 +1403,43 @@ export async function POST(
           )
       );
 
+    // ========================================================
+    // CK AREA FINALIZATION SAFETY
+    //
+    // CK section submission is not the final report event.
+    //
+    // Production PIC:
+    // - submits section only
+    // - does not generate a PIC final PDF
+    //
+    // Store/Warehouse keeps the existing PIC PDF flow.
+    // Parent CK completion will be handled later by
+    // area leader finalization.
+    // ========================================================
+
+    const isProductionSection =
+      config.sectionScoped &&
+      [
+        "BEVERAGE",
+        "BUTCHER",
+        "STEWARD",
+        "PREMIX",
+        "COLD_KITCHEN",
+        "HOT_KITCHEN",
+        "HDS",
+      ].includes(
+        normalizedSectionCode
+      );
+
+    const sectionSubmitCompletesParentReport =
+      !config.sectionScoped &&
+      allCompleted;
+
+    const picReadyForPdf =
+      config.sectionScoped &&
+      !isProductionSection &&
+      picCompleted;
+
     const wasReopened =
       String(
         report.status ||
@@ -1208,21 +1453,21 @@ export async function POST(
         any
       > = {
       status:
-        allCompleted
+        sectionSubmitCompletesParentReport
           ? "completed"
           : config.sectionScoped
             ? "in_progress"
             : "submitted",
 
       completed_at:
-        allCompleted
+        sectionSubmitCompletesParentReport
           ? submittedAt
           : null,
     };
 
     if (
       wasReopened &&
-      allCompleted
+      sectionSubmitCompletesParentReport
     ) {
       reportUpdatePayload.resubmitted_at =
         submittedAt;
@@ -1283,7 +1528,7 @@ export async function POST(
       submittedAt,
 
       completed:
-        allCompleted,
+        sectionSubmitCompletesParentReport,
 
       picCompleted:
         config.sectionScoped
@@ -1300,10 +1545,7 @@ export async function POST(
           ? picCompletedCount
           : null,
 
-      picReadyForPdf:
-        config.sectionScoped
-          ? picCompleted
-          : false,
+      picReadyForPdf,
 
       answerCount:
         answers.length,
@@ -1314,11 +1556,11 @@ export async function POST(
 
       resubmitted:
         wasReopened &&
-        allCompleted,
+        sectionSubmitCompletesParentReport,
 
       resubmittedAt:
         wasReopened &&
-        allCompleted
+        sectionSubmitCompletesParentReport
           ? submittedAt
           : null,
     });

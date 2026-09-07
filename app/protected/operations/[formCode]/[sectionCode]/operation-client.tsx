@@ -45,6 +45,8 @@ type Question = {
 type AnswerState = {
   value?: boolean | number | string;
 
+  isCompliant?: boolean | null;
+
   notes?: string;
 
   correctiveAction?: string;
@@ -226,6 +228,30 @@ export default function OperationClient({
   const sectionLabel =
     operation.sectionName;
 
+  // ==========================================================
+  // CK PRODUCTION SECTION PIC
+  //
+  // Production PIC submits section only.
+  // Final Production report belongs to Production Leader.
+  // ==========================================================
+
+  const isProductionSection =
+    operation.sectionScoped &&
+    [
+      "BEVERAGE",
+      "BUTCHER",
+      "STEWARD",
+      "PREMIX",
+      "COLD_KITCHEN",
+      "HOT_KITCHEN",
+      "HDS",
+    ].includes(
+      String(
+        operation.sectionCode ||
+        ""
+      ).toUpperCase()
+    );
+
   const [answers, setAnswers] =
     useState<Record<string, AnswerState>>({});
 
@@ -257,6 +283,93 @@ export default function OperationClient({
       sessionData?.reportId &&
       sessionData?.reportSectionId
     );
+
+  const isProductionReviewMode =
+    Boolean(
+      sessionData?.reviewMode
+    );
+
+  const isSectionCorrectionMode =
+    Boolean(
+      sessionData?.correctionMode
+    ) ||
+    String(
+      sessionData?.reportSectionStatus ||
+        ""
+    )
+      .trim()
+      .toLowerCase() ===
+      "needs_correction";
+
+  const correctionQuestionIdSet =
+    useMemo(
+      () =>
+        new Set<string>(
+          Array.isArray(
+            sessionData?.correction
+              ?.questionIds
+          )
+            ? sessionData.correction
+                .questionIds
+                .map(
+                  (value: unknown) =>
+                    String(
+                      value ||
+                        ""
+                    ).trim()
+                )
+                .filter(Boolean)
+            : []
+        ),
+      [
+        sessionData?.correction
+          ?.questionIds,
+      ]
+    );
+
+  const correctionReason =
+    String(
+      sessionData?.correction
+        ?.reason ||
+        ""
+    ).trim();
+
+  const correctionRound =
+    Number(
+      sessionData?.correction
+        ?.round ||
+        0
+    );
+
+  const [
+    reviewBusy,
+    setReviewBusy,
+  ] =
+    useState(false);
+
+  const [
+    reviewMessage,
+    setReviewMessage,
+  ] =
+    useState("");
+
+  const [
+    selectedCorrectionQuestionIds,
+    setSelectedCorrectionQuestionIds,
+  ] =
+    useState<string[]>([]);
+
+  const [
+    reviewCorrectionReason,
+    setReviewCorrectionReason,
+  ] =
+    useState("");
+
+  const [
+    correctionReturnBusy,
+    setCorrectionReturnBusy,
+  ] =
+    useState(false);
 
   const photoUploadTokenRef =
     useRef<Record<string, string>>({});
@@ -291,7 +404,9 @@ export default function OperationClient({
         sessionReady &&
         !submitting &&
         !result &&
-        !isReopenedDraftSession,
+        !isReopenedDraftSession &&
+        !isProductionReviewMode &&
+        !isSectionCorrectionMode,
     });
 
 
@@ -571,6 +686,15 @@ export default function OperationClient({
       return;
     }
 
+    if (
+      isSectionCorrectionMode &&
+      !correctionQuestionIdSet.has(
+        questionId
+      )
+    ) {
+      return;
+    }
+
     setAnswers((prev) => ({
       ...prev,
       [questionId]: {
@@ -593,6 +717,15 @@ export default function OperationClient({
       return;
     }
 
+    if (
+      isSectionCorrectionMode &&
+      !correctionQuestionIdSet.has(
+        questionId
+      )
+    ) {
+      return;
+    }
+
     setAnswers((prev) => ({
       ...prev,
       [questionId]: {
@@ -607,6 +740,15 @@ export default function OperationClient({
     file?: File
   ) {
     if (!file) {
+      return;
+    }
+
+    if (
+      isSectionCorrectionMode &&
+      !correctionQuestionIdSet.has(
+        questionId
+      )
+    ) {
       return;
     }
 
@@ -1894,6 +2036,15 @@ export default function OperationClient({
         const question =
           questions[index];
 
+        if (
+          isSectionCorrectionMode &&
+          !correctionQuestionIdSet.has(
+            question.id
+          )
+        ) {
+          continue;
+        }
+
         const answer =
           answers[question.id];
 
@@ -2170,6 +2321,7 @@ export default function OperationClient({
 
       if (
         operation.sectionScoped &&
+        !isProductionSection &&
         Boolean(
           submitData.picReadyForPdf
         )
@@ -3040,6 +3192,729 @@ export default function OperationClient({
   }
 
   // ==========================================================
+  // MARK PRODUCTION SECTION REVIEWED
+  // ==========================================================
+
+  async function markProductionSectionReviewed() {
+    if (
+      !isProductionReviewMode ||
+      !sessionData?.canMarkReviewed ||
+      !sessionData?.reportId ||
+      reviewBusy
+    ) {
+      return;
+    }
+
+    try {
+      setReviewBusy(true);
+      setErrorMessage("");
+      setReviewMessage(
+        "Saving Production Leader review..."
+      );
+
+      const response =
+        await fetch(
+          `${apiBase}/review`,
+          {
+            method:
+              "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                reportId:
+                  sessionData.reportId,
+              }),
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+          "Unable to mark section as reviewed."
+        );
+      }
+
+      setSessionData(
+        (
+          current: any
+        ) => ({
+          ...current,
+
+          reportSectionStatus:
+            "reviewed",
+
+          canMarkReviewed:
+            false,
+
+          review: {
+            ...(
+              current?.review ||
+              {}
+            ),
+
+            reviewedBy:
+              data.reviewedBy ??
+              null,
+
+            reviewedAt:
+              data.reviewedAt ??
+              null,
+          },
+        })
+      );
+
+      setReviewMessage(
+        `${sectionLabel} reviewed successfully.`
+      );
+
+    } catch (
+      error: any
+    ) {
+      console.error(
+        "Production section review failed:",
+        error
+      );
+
+      setErrorMessage(
+        error?.message ||
+        "Unable to review section."
+      );
+
+      setReviewMessage("");
+    } finally {
+      setReviewBusy(false);
+    }
+  }
+
+
+  function toggleCorrectionQuestion(
+    questionId: string
+  ) {
+    if (
+      correctionReturnBusy ||
+      reviewBusy
+    ) {
+      return;
+    }
+
+    setSelectedCorrectionQuestionIds(
+      current =>
+        current.includes(
+          questionId
+        )
+          ? current.filter(
+              id =>
+                id !==
+                questionId
+            )
+          : [
+              ...current,
+              questionId,
+            ]
+    );
+
+    setErrorMessage("");
+  }
+
+
+  async function returnProductionSectionForCorrection() {
+    if (
+      !isProductionReviewMode ||
+      !sessionData?.reportId ||
+      correctionReturnBusy ||
+      reviewBusy
+    ) {
+      return;
+    }
+
+
+    const reason =
+      reviewCorrectionReason
+        .trim();
+
+
+    if (
+      selectedCorrectionQuestionIds
+        .length === 0
+    ) {
+      setErrorMessage(
+        "Pilih minimal 1 checklist item yang perlu diperbaiki."
+      );
+
+      return;
+    }
+
+
+    if (
+      reason.length < 5
+    ) {
+      setErrorMessage(
+        "Reason for Correction wajib diisi minimal 5 karakter."
+      );
+
+      return;
+    }
+
+
+    const confirmed =
+      window.confirm(
+        `Return ${selectedCorrectionQuestionIds.length} item(s) dari ${sectionLabel} untuk diperbaiki?`
+      );
+
+
+    if (!confirmed) {
+      return;
+    }
+
+
+    try {
+      setCorrectionReturnBusy(
+        true
+      );
+
+      setErrorMessage("");
+
+      setReviewMessage(
+        "Returning section for correction..."
+      );
+
+
+      const response =
+        await fetch(
+          `${apiBase}/return-for-correction`,
+          {
+            method:
+              "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                reportId:
+                  sessionData
+                    .reportId,
+
+                reason,
+
+                questionIds:
+                  selectedCorrectionQuestionIds,
+              }),
+          }
+        );
+
+
+      const data =
+        await response.json();
+
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            "Unable to return section for correction."
+        );
+      }
+
+
+      setReviewMessage(
+        `${sectionLabel} returned for correction.`
+      );
+
+
+      window.location.assign(
+        "/protected/central-kitchen"
+      );
+
+    } catch (
+      error: any
+    ) {
+      console.error(
+        "Return for correction failed:",
+        error
+      );
+
+      setErrorMessage(
+        error?.message ||
+          "Unable to return section for correction."
+      );
+
+      setReviewMessage("");
+
+    } finally {
+      setCorrectionReturnBusy(
+        false
+      );
+    }
+  }
+
+
+  function reviewValue(
+    question: Question,
+    answer:
+      | AnswerState
+      | undefined
+  ) {
+    const value =
+      answer?.value;
+
+    if (
+      typeof value ===
+      "boolean"
+    ) {
+      return value
+        ? "YES"
+        : "NO";
+    }
+
+    if (
+      value ===
+        null ||
+      value ===
+        undefined ||
+      value ===
+        ""
+    ) {
+      return "—";
+    }
+
+    if (
+      question.question_type ===
+        "temperature"
+    ) {
+      return `${value}${
+        question.unit ||
+        ""
+      }`;
+    }
+
+    return String(
+      value
+    );
+  }
+
+
+  if (
+    isProductionReviewMode &&
+    !result
+  ) {
+    const reviewed =
+      String(
+        sessionData
+          ?.reportSectionStatus ||
+        ""
+      )
+        .trim()
+        .toLowerCase() ===
+      "reviewed";
+
+    const reviewedAt =
+      sessionData
+        ?.review
+        ?.reviewedAt;
+
+    const reviewedAtText =
+      reviewedAt
+        ? (() => {
+            try {
+              return new Intl.DateTimeFormat(
+                "id-ID",
+                {
+                  day:
+                    "2-digit",
+                  month:
+                    "short",
+                  year:
+                    "numeric",
+                  hour:
+                    "2-digit",
+                  minute:
+                    "2-digit",
+                  timeZone:
+                    "Asia/Jakarta",
+                }
+              ).format(
+                new Date(
+                  reviewedAt
+                )
+              );
+            } catch {
+              return null;
+            }
+          })()
+        : null;
+
+    return (
+      <section className="mt-6 overflow-hidden rounded-[28px] border border-red-100 bg-white shadow-sm">
+
+        <div className="border-b border-red-100 bg-red-50/50 p-5 sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-red-700">
+                Production Leader Review
+              </p>
+
+              <h2 className="mt-1 text-2xl font-black text-neutral-950">
+                {sectionLabel}
+              </h2>
+
+              <p className="mt-2 text-sm leading-6 text-neutral-600">
+                Checklist sudah disubmit dan dikunci.
+                Review seluruh jawaban, notes, issue,
+                dan photo evidence sebelum approval.
+              </p>
+            </div>
+
+            <span
+              className={`inline-flex w-fit rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-wide ${
+                reviewed
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-amber-100 text-amber-700"
+              }`}
+            >
+              {reviewed
+                ? "Reviewed"
+                : "Submitted"}
+            </span>
+          </div>
+        </div>
+
+
+        <div className="space-y-4 p-4 sm:p-6">
+          {questions.map(
+            (
+              question,
+              index
+            ) => {
+              const answer =
+                answers[
+                  question.id
+                ];
+
+              const group =
+                groups.find(
+                  item =>
+                    item.id ===
+                    question
+                      .question_group_id
+                );
+
+              const hasIssue =
+                answer
+                  ?.isCompliant ===
+                false;
+
+              return (
+                <article
+                  key={
+                    question.id
+                  }
+                  className={`rounded-2xl border p-4 transition sm:p-5 ${
+                    selectedCorrectionQuestionIds.includes(
+                      question.id
+                    )
+                      ? "border-amber-300 bg-amber-50/40 ring-2 ring-amber-100"
+                      : "border-neutral-200 bg-white"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-black text-neutral-600">
+                      {index + 1}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      {group && (
+                        <p className="text-[10px] font-black uppercase tracking-[0.13em] text-neutral-400">
+                          {group.name}
+                        </p>
+                      )}
+
+                      <p className="mt-1 text-sm font-bold leading-6 text-neutral-900">
+                        {
+                          question.question_text
+                        }
+                      </p>
+                    </div>
+
+                    <label
+                      className={`flex shrink-0 cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-wide transition ${
+                        selectedCorrectionQuestionIds.includes(
+                          question.id
+                        )
+                          ? "border-amber-300 bg-amber-100 text-amber-900"
+                          : "border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={
+                          selectedCorrectionQuestionIds.includes(
+                            question.id
+                          )
+                        }
+                        disabled={
+                          correctionReturnBusy ||
+                          reviewBusy
+                        }
+                        onChange={() =>
+                          toggleCorrectionQuestion(
+                            question.id
+                          )
+                        }
+                        className="h-4 w-4 accent-amber-700"
+                      />
+
+                      <span>
+                        Correction
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="mt-4 rounded-xl bg-neutral-50 px-4 py-3">
+                    <p className="text-[10px] font-black uppercase tracking-wide text-neutral-400">
+                      Answer
+                    </p>
+
+                    <p className="mt-1 text-sm font-black text-neutral-900">
+                      {reviewValue(
+                        question,
+                        answer
+                      )}
+                    </p>
+                  </div>
+
+                  {answer
+                    ?.notes
+                    ?.trim() && (
+                    <div className="mt-3 rounded-xl border border-neutral-200 px-4 py-3">
+                      <p className="text-[10px] font-black uppercase tracking-wide text-neutral-400">
+                        Notes
+                      </p>
+
+                      <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-neutral-700">
+                        {
+                          answer.notes
+                        }
+                      </p>
+                    </div>
+                  )}
+
+                  {answer
+                    ?.correctiveAction
+                    ?.trim() && (
+                    <div className="mt-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3">
+                      <p className="text-[10px] font-black uppercase tracking-wide text-red-600">
+                        Corrective Action
+                      </p>
+
+                      <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-red-800">
+                        {
+                          answer
+                            .correctiveAction
+                        }
+                      </p>
+                    </div>
+                  )}
+
+                  {hasIssue && (
+                    <div className="mt-3">
+                      <span className="inline-flex rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-red-700">
+                        Issue
+                      </span>
+                    </div>
+                  )}
+
+                  {answer
+                    ?.existingPhotoFile && (
+                    <PhotoEvidencePreview
+                      file={
+                        answer
+                          .existingPhotoFile
+                      }
+                      label={
+                        question
+                          .question_text
+                      }
+                    />
+                  )}
+
+                  {!answer
+                    ?.existingPhotoFile &&
+                    answer
+                      ?.existingStoragePath && (
+                      <p className="mt-3 text-xs font-semibold text-emerald-700">
+                        Photo Evidence ✓
+                      </p>
+                    )}
+                </article>
+              );
+            }
+          )}
+        </div>
+
+
+        <div className="border-t border-neutral-100 bg-neutral-50 p-5 sm:p-6">
+
+          <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-amber-700">
+                  Return for Correction
+                </p>
+
+                <p className="mt-1 text-sm font-bold text-neutral-900">
+                  {
+                    selectedCorrectionQuestionIds
+                      .length
+                  }{" "}
+                  item(s) selected
+                </p>
+              </div>
+
+              {reviewed && (
+                <span className="rounded-full border border-amber-200 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700">
+                  Reopens Review
+                </span>
+              )}
+            </div>
+
+            <p className="mt-3 text-xs leading-5 text-amber-900">
+              Pilih hanya checklist item yang perlu diperbaiki.
+              PIC hanya akan dapat mengubah item yang dipilih.
+            </p>
+
+            <div className="mt-4">
+              <label className="text-[10px] font-black uppercase tracking-wide text-neutral-500">
+                Reason for Correction *
+              </label>
+
+              <textarea
+                rows={3}
+                value={
+                  reviewCorrectionReason
+                }
+                disabled={
+                  correctionReturnBusy ||
+                  reviewBusy
+                }
+                onChange={event =>
+                  setReviewCorrectionReason(
+                    event.target.value
+                  )
+                }
+                placeholder="Contoh: Wrong photo evidence pada chiller cleanliness."
+                className="mt-2 w-full resize-none rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm leading-6 text-neutral-900 outline-none transition focus:border-amber-400"
+              />
+            </div>
+
+            <button
+              type="button"
+              disabled={
+                correctionReturnBusy ||
+                reviewBusy ||
+                selectedCorrectionQuestionIds
+                  .length === 0 ||
+                reviewCorrectionReason
+                  .trim()
+                  .length < 5
+              }
+              onClick={
+                returnProductionSectionForCorrection
+              }
+              className="mt-3 flex w-full items-center justify-center rounded-xl bg-amber-700 px-4 py-3.5 text-xs font-black uppercase tracking-wide text-white transition hover:bg-amber-800 disabled:cursor-not-allowed disabled:bg-amber-200 disabled:text-amber-500"
+            >
+              {correctionReturnBusy
+                ? "Returning for Correction..."
+                : `Return ${
+                    selectedCorrectionQuestionIds
+                      .length || ""
+                  } ${
+                    selectedCorrectionQuestionIds
+                      .length === 1
+                      ? "Item"
+                      : "Items"
+                  } for Correction`}
+            </button>
+          </div>
+
+          {reviewed ? (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-center">
+              <p className="text-xs font-black uppercase tracking-wide text-emerald-700">
+                ✓ Section Reviewed
+              </p>
+
+              <p className="mt-1 text-xs font-semibold text-neutral-600">
+                Reviewed by Production Leader
+                {reviewedAtText
+                  ? ` · ${reviewedAtText}`
+                  : ""}
+              </p>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={
+                reviewBusy ||
+                correctionReturnBusy ||
+                selectedCorrectionQuestionIds
+                  .length > 0 ||
+                !sessionData
+                  ?.canMarkReviewed
+              }
+              onClick={
+                markProductionSectionReviewed
+              }
+              className="flex w-full items-center justify-center rounded-xl bg-red-700 px-4 py-3.5 text-xs font-black uppercase tracking-wide text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500"
+            >
+              {reviewBusy
+                ? "Saving Review..."
+                : "Mark as Reviewed"}
+            </button>
+          )}
+
+          {!reviewed &&
+            selectedCorrectionQuestionIds
+              .length > 0 && (
+              <p className="mt-2 text-center text-[11px] font-semibold text-amber-700">
+                Clear correction selection before marking this section as reviewed.
+              </p>
+            )}
+
+          {reviewMessage && (
+            <p className="mt-3 text-center text-xs font-semibold text-emerald-700">
+              {reviewMessage}
+            </p>
+          )}
+
+          {errorMessage && (
+            <p className="mt-3 text-center text-xs font-semibold text-red-600">
+              {errorMessage}
+            </p>
+          )}
+
+          <Link
+            href="/protected/central-kitchen"
+            className="mt-3 flex w-full items-center justify-center rounded-xl border border-neutral-200 bg-white px-4 py-3 text-xs font-black text-neutral-700 transition hover:bg-neutral-100"
+          >
+            Back to Production Progress
+          </Link>
+        </div>
+
+      </section>
+    );
+  }
+
+
+  // ==========================================================
   // SUCCESS SCREEN
   // ==========================================================
 
@@ -3067,19 +3942,23 @@ export default function OperationClient({
           </div>
 
           <p className="mt-6 text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">
-            {operation.sectionScoped
-              ? "Checklist Saved"
-              : "Report Saved"}
+            {isSectionCorrectionMode
+              ? "Correction Resubmitted"
+              : operation.sectionScoped
+                ? "Checklist Saved"
+                : "Report Saved"}
           </p>
 
           <h2 className="mt-2 text-3xl font-bold tracking-tight text-neutral-900">
-            {operation.sectionScoped
-              ? result.picCompleted
-                ? "PIC Checklist Completed"
-                : `${sectionLabel} Submitted`
-              : result.completed
-                ? `${operationLabel} Completed`
-                : `${sectionLabel} Submitted`}
+            {isSectionCorrectionMode
+              ? `${sectionLabel} Correction Submitted`
+              : operation.sectionScoped
+                ? result.picCompleted
+                  ? "PIC Checklist Completed"
+                  : `${sectionLabel} Submitted`
+                : result.completed
+                  ? `${operationLabel} Completed`
+                  : `${sectionLabel} Submitted`}
           </h2>
 
           <p className="mt-2 text-neutral-500">
@@ -3098,12 +3977,24 @@ export default function OperationClient({
 
           <div className="mt-8 grid grid-cols-3 gap-3 text-neutral-900">
             <SummaryStat
-              label="Checklist"
-              value={`${result.answerCount}/${totalQuestions}`}
+              label={
+                isSectionCorrectionMode
+                  ? "Corrected Items"
+                  : "Checklist"
+              }
+              value={
+                isSectionCorrectionMode
+                  ? `${result.answerCount}`
+                  : `${result.answerCount}/${totalQuestions}`
+              }
             />
 
             <SummaryStat
-              label="Photos"
+              label={
+                isSectionCorrectionMode
+                  ? "Photos Updated"
+                  : "Photos"
+              }
               value={`${result.photoCount}`}
             />
 
@@ -3123,7 +4014,37 @@ export default function OperationClient({
             </p>
           </div>
 
-          {operation.sectionScoped && (
+          {operation.sectionScoped &&
+              isProductionSection && (
+                <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-5 text-left">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">
+                        Section PIC
+                      </p>
+
+                      <p className="mt-1 font-bold text-neutral-900">
+                        {pic.name}
+                      </p>
+                    </div>
+
+                    <span className="shrink-0 rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-[11px] font-bold tracking-wide text-emerald-700">
+                      {isSectionCorrectionMode
+                        ? "CORRECTION RESUBMITTED"
+                        : "SECTION SUBMITTED"}
+                    </span>
+                  </div>
+
+                  <p className="mt-4 text-sm leading-6 text-neutral-600">
+                    {isSectionCorrectionMode
+                      ? "Correction berhasil dikirim. Production Leader perlu melakukan review ulang sebelum section dapat masuk ke Final Production report."
+                      : "Section Anda sudah berhasil disubmit. Final Production report akan direview dan difinalisasi oleh Production Leader."}
+                  </p>
+                </div>
+              )}
+
+            {operation.sectionScoped &&
+              !isProductionSection && (
             <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 px-5 py-5 text-left">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -3201,7 +4122,8 @@ export default function OperationClient({
           )}
 
           <div className="mt-7 grid gap-3">
-            {result.pdfStoragePath && (
+            {!isProductionSection &&
+              result.pdfStoragePath && (
               <>
                 <button
                   type="button"
@@ -3226,6 +4148,7 @@ export default function OperationClient({
             )}
 
             {operation.sectionScoped &&
+              !isProductionSection &&
               result.picReadyForPdf &&
               !result.pdfStoragePath && (
                 <button
@@ -3239,6 +4162,7 @@ export default function OperationClient({
                 </button>
               )}
 
+            {!isProductionSection && (
             <button
               type="button"
               onClick={
@@ -3248,6 +4172,7 @@ export default function OperationClient({
             >
               📋 Copy Report Text
             </button>
+            )}
 
             <Link
               href={
@@ -3270,7 +4195,9 @@ export default function OperationClient({
           ) : (
             <p className="mt-5 text-xs leading-5 text-neutral-400">
               {operation.sectionScoped
-                ? result.picReadyForPdf
+                ? isProductionSection
+                  ? "Section berhasil disimpan. Final Production report akan direview dan difinalisasi oleh Production Leader."
+                  : result.picReadyForPdf
                   ? result.pdfError
                     ? "Checklist PIC sudah lengkap, tetapi PDF belum berhasil dibuat. Gunakan Retry Generate PDF di atas."
                     : "Checklist PIC sudah lengkap. PDF PIC sedang dipersiapkan."
@@ -3506,8 +4433,22 @@ export default function OperationClient({
                         true;
 
                       const needsCorrection =
-                        isReopenedSession &&
-                        reopenQuestionIdSet.has(
+                        (
+                          isReopenedSession &&
+                          reopenQuestionIdSet.has(
+                            question.id
+                          )
+                        ) ||
+                        (
+                          isSectionCorrectionMode &&
+                          correctionQuestionIdSet.has(
+                            question.id
+                          )
+                        );
+
+                      const correctionLocked =
+                        isSectionCorrectionMode &&
+                        !correctionQuestionIdSet.has(
                           question.id
                         );
 
@@ -3517,7 +4458,14 @@ export default function OperationClient({
                           key={
                             question.id
                           }
-                          className="-mx-2 rounded-[18px] border border-black/5 bg-white p-4 text-neutral-900 shadow-sm sm:mx-0 sm:rounded-[22px] sm:p-6"
+                          className={`-mx-2 rounded-[18px] border p-4 text-neutral-900 shadow-sm sm:mx-0 sm:rounded-[22px] sm:p-6 ${
+                            correctionLocked
+                              ? "pointer-events-none border-neutral-200 bg-neutral-50 opacity-55"
+                              : needsCorrection &&
+                                  isSectionCorrectionMode
+                                ? "border-amber-300 bg-white ring-2 ring-amber-100"
+                                : "border-black/5 bg-white"
+                          }`}
                         >
                           <div className="flex items-start gap-4">
                             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-500">
@@ -3543,7 +4491,17 @@ export default function OperationClient({
                               {needsCorrection && (
                                 <div className="mt-3">
                                   <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-800">
-                                    Admin Requested Correction
+                                    {isSectionCorrectionMode
+                                      ? "Correction Required"
+                                      : "Admin Requested Correction"}
+                                  </span>
+                                </div>
+                              )}
+
+                              {correctionLocked && (
+                                <div className="mt-3">
+                                  <span className="inline-flex rounded-full border border-neutral-200 bg-neutral-100 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-neutral-500">
+                                    🔒 Locked
                                   </span>
                                 </div>
                               )}
@@ -3753,8 +4711,13 @@ export default function OperationClient({
                                     )}
                                 </div>
 
-                                {photoRequired && (
-
+                                {(
+                                  photoRequired ||
+                                  (
+                                    isSectionCorrectionMode &&
+                                    needsCorrection
+                                  )
+                                ) && (
                                   <div className="mt-4 grid grid-cols-2 gap-2.5">
                                   <label className={`flex min-h-[52px] items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 text-center text-xs font-black text-red-700 transition ${submitting || !sessionData?.reportId || !sessionData?.reportSectionId ? "cursor-wait opacity-45" : "cursor-pointer active:scale-[0.99]"}`}>
                                     <span className="text-base">📷</span>
@@ -4011,6 +4974,37 @@ export default function OperationClient({
             </div>
           )}
 
+          {isSectionCorrectionMode && (
+            <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-amber-700 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-white">
+                  Correction Round {correctionRound || 1}
+                </span>
+
+                <span className="text-xs font-bold text-amber-900">
+                  {correctionQuestionIdSet.size} item(s) opened for correction
+                </span>
+              </div>
+
+              {correctionReason && (
+                <div className="mt-3">
+                  <p className="text-[10px] font-black uppercase tracking-wide text-amber-700">
+                    Reason
+                  </p>
+
+                  <p className="mt-1 text-sm font-medium leading-6 text-amber-950">
+                    {correctionReason}
+                  </p>
+                </div>
+              )}
+
+              <p className="mt-3 text-xs leading-5 text-amber-800">
+                Hanya item bertanda Correction Required yang dapat diperbaiki.
+                Item lainnya tetap terkunci.
+              </p>
+            </div>
+          )}
+
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="font-semibold">
@@ -4061,10 +5055,14 @@ export default function OperationClient({
               }`}
             >
               {submitting
-                ? "Submitting..."
-                : operation.sectionScoped
-                  ? `Submit ${sectionLabel}`
-                  : `Submit ${operationKind}`}
+                ? isSectionCorrectionMode
+                  ? "Resubmitting Correction..."
+                  : "Submitting..."
+                : isSectionCorrectionMode
+                  ? "Resubmit Correction"
+                  : operation.sectionScoped
+                    ? `Submit ${sectionLabel}`
+                    : `Submit ${operationKind}`}
             </button>
           </div>
 

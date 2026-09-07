@@ -548,8 +548,16 @@ export async function POST(
       .from("report_sections")
       .select(`
         id,
-        status
-      `)
+        status,
+        submitted_by,
+        submitted_at,
+        reviewed_by,
+        reviewed_at,
+        correction_requested_by,
+        correction_requested_at,
+        correction_reason,
+        correction_question_ids,
+        correction_round`)
       .eq(
         "report_id",
         report.id
@@ -569,11 +577,154 @@ export async function POST(
     let reportSection =
       existingSection;
 
+
+    // ========================================================
+    // PRODUCTION LEADER REVIEW MODE
+    //
+    // Submitted Production sections remain locked for normal
+    // PICs. The explicit Production Leader may open them as
+    // read-only for review.
+    //
+    // Security requires BOTH:
+    // - can_review on the exact section
+    // - form_area_leaders(PRODUCTION)
+    // ========================================================
+
+    let productionLeaderReviewMode =
+      false;
+
+    const isProductionSection =
+      config.sectionScoped &&
+      config.formCode ===
+        "CLOSING_CK" &&
+      [
+        "BEVERAGE",
+        "BUTCHER",
+        "STEWARD",
+        "PREMIX",
+        "COLD_KITCHEN",
+        "HOT_KITCHEN",
+        "HDS",
+      ].includes(
+        normalizedSectionCode
+      );
+
+    const currentSectionStatus =
+      String(
+        reportSection?.status ||
+        ""
+      )
+        .trim()
+        .toLowerCase();
+
+    const submittedForReview =
+      [
+        "submitted",
+        "reviewed",
+      ].includes(
+        currentSectionStatus
+      );
+
+    if (
+      isProductionSection &&
+      reportSection &&
+      submittedForReview
+    ) {
+      const {
+        data:
+          reviewPermission,
+        error:
+          reviewPermissionError,
+      } =
+        await supabase
+          .from(
+            "user_section_permissions"
+          )
+          .select(`
+            section_id,
+            can_review
+          `)
+          .eq(
+            "user_id",
+            user.id
+          )
+          .eq(
+            "outlet_id",
+            outlet.id
+          )
+          .eq(
+            "form_id",
+            form.id
+          )
+          .eq(
+            "section_id",
+            section.id
+          )
+          .eq(
+            "can_review",
+            true
+          )
+          .maybeSingle();
+
+      if (
+        reviewPermissionError
+      ) {
+        throw reviewPermissionError;
+      }
+
+      const {
+        data:
+          productionLeader,
+        error:
+          productionLeaderError,
+      } =
+        await supabase
+          .from(
+            "form_area_leaders"
+          )
+          .select(`
+            id,
+            user_id,
+            area_code
+          `)
+          .eq(
+            "outlet_id",
+            outlet.id
+          )
+          .eq(
+            "form_id",
+            form.id
+          )
+          .eq(
+            "area_code",
+            "PRODUCTION"
+          )
+          .eq(
+            "user_id",
+            user.id
+          )
+          .maybeSingle();
+
+      if (
+        productionLeaderError
+      ) {
+        throw productionLeaderError;
+      }
+
+      productionLeaderReviewMode =
+        Boolean(
+          reviewPermission &&
+          productionLeader
+        );
+    }
+
+
     // A submitted CK section is final while the shared parent
     // report remains in progress for other PICs. It can only be
     // edited again through the explicit reopen flow.
     if (
       config.sectionScoped &&
+      !productionLeaderReviewMode &&
       reportStatus !== "reopened" &&
       reportSection &&
       [
@@ -631,14 +782,29 @@ export async function POST(
         })
         .select(`
           id,
-          status
+          status,
+          submitted_by,
+          submitted_at,
+          reviewed_by,
+          reviewed_at,
+          correction_requested_by,
+          correction_requested_at,
+          correction_reason,
+          correction_question_ids,
+          correction_round
         `)
         .single();
 
       if (
-        createSectionError
+        createSectionError ||
+        !newSection
       ) {
-        throw createSectionError;
+        throw (
+          createSectionError ??
+          new Error(
+            "Unable to create report section."
+          )
+        );
       }
 
       reportSection =
@@ -996,6 +1162,83 @@ export async function POST(
 
       reportSectionStatus:
         reportSection.status,
+
+      reviewMode:
+        productionLeaderReviewMode,
+
+      canMarkReviewed:
+        productionLeaderReviewMode &&
+        String(
+          reportSection.status ||
+          ""
+        )
+          .trim()
+          .toLowerCase() ===
+          "submitted",
+
+      review: {
+        submittedBy:
+          reportSection
+            .submitted_by ??
+          null,
+
+        submittedAt:
+          reportSection
+            .submitted_at ??
+          null,
+
+        reviewedBy:
+          reportSection
+            .reviewed_by ??
+          null,
+
+        reviewedAt:
+          reportSection
+            .reviewed_at ??
+          null,
+      },
+      correctionMode:
+        String(
+          reportSection.status ||
+            ""
+        )
+          .trim()
+          .toLowerCase() ===
+        "needs_correction",
+
+      correction: {
+        requestedBy:
+          reportSection
+            .correction_requested_by ??
+          null,
+
+        requestedAt:
+          reportSection
+            .correction_requested_at ??
+          null,
+
+        reason:
+          reportSection
+            .correction_reason ??
+          null,
+
+        questionIds:
+          Array.isArray(
+            reportSection
+              .correction_question_ids
+          )
+            ? reportSection
+                .correction_question_ids
+            : [],
+
+        round:
+          Number(
+            reportSection
+              .correction_round ||
+              0
+          ),
+      },
+
 
       businessDate,
       timezone,

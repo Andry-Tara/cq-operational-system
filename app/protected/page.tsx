@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import {
   createClient,
@@ -301,6 +302,12 @@ export default async function ProtectedPage({
 
   const activeOutlet =
     await getActiveOutlet();
+
+  if (!activeOutlet) {
+    redirect(
+      "/protected/select-outlet"
+    );
+  }
 
   if (
     !outlets.length &&
@@ -712,6 +719,704 @@ export default async function ProtectedPage({
   // TODAY
   // ==========================================================
 
+  // ==========================================================
+  // CENTRAL KITCHEN PIC KPI
+  //
+  // For CQ Central PIC users, dashboard metrics are based on
+  // CK sections assigned to the current user.
+  // ==========================================================
+
+  let ckAssignedCount =
+    0;
+
+  let ckCompletedCount =
+    0;
+
+  let ckInProgressCount =
+    0;
+
+  let ckNotSubmittedCount =
+    0;
+
+  let ckIssueCount =
+    0;
+
+  // CK PRODUCTION LEADER KPI
+  //
+  // Section PIC:
+  //   completion belongs to current submitted_by user.
+  //
+  // Production Leader:
+  //   completion reflects the whole Production team.
+  //
+  let ckProductionLeaderMode =
+    false;
+
+
+  if (
+    activeOutlet?.code ===
+    "CNT"
+  ) {
+
+    // ----------------------------------------------------------
+    // CK FORMS
+    // ----------------------------------------------------------
+
+    const {
+      data: ckForms,
+      error: ckFormsError,
+    } =
+      await supabase
+        .from("forms")
+        .select(`
+          id,
+          code
+        `)
+        .eq(
+          "organization_id",
+          profile.organization_id
+        )
+        .in(
+          "code",
+          [
+            "OPENING_CK",
+            "CLOSING_CK",
+          ]
+        )
+        .eq(
+          "is_active",
+          true
+        );
+
+
+    if (ckFormsError) {
+
+      return (
+        <ErrorState
+          message={
+            ckFormsError.message
+          }
+        />
+      );
+
+    }
+
+
+    const ckFormRows =
+      ckForms ?? [];
+
+    const ckFormIds =
+      ckFormRows.map(
+        (item: any) =>
+          item.id
+      );
+
+
+    // ----------------------------------------------------------
+    // ACTIVE CK FORM VERSIONS
+    // ----------------------------------------------------------
+
+    const {
+      data: ckAssignments,
+      error: ckAssignmentsError,
+    } =
+      ckFormIds.length
+        ? await supabase
+            .from(
+              "outlet_form_assignments"
+            )
+            .select(`
+              form_id,
+              form_version_id
+            `)
+            .eq(
+              "outlet_id",
+              activeOutlet.id
+            )
+            .in(
+              "form_id",
+              ckFormIds
+            )
+            .eq(
+              "is_active",
+              true
+            )
+        : {
+            data: [],
+            error: null,
+          };
+
+
+    if (ckAssignmentsError) {
+
+      return (
+        <ErrorState
+          message={
+            ckAssignmentsError.message
+          }
+        />
+      );
+
+    }
+
+
+    const ckAssignmentRows =
+      ckAssignments ?? [];
+
+    const ckVersionIds =
+      ckAssignmentRows.map(
+        (item: any) =>
+          item.form_version_id
+      );
+
+
+    // ----------------------------------------------------------
+    // REQUIRED ACTIVE CK SECTIONS
+    // ----------------------------------------------------------
+
+    const {
+      data: ckVersionSections,
+      error: ckVersionSectionsError,
+    } =
+      ckVersionIds.length
+        ? await supabase
+            .from(
+              "form_version_sections"
+            )
+            .select(`
+              form_version_id,
+              section_id,
+              is_required,
+              is_active
+            `)
+            .in(
+              "form_version_id",
+              ckVersionIds
+            )
+            .eq(
+              "is_active",
+              true
+            )
+            .eq(
+              "is_required",
+              true
+            )
+        : {
+            data: [],
+            error: null,
+          };
+
+
+    if (ckVersionSectionsError) {
+
+      return (
+        <ErrorState
+          message={
+            ckVersionSectionsError.message
+          }
+        />
+      );
+
+    }
+
+
+    const ckFormIdByVersion =
+      new Map(
+        ckAssignmentRows.map(
+          (item: any) => [
+            item.form_version_id,
+            item.form_id,
+          ]
+        )
+      );
+
+
+    const ckActiveSectionKeys =
+      new Set(
+        (
+          ckVersionSections ??
+          []
+        )
+          .map(
+            (item: any) => {
+
+              const formId =
+                ckFormIdByVersion.get(
+                  item.form_version_id
+                );
+
+              return formId
+                ? `${formId}:${item.section_id}`
+                : null;
+
+            }
+          )
+          .filter(
+            Boolean
+          )
+      );
+
+
+    // ----------------------------------------------------------
+    // PRODUCTION LEADER
+    //
+    // Do not infer leader authority from can_review/can_submit.
+    // Final authority comes from form_area_leaders.
+    // ----------------------------------------------------------
+
+    const {
+      data: ckAreaLeaderRows,
+      error: ckAreaLeaderError,
+    } =
+      ckFormIds.length
+        ? await supabase
+            .from(
+              "form_area_leaders"
+            )
+            .select(`
+              form_id,
+              area_code,
+              user_id
+            `)
+            .eq(
+              "outlet_id",
+              activeOutlet.id
+            )
+            .eq(
+              "user_id",
+              user.id
+            )
+            .eq(
+              "area_code",
+              "PRODUCTION"
+            )
+            .in(
+              "form_id",
+              ckFormIds
+            )
+        : {
+            data: [],
+            error: null,
+          };
+
+    if (ckAreaLeaderError) {
+      return (
+        <ErrorState
+          message={
+            ckAreaLeaderError.message
+          }
+        />
+      );
+    }
+
+    const ckProductionLeaderFormIds =
+      new Set(
+        (
+          ckAreaLeaderRows ??
+          []
+        ).map(
+          (item: any) =>
+            item.form_id
+        )
+      );
+
+    ckProductionLeaderMode =
+      ckProductionLeaderFormIds.size >
+      0;
+
+
+    // ----------------------------------------------------------
+    // CURRENT PIC ASSIGNMENT
+    // ----------------------------------------------------------
+
+    const {
+      data: ckPermissions,
+      error: ckPermissionsError,
+    } =
+      ckFormIds.length
+        ? await supabase
+            .from(
+              "user_section_permissions"
+            )
+            .select(`
+              form_id,
+              section_id,
+              can_submit
+            `)
+            .eq(
+              "user_id",
+              user.id
+            )
+            .eq(
+              "outlet_id",
+              activeOutlet.id
+            )
+            .in(
+              "form_id",
+              ckFormIds
+            )
+            .eq(
+              "can_submit",
+              true
+            )
+        : {
+            data: [],
+            error: null,
+          };
+
+
+    if (ckPermissionsError) {
+
+      return (
+        <ErrorState
+          message={
+            ckPermissionsError.message
+          }
+        />
+      );
+
+    }
+
+
+    const ckAssignedByKey =
+      new Map<string, any>();
+
+
+    for (
+      const permission of
+      ckPermissions ?? []
+    ) {
+
+      const key =
+        `${permission.form_id}:${permission.section_id}`;
+
+      if (
+        ckActiveSectionKeys.has(
+          key
+        )
+      ) {
+
+        ckAssignedByKey.set(
+          key,
+          permission
+        );
+
+      }
+
+    }
+
+
+    const ckAssignedSections =
+      Array.from(
+        ckAssignedByKey.values()
+      );
+
+
+    ckAssignedCount =
+      ckAssignedSections.length;
+
+
+    // ----------------------------------------------------------
+    // TODAY CK REPORTS
+    // ----------------------------------------------------------
+
+    const {
+      data: ckReports,
+      error: ckReportsError,
+    } =
+      ckFormIds.length
+        ? await supabase
+            .from("reports")
+            .select(`
+              id,
+              form_id,
+              status,
+              business_date
+            `)
+            .eq(
+              "outlet_id",
+              activeOutlet.id
+            )
+            .in(
+              "form_id",
+              ckFormIds
+            )
+            .eq(
+              "business_date",
+              today
+            )
+        : {
+            data: [],
+            error: null,
+          };
+
+
+    if (ckReportsError) {
+
+      return (
+        <ErrorState
+          message={
+            ckReportsError.message
+          }
+        />
+      );
+
+    }
+
+
+    const ckReportRows =
+      ckReports ?? [];
+
+    const ckReportByFormId =
+      new Map(
+        ckReportRows.map(
+          (item: any) => [
+            item.form_id,
+            item,
+          ]
+        )
+      );
+
+    const ckReportIds =
+      ckReportRows.map(
+        (item: any) =>
+          item.id
+      );
+
+    const ckAssignedSectionIds =
+      Array.from(
+        new Set(
+          ckAssignedSections.map(
+            (item: any) =>
+              item.section_id
+          )
+        )
+      );
+
+
+    // ----------------------------------------------------------
+    // SECTION STATUS
+    // ----------------------------------------------------------
+
+    const {
+      data: ckReportSections,
+      error: ckReportSectionsError,
+    } =
+      ckReportIds.length &&
+      ckAssignedSectionIds.length
+        ? await supabase
+            .from(
+              "report_sections"
+            )
+            .select(`
+              id,
+              report_id,
+              section_id,
+              status,
+              submitted_by
+            `)
+            .in(
+              "report_id",
+              ckReportIds
+            )
+            .in(
+              "section_id",
+              ckAssignedSectionIds
+            )
+        : {
+            data: [],
+            error: null,
+          };
+
+
+    if (ckReportSectionsError) {
+
+      return (
+        <ErrorState
+          message={
+            ckReportSectionsError.message
+          }
+        />
+      );
+
+    }
+
+
+    const ckReportSectionRows =
+      ckReportSections ?? [];
+
+    const ckReportSectionByKey =
+      new Map(
+        ckReportSectionRows.map(
+          (item: any) => [
+            `${item.report_id}:${item.section_id}`,
+            item,
+          ]
+        )
+      );
+
+
+    const ckOwnedReportSectionIds:
+      string[] = [];
+
+
+    for (
+      const assigned of
+      ckAssignedSections
+    ) {
+
+      const report =
+        ckReportByFormId.get(
+          assigned.form_id
+        );
+
+
+      if (!report) {
+
+        ckNotSubmittedCount +=
+          1;
+
+        continue;
+
+      }
+
+
+      const reportSection =
+        ckReportSectionByKey.get(
+          `${report.id}:${assigned.section_id}`
+        );
+
+
+      if (!reportSection) {
+
+        ckNotSubmittedCount +=
+          1;
+
+        continue;
+
+      }
+
+
+      const status =
+        String(
+          reportSection.status ||
+          ""
+        )
+          .trim()
+          .toLowerCase();
+
+
+      const isProductionLeaderSection =
+        ckProductionLeaderFormIds.has(
+          assigned.form_id
+        );
+
+      const isCompleted =
+        [
+          "submitted",
+          "reviewed",
+          "completed",
+        ].includes(
+          status
+        ) &&
+        (
+          isProductionLeaderSection ||
+          reportSection.submitted_by ===
+            user.id
+        );
+
+
+      const isInProgress =
+        [
+          "draft",
+          "in_progress",
+          "reopened",
+        ].includes(
+          status
+        );
+
+
+      if (isCompleted) {
+
+        ckCompletedCount +=
+          1;
+
+      } else if (
+        isInProgress
+      ) {
+
+        ckInProgressCount +=
+          1;
+
+      } else {
+
+        ckNotSubmittedCount +=
+          1;
+
+      }
+
+
+      ckOwnedReportSectionIds.push(
+        reportSection.id
+      );
+
+    }
+
+
+    // ----------------------------------------------------------
+    // PIC SECTION ISSUES
+    // ----------------------------------------------------------
+
+    if (
+      ckOwnedReportSectionIds.length
+    ) {
+
+      const {
+        data: ckIssues,
+        error: ckIssuesError,
+      } =
+        await supabase
+          .from("issues")
+          .select(`
+            id,
+            report_section_id
+          `)
+          .in(
+            "report_section_id",
+            ckOwnedReportSectionIds
+          );
+
+
+      if (ckIssuesError) {
+
+        return (
+          <ErrorState
+            message={
+              ckIssuesError.message
+            }
+          />
+        );
+
+      }
+
+
+      ckIssueCount =
+        (
+          ckIssues ??
+          []
+        ).length;
+
+    }
+
+  }
+
+
+  const useCkPicSummary =
+    activeOutlet?.code ===
+      "CNT" &&
+    ckAssignedCount > 0;
+
+
   const todayRows =
     outlets.map(
       (
@@ -999,20 +1704,35 @@ export default async function ProtectedPage({
         <section className="mt-4 grid grid-cols-2 gap-2.5 xl:grid-cols-5 [&>*:last-child]:col-span-2 xl:[&>*:last-child]:col-span-1">
 
           <Metric
-            label="Outlets"
-              tone="info"
+            label={
+              useCkPicSummary
+                ? "Assigned"
+                : "Outlets"
+            }
+            tone="info"
             value={
-              outlets.length
+              useCkPicSummary
+                ? ckAssignedCount
+                : outlets.length
             }
             sub={
-              scopeLabel
+              useCkPicSummary
+                ? "CK Sections"
+                : scopeLabel
             }
           />
 
           <Metric
-            label="Completed"
+            label={
+              useCkPicSummary &&
+              ckProductionLeaderMode
+                ? "Submitted"
+                : "Completed"
+            }
             value={
-              completed
+              useCkPicSummary
+                ? ckCompletedCount
+                : completed
             }
             sub="Today"
             tone="success"
@@ -1021,7 +1741,9 @@ export default async function ProtectedPage({
           <Metric
             label="In Progress"
             value={
-              inProgress
+              useCkPicSummary
+                ? ckInProgressCount
+                : inProgress
             }
             sub="Today"
             tone="warning"
@@ -1030,7 +1752,9 @@ export default async function ProtectedPage({
           <Metric
             label="Not Submitted"
             value={
-              notSubmitted
+              useCkPicSummary
+                ? ckNotSubmittedCount
+                : notSubmitted
             }
             sub="Today"
           />
@@ -1038,7 +1762,9 @@ export default async function ProtectedPage({
           <Metric
             label="Issues"
             value={
-              todayIssues
+              useCkPicSummary
+                ? ckIssueCount
+                : todayIssues
             }
             sub="Today"
             tone="danger"
@@ -1292,10 +2018,126 @@ export default async function ProtectedPage({
 
 
         {/* ====================================================
+
+            CENTRAL KITCHEN OPERATIONS
+
+        ==================================================== */}
+
+        {activeOutlet?.code === "CNT" && (
+
+          <section className="mt-4 overflow-hidden rounded-[18px] border border-red-100 bg-white shadow-sm md:mt-6 md:rounded-[22px]">
+
+            <div className="p-4 sm:p-5 md:p-6">
+
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+
+                <div className="flex min-w-0 items-start gap-4">
+
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-red-50 text-xl sm:h-12 sm:w-12">
+
+                    🏭
+
+                  </div>
+
+                  <div className="min-w-0">
+
+                    <p className="text-[10px] font-black uppercase tracking-[0.15em] text-red-700">
+
+                      Daily Operational
+
+                    </p>
+
+                    <h2 className="mt-0.5 text-lg font-black tracking-tight text-neutral-950 sm:text-xl">
+
+                      Central Kitchen Operations
+
+                    </h2>
+
+                    <p className="mt-1.5 text-[13px] leading-5 text-neutral-500 sm:text-sm sm:leading-6">
+
+                      Opening CK dan Closing CK berdasarkan section yang menjadi tanggung jawab Anda.
+
+                    </p>
+
+                  </div>
+
+                </div>
+
+
+                <span className="shrink-0 self-start rounded-full bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-emerald-700">
+
+                  AVAILABLE
+
+                </span>
+
+              </div>
+
+
+              <div className="mt-4 grid grid-cols-2 gap-2.5 sm:gap-3">
+
+                <div className="rounded-2xl bg-neutral-50 px-4 py-4">
+
+                  <p className="text-[10px] font-black uppercase tracking-wide text-neutral-400">
+
+                    Outlet
+
+                  </p>
+
+                  <p className="mt-1 truncate text-sm font-bold text-neutral-900">
+
+                    {activeOutlet.name}
+
+                  </p>
+
+                </div>
+
+
+                <div className="rounded-2xl bg-neutral-50 px-4 py-4">
+
+                  <p className="text-[10px] font-black uppercase tracking-wide text-neutral-400">
+
+                    Operation
+
+                  </p>
+
+                  <p className="mt-1 text-sm font-bold text-neutral-900">
+
+                    Opening CK / Closing CK
+
+                  </p>
+
+                </div>
+
+              </div>
+
+
+              <Link
+                href="/protected/central-kitchen"
+                className="mt-4 flex w-full items-center justify-between rounded-2xl bg-red-700 px-5 py-4 text-sm font-black text-white transition hover:bg-red-800"
+              >
+
+                <span>
+                  Open Central Kitchen
+                </span>
+
+                <span>
+                  →
+                </span>
+
+              </Link>
+
+            </div>
+
+          </section>
+
+        )}
+
+
+        {/* ====================================================
             OPENING OUTLET
         ==================================================== */}
 
-        {activeOutlet && (
+        {activeOutlet?.code !== "CNT" && (
           <section className="mt-4 overflow-hidden rounded-[18px] border border-neutral-200 bg-white shadow-sm md:mt-6 md:rounded-[22px]">
 
             <div className="p-4 sm:p-5 md:p-6">
