@@ -23,8 +23,127 @@ const LINK_VALIDITY_MS =
   1000;
 
 
+function safeFilename(
+  value: unknown
+) {
+  const filename =
+    String(
+      value ||
+      "production-report.pdf"
+    )
+      .replace(
+        /[\r\n"]/g,
+        "_"
+      )
+      .trim();
+
+  return (
+    filename ||
+    "production-report.pdf"
+  );
+}
+
+
+function parseByteRange(
+  value: string,
+  totalSize: number
+) {
+  const match =
+    /^bytes=(\d*)-(\d*)$/i
+      .exec(
+        value.trim()
+      );
+
+  if (!match) {
+    return null;
+  }
+
+  const startRaw =
+    match[1];
+
+  const endRaw =
+    match[2];
+
+  if (
+    !startRaw &&
+    !endRaw
+  ) {
+    return null;
+  }
+
+
+  // bytes=-500
+  if (!startRaw) {
+    const suffixLength =
+      Number(
+        endRaw
+      );
+
+    if (
+      !Number.isFinite(
+        suffixLength
+      ) ||
+      suffixLength <= 0
+    ) {
+      return null;
+    }
+
+    const length =
+      Math.min(
+        suffixLength,
+        totalSize
+      );
+
+    return {
+      start:
+        totalSize -
+        length,
+      end:
+        totalSize -
+        1,
+    };
+  }
+
+
+  const start =
+    Number(
+      startRaw
+    );
+
+  const requestedEnd =
+    endRaw
+      ? Number(
+          endRaw
+        )
+      : totalSize - 1;
+
+  if (
+    !Number.isFinite(
+      start
+    ) ||
+    !Number.isFinite(
+      requestedEnd
+    ) ||
+    start < 0 ||
+    requestedEnd < start ||
+    start >= totalSize
+  ) {
+    return null;
+  }
+
+  return {
+    start,
+    end:
+      Math.min(
+        requestedEnd,
+        totalSize - 1
+      ),
+  };
+}
+
+
 export async function GET(
-  _request: Request,
+  request: Request,
   context: RouteContext
 ) {
   try {
@@ -149,36 +268,37 @@ export async function GET(
     }
 
 
-    // Short-lived Storage token.
+    // ========================================================
+    // SERVER-SIDE PDF PROXY
     //
-    // The public /r/p/... URL remains stable for seven days,
-    // while the underlying Supabase JWT is never exposed in
-    // copied WhatsApp summaries.
+    // The private Supabase Storage URL is never exposed to
+    // the browser. The branded /r/p/... URL stays visible.
+    // ========================================================
+
     const {
       data:
-        signed,
+        pdfBlob,
       error:
-        signedError,
+        downloadError,
     } =
       await admin
         .storage
         .from(
           "operational-reports"
         )
-        .createSignedUrl(
+        .download(
           finalization
-            .pdf_storage_path,
-          60 * 10
+            .pdf_storage_path
         );
 
 
     if (
-      signedError ||
-      !signed?.signedUrl
+      downloadError ||
+      !pdfBlob
     ) {
       console.error(
-        "Public Production report signing failed:",
-        signedError
+        "Public Production PDF download failed:",
+        downloadError
       );
 
       return new NextResponse(
@@ -191,9 +311,124 @@ export async function GET(
     }
 
 
-    return NextResponse.redirect(
-      signed.signedUrl,
-      307
+    const totalSize =
+      pdfBlob.size;
+
+    const filename =
+      safeFilename(
+        finalization
+          .pdf_storage_path
+          .split("/")
+          .pop()
+      );
+
+
+    const baseHeaders = {
+      "Content-Type":
+        "application/pdf",
+
+      "Content-Disposition":
+        `inline; filename="${filename}"`,
+
+      "Cache-Control":
+        "private, no-store, max-age=0",
+
+      "Accept-Ranges":
+        "bytes",
+
+      "X-Content-Type-Options":
+        "nosniff",
+    };
+
+
+    const rangeHeader =
+      request.headers
+        .get(
+          "range"
+        );
+
+
+    if (
+      rangeHeader
+    ) {
+      const range =
+        parseByteRange(
+          rangeHeader,
+          totalSize
+        );
+
+      if (!range) {
+        return new NextResponse(
+          null,
+          {
+            status:
+              416,
+
+            headers: {
+              ...baseHeaders,
+
+              "Content-Range":
+                `bytes */${totalSize}`,
+            },
+          }
+        );
+      }
+
+
+      const partialBlob =
+        pdfBlob.slice(
+          range.start,
+          range.end + 1,
+          "application/pdf"
+        );
+
+      const partialBytes =
+        await partialBlob
+          .arrayBuffer();
+
+
+      return new NextResponse(
+        partialBytes,
+        {
+          status:
+            206,
+
+          headers: {
+            ...baseHeaders,
+
+            "Content-Length":
+              String(
+                partialBlob.size
+              ),
+
+            "Content-Range":
+              `bytes ${range.start}-${range.end}/${totalSize}`,
+          },
+        }
+      );
+    }
+
+
+    const pdfBytes =
+      await pdfBlob
+        .arrayBuffer();
+
+
+    return new NextResponse(
+      pdfBytes,
+      {
+        status:
+          200,
+
+        headers: {
+          ...baseHeaders,
+
+          "Content-Length":
+            String(
+              totalSize
+            ),
+        },
+      }
     );
 
   } catch (
