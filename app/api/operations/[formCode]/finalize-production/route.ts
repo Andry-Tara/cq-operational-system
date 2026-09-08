@@ -1601,6 +1601,10 @@ export async function POST(
         ""
       ).trim();
 
+    const regeneratePdf =
+      body?.regeneratePdf ===
+      true;
+
     if (!reportId) {
       return NextResponse.json(
         {
@@ -1840,6 +1844,104 @@ export async function POST(
         },
         {
           status: 409,
+        }
+      );
+    }
+
+
+    // ========================================================
+    // REGENERATE EXISTING FINAL PDF
+    //
+    // Keeps:
+    // - original finalized_at
+    // - original leader snapshot
+    // - parent report state
+    //
+    // Only refreshes the PDF artifact metadata.
+    // ========================================================
+
+    if (
+      regeneratePdf
+    ) {
+      const existing =
+        contextData
+          .existingFinalization;
+
+      if (
+        !existing
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Production belum pernah difinalisasi. Gunakan Finalize Production terlebih dahulu.",
+            code:
+              "PRODUCTION_NOT_FINALIZED",
+          },
+          {
+            status: 409,
+          }
+        );
+      }
+
+      const generatedAt =
+        new Date()
+          .toISOString();
+
+      const {
+        data:
+          regeneratedFinalization,
+        error:
+          regenerateError,
+      } =
+        await contextData.admin
+          .from(
+            "report_area_finalizations"
+          )
+          .update({
+            pdf_storage_path:
+              pdfStoragePath,
+            pdf_generated_at:
+              generatedAt,
+            updated_at:
+              generatedAt,
+          })
+          .eq(
+            "id",
+            existing.id
+          )
+          .eq(
+            "report_id",
+            contextData
+              .report.id
+          )
+          .eq(
+            "area_code",
+            "PRODUCTION"
+          )
+          .select(`
+            id,
+            report_id,
+            area_code,
+            leader_user_id,
+            leader_name,
+            finalized_at,
+            pdf_storage_path,
+            pdf_generated_at
+          `)
+          .single();
+
+      if (
+        regenerateError
+      ) {
+        throw regenerateError;
+      }
+
+      return NextResponse.json(
+        {
+          success: true,
+          regenerated: true,
+          finalization:
+            regeneratedFinalization,
         }
       );
     }

@@ -444,6 +444,44 @@ function groupNameForQuestion(
   );
 }
 
+function issueOwnerLabel(
+  groupName: unknown
+) {
+  const parts =
+    String(
+      groupName ?? ""
+    )
+      .split("·")
+      .map(
+        part =>
+          part.trim()
+      )
+      .filter(Boolean);
+
+  if (!parts.length) {
+    return "GENERAL";
+  }
+
+  const section =
+    parts[0]
+      .toUpperCase();
+
+  const pic =
+    parts.find(
+      part =>
+        /^PIC\s+/i.test(
+          part
+        )
+    );
+
+  if (pic) {
+    return `${section} · ${pic.toUpperCase()}`;
+  }
+
+  return section;
+}
+
+
 function issueSummaryRows(
   groups: Group[],
   questions: Question[],
@@ -512,11 +550,13 @@ async function drawBrandHeader(
   logos: { cq: any; dd: any },
   {
     compact = false,
+    compactLabel = "CHECKLIST DETAIL",
     reportNumber,
     outletName,
     reportDate,
   }: {
     compact?: boolean;
+    compactLabel?: string;
     reportNumber: string;
     outletName: string;
     reportDate: string;
@@ -600,7 +640,7 @@ async function drawBrandHeader(
       color: COLORS.muted,
     });
 
-    page.drawText("CHECKLIST DETAIL", {
+    page.drawText(compactLabel, {
       x: PAGE.marginX,
       y: PAGE.height - 96,
       size: 8,
@@ -627,6 +667,7 @@ async function drawCoverPage(
     outletName,
     submittedBy,
     reportArea,
+    reportTimestamp,
     groups,
     questions,
     answers,
@@ -635,6 +676,7 @@ async function drawCoverPage(
     outletName: string;
     submittedBy: string;
     reportArea: string;
+    reportTimestamp?: string | null;
     groups: Group[];
     questions: Question[];
     answers: Record<string, Answer>;
@@ -650,9 +692,30 @@ async function drawCoverPage(
     color: COLORS.page,
   });
 
-  const now = new Date();
-  const reportDate = formatDateID(now);
-  const reportTime = formatTimeID(now);
+  const requestedNow =
+    reportTimestamp
+      ? new Date(
+          reportTimestamp
+        )
+      : new Date();
+
+  const now =
+    Number.isNaN(
+      requestedNow
+        .getTime()
+    )
+      ? new Date()
+      : requestedNow;
+
+  const reportDate =
+    formatDateID(
+      now
+    );
+
+  const reportTime =
+    formatTimeID(
+      now
+    );
   const issues = issueSummaryRows(groups, questions, answers);
   const photoCount = Object.values(answers).filter((a) => a?.photo).length;
 
@@ -837,8 +900,15 @@ async function drawCoverPage(
     valueFont: fonts.bold,
   });
 
-  const followY = PAGE.height - 650;
-  const followH = issues.length ? 124 : 82;
+  const followY =
+    issues.length
+      ? PAGE.height - 712
+      : PAGE.height - 650;
+
+  const followH =
+    issues.length
+      ? 186
+      : 82;
 
   page.drawRectangle({
     x: PAGE.marginX,
@@ -866,6 +936,30 @@ async function drawCoverPage(
       const answer = row.answer;
       const value = answerText(row.question, answer);
 
+      const ownerLabel =
+        issueOwnerLabel(
+          row.group
+        );
+
+      page.drawText(
+        ownerLabel,
+        {
+          x:
+            PAGE.marginX +
+            18,
+          y:
+            issueY,
+          size:
+            7.5,
+          font:
+            fonts.bold,
+          color:
+            COLORS.red,
+        }
+      );
+
+      issueY -= 12;
+
       page.drawText(
         `${String(
           questions.findIndex((q) => q.id === row.question.id) + 1
@@ -879,7 +973,7 @@ async function drawCoverPage(
         }
       );
 
-      issueY -= 16;
+      issueY -= 15;
 
       const notes = answer?.notes ? `Notes: ${answer.notes}` : "";
       const action = answer?.correctiveAction
@@ -889,7 +983,19 @@ async function drawCoverPage(
       const meta = [notes, action].filter(Boolean).join("  |  ");
 
       if (meta) {
-        const lines = wrapText(meta, fonts.normal, 8.5, PAGE.width - PAGE.marginX * 2 - 36);
+        const lines =
+          wrapText(
+            meta,
+            fonts.normal,
+            8.5,
+            PAGE.width -
+              PAGE.marginX *
+                2 -
+              36
+          ).slice(
+            0,
+            1
+          );
         issueY = drawTextLines(page, lines, {
           x: PAGE.marginX + 18,
           y: issueY,
@@ -900,7 +1006,7 @@ async function drawCoverPage(
         });
       }
 
-      issueY -= 8;
+      issueY -= 6;
     }
   } else {
     page.drawText("NO FOLLOW-UP REQUIRED", {
@@ -930,6 +1036,334 @@ async function drawCoverPage(
 
   return page;
 }
+
+
+async function drawFollowUpContinuationPages(
+  pdf: PDFDocument,
+  fonts: {
+    normal: any;
+    bold: any;
+  },
+  logos: {
+    cq: any;
+    dd: any;
+  },
+  {
+    reportNumber,
+    outletName,
+    reportDate,
+    questions,
+    issues,
+  }: {
+    reportNumber: string;
+    outletName: string;
+    reportDate: string;
+    questions: Question[];
+    issues: Array<{
+      group: string;
+      question: Question;
+      answer?: Answer;
+    }>;
+  }
+) {
+  const remainingIssues =
+    issues.slice(3);
+
+  if (
+    !remainingIssues.length
+  ) {
+    return;
+  }
+
+  let page: any =
+    null;
+
+  let cursorY =
+    0;
+
+  const contentLeft =
+    PAGE.marginX +
+    18;
+
+  const contentWidth =
+    PAGE.width -
+    PAGE.marginX *
+      2 -
+    36;
+
+
+  const createPage =
+    async () => {
+      page =
+        pdf.addPage([
+          PAGE.width,
+          PAGE.height,
+        ]);
+
+      page.drawRectangle({
+        x: 0,
+        y: 0,
+        width:
+          PAGE.width,
+        height:
+          PAGE.height,
+        color:
+          COLORS.page,
+      });
+
+      await drawBrandHeader(
+        page,
+        fonts,
+        logos,
+        {
+          reportNumber,
+          outletName,
+          reportDate,
+          compact:
+            true,
+          compactLabel:
+            "FOLLOW-UP SUMMARY",
+        }
+      );
+
+      page.drawText(
+        "FOLLOW-UP REQUIRED — CONTINUED",
+        {
+          x:
+            PAGE.marginX,
+          y:
+            PAGE.height -
+            142,
+          size:
+            13,
+          font:
+            fonts.bold,
+          color:
+            COLORS.red,
+        }
+      );
+
+      page.drawText(
+        `${issues.length} total issues detected`,
+        {
+          x:
+            PAGE.marginX,
+          y:
+            PAGE.height -
+            160,
+          size:
+            8.5,
+          font:
+            fonts.normal,
+          color:
+            COLORS.muted,
+        }
+      );
+
+      cursorY =
+        PAGE.height -
+        192;
+    };
+
+
+  await createPage();
+
+
+  for (
+    const row of
+    remainingIssues
+  ) {
+    const answer =
+      row.answer;
+
+    const value =
+      answerText(
+        row.question,
+        answer
+      );
+
+    const ownerLabel =
+      issueOwnerLabel(
+        row.group
+      );
+
+    const questionNumber =
+      questions.findIndex(
+        q =>
+          q.id ===
+          row.question.id
+      ) + 1;
+
+    const questionLines =
+      wrapText(
+        `${String(
+          questionNumber
+        ).padStart(
+          2,
+          "0"
+        )}  ${
+          row.question
+            .question_text
+        }  ·  ${value}`,
+        fonts.bold,
+        10.5,
+        contentWidth
+      );
+
+    const notes =
+      answer?.notes
+        ? `Notes: ${answer.notes}`
+        : "";
+
+    const action =
+      answer
+        ?.correctiveAction
+        ? `Corrective: ${answer.correctiveAction}`
+        : "";
+
+    const meta =
+      [
+        notes,
+        action,
+      ]
+        .filter(Boolean)
+        .join(
+          "  |  "
+        );
+
+    const metaLines =
+      meta
+        ? wrapText(
+            meta,
+            fonts.normal,
+            8.5,
+            contentWidth
+          )
+        : [];
+
+    const requiredHeight =
+      34 +
+      questionLines.length *
+        13 +
+      (
+        metaLines.length
+          ? metaLines.length *
+              11 +
+            10
+          : 8
+      );
+
+    if (
+      cursorY -
+        requiredHeight <
+      PAGE.bottom +
+        34
+    ) {
+      await createPage();
+    }
+
+    const cardY =
+      cursorY -
+      requiredHeight;
+
+    page.drawRectangle({
+      x:
+        PAGE.marginX,
+      y:
+        cardY,
+      width:
+        PAGE.width -
+        PAGE.marginX *
+          2,
+      height:
+        requiredHeight,
+      color:
+        COLORS.redSoft,
+      borderColor:
+        rgb(
+          0.93,
+          0.78,
+          0.76
+        ),
+      borderWidth:
+        1,
+    });
+
+    let textY =
+      cursorY -
+      17;
+
+    page.drawText(
+      ownerLabel,
+      {
+        x:
+          contentLeft,
+        y:
+          textY,
+        size:
+          8,
+        font:
+          fonts.bold,
+        color:
+          COLORS.red,
+      }
+    );
+
+    textY -=
+      17;
+
+    textY =
+      drawTextLines(
+        page,
+        questionLines,
+        {
+          x:
+            contentLeft,
+          y:
+            textY,
+          lineHeight:
+            13,
+          font:
+            fonts.bold,
+          size:
+            10.5,
+          color:
+            COLORS.text,
+        }
+      );
+
+    if (
+      metaLines.length
+    ) {
+      textY -=
+        2;
+
+      drawTextLines(
+        page,
+        metaLines,
+        {
+          x:
+            contentLeft,
+          y:
+            textY,
+          lineHeight:
+            11,
+          font:
+            fonts.normal,
+          size:
+            8.5,
+          color:
+            COLORS.muted,
+        }
+      );
+    }
+
+    cursorY =
+      cardY -
+      12;
+  }
+}
+
 
 function createDetailPage(
   pdf: PDFDocument,
@@ -1284,6 +1718,7 @@ export async function buildClosingPdf({
   outletName,
   submittedBy,
   reportArea = "BOH / KITCHEN",
+  reportTimestamp,
   groups,
   questions,
   answers,
@@ -1292,6 +1727,7 @@ export async function buildClosingPdf({
   outletName: string;
   submittedBy: string;
   reportArea?: string;
+  reportTimestamp?: string | null;
   groups: Group[];
   questions: Question[];
   answers: Record<string, Answer>;
@@ -1313,18 +1749,66 @@ export async function buildClosingPdf({
     dd: ddLogo,
   };
 
-  const orderedQuestions = createOrderedQuestions(groups, questions);
-  const reportDate = formatDateID(new Date());
+  const orderedQuestions =
+    createOrderedQuestions(
+      groups,
+      questions
+    );
+
+  const requestedReportMoment =
+    reportTimestamp
+      ? new Date(
+          reportTimestamp
+        )
+      : new Date();
+
+  const reportMoment =
+    Number.isNaN(
+      requestedReportMoment
+        .getTime()
+    )
+      ? new Date()
+      : requestedReportMoment;
+
+  const reportDate =
+    formatDateID(
+      reportMoment
+    );
 
   await drawCoverPage(pdf, fonts, logos, {
     reportNumber,
     outletName,
     submittedBy,
     reportArea,
+    reportTimestamp:
+      reportMoment
+        .toISOString(),
     groups,
     questions: orderedQuestions,
     answers,
   });
+
+  const allIssues =
+    issueSummaryRows(
+      groups,
+      orderedQuestions,
+      answers
+    );
+
+  await drawFollowUpContinuationPages(
+    pdf,
+    fonts,
+    logos,
+    {
+      reportNumber,
+      outletName,
+      reportDate,
+      questions:
+        orderedQuestions,
+      issues:
+        allIssues,
+    }
+  );
 
   let page = createDetailPage(pdf, fonts, logos, {
     reportNumber,

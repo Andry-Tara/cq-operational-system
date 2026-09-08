@@ -322,8 +322,153 @@ export default function ProductionFinalizationActions({
           )
       );
 
-    let photoIndex =
-      0;
+    const photoFileByStorageKey =
+      new Map<
+        string,
+        File
+      >();
+
+
+    // Download evidence in a small worker pool.
+    //
+    // Four concurrent downloads is intentionally conservative:
+    // significantly faster than 78 sequential requests while
+    // remaining mobile-friendly on memory and network usage.
+    if (
+      photoItems.length
+    ) {
+      let nextPhotoIndex =
+        0;
+
+      let completedPhotos =
+        0;
+
+      const workerCount =
+        Math.min(
+          4,
+          photoItems.length
+        );
+
+
+      async function photoWorker() {
+        while (true) {
+          const currentIndex =
+            nextPhotoIndex;
+
+          nextPhotoIndex +=
+            1;
+
+          if (
+            currentIndex >=
+            photoItems.length
+          ) {
+            return;
+          }
+
+
+          const saved =
+            photoItems[
+              currentIndex
+            ];
+
+          const photo =
+            saved
+              ?.existingPhoto;
+
+          if (
+            !photo
+              ?.storagePath
+          ) {
+            continue;
+          }
+
+
+          const bucket =
+            photo
+              .storageBucket ||
+            "operational-photos";
+
+          const storageKey =
+            `${bucket}:${photo.storagePath}`;
+
+
+          const {
+            data:
+              photoBlob,
+            error:
+              photoError,
+          } =
+            await supabase
+              .storage
+              .from(
+                bucket
+              )
+              .download(
+                photo
+                  .storagePath
+              );
+
+
+          if (
+            photoError ||
+            !photoBlob
+          ) {
+            throw new Error(
+              `Unable to load photo evidence: ${
+                photoError
+                  ?.message ||
+                photo
+                  .storagePath
+              }`
+            );
+          }
+
+
+          const filename =
+            photo
+              .originalFilename ||
+            `production-photo-${currentIndex + 1}.jpg`;
+
+
+          photoFileByStorageKey.set(
+            storageKey,
+            new File(
+              [
+                photoBlob,
+              ],
+              filename,
+              {
+                type:
+                  photo
+                    .mimeType ||
+                  photoBlob.type ||
+                  "image/jpeg",
+              }
+            )
+          );
+
+
+          completedPhotos +=
+            1;
+
+          setStatus(
+            `Loading Production photos ${completedPhotos} of ${photoItems.length}...`
+          );
+        }
+      }
+
+
+      await Promise.all(
+        Array.from(
+          {
+            length:
+              workerCount,
+          },
+          () =>
+            photoWorker()
+        )
+      );
+    }
 
 
     for (
@@ -536,67 +681,29 @@ export default function ProductionFinalizationActions({
         if (
           photo?.storagePath
         ) {
-          photoIndex +=
-            1;
-
-          setStatus(
-            `Loading Production photo ${photoIndex} of ${photoItems.length}...`
-          );
-
           const bucket =
             photo
               .storageBucket ||
             "operational-photos";
 
-          const {
-            data:
-              photoBlob,
-            error:
-              photoError,
-          } =
-            await supabase
-              .storage
-              .from(
-                bucket
-              )
-              .download(
-                photo
-                  .storagePath
-              );
+          const storageKey =
+            `${bucket}:${photo.storagePath}`;
+
+          const downloadedPhoto =
+            photoFileByStorageKey.get(
+              storageKey
+            );
 
           if (
-            photoError ||
-            !photoBlob
+            !downloadedPhoto
           ) {
             throw new Error(
-              `Unable to load photo evidence: ${
-                photoError
-                  ?.message ||
-                photo
-                  .storagePath
-              }`
+              `Production photo was not prepared: ${photo.storagePath}`
             );
           }
 
-          const filename =
-            photo
-              .originalFilename ||
-            `production-photo-${photoIndex}.jpg`;
-
           answer.photo =
-            new File(
-              [
-                photoBlob,
-              ],
-              filename,
-              {
-                type:
-                  photo
-                    .mimeType ||
-                  photoBlob.type ||
-                  "image/jpeg",
-              }
-            );
+            downloadedPhoto;
         }
 
         pdfAnswers[
@@ -642,6 +749,12 @@ export default function ProductionFinalizationActions({
 
         reportArea:
           "CENTRAL KITCHEN - PRODUCTION",
+
+        reportTimestamp:
+          data
+            ?.existingFinalization
+            ?.finalized_at ||
+          undefined,
 
         groups:
           pdfGroups,
@@ -1016,42 +1129,22 @@ export default function ProductionFinalizationActions({
   }
 
 
-  async function getPdfSignedUrl() {
-    if (
-      !pdfStoragePath
-    ) {
+  function getPdfShareUrl(
+    finalizationId: unknown
+  ) {
+    const id =
+      String(
+        finalizationId ||
+        ""
+      ).trim();
+
+    if (!id) {
       return null;
     }
 
-    const {
-      data,
-      error,
-    } =
-      await supabase
-        .storage
-        .from(
-          "operational-reports"
-        )
-        .createSignedUrl(
-          pdfStoragePath,
-          60 * 60 * 24 * 7
-        );
-
-
-    if (
-      error ||
-      !data?.signedUrl
-    ) {
-      console.warn(
-        "Unable to create Production PDF signed URL:",
-        error
-      );
-
-      return null;
-    }
-
-
-    return data.signedUrl;
+    return `${window.location.origin}/r/p/${encodeURIComponent(
+      id
+    )}`;
   }
 
 
@@ -1132,6 +1225,12 @@ export default function ProductionFinalizationActions({
     const followUps:
       string[] = [];
 
+    const maxSummaryIssues =
+      3;
+
+    let followUpCount =
+      0;
+
 
     for (
       const section of
@@ -1201,16 +1300,30 @@ export default function ProductionFinalizationActions({
 
 
       sectionSummaries.push(
-        `- ${sectionName}: ${answers.length}/${questions.length} | Photos: ${sectionPhotos} | Issues: ${sectionIssues}`
+        `*${sectionName}*`
       );
 
       sectionSummaries.push(
-        `  Submitted by: ${
+        sectionIssues > 0
+          ? `${answers.length}/${questions.length} Checklist • ${sectionPhotos} Photos • ⚠️ ${sectionIssues} ${
+              sectionIssues === 1
+                ? "Issue"
+                : "Issues"
+            }`
+          : `${answers.length}/${questions.length} Checklist • ${sectionPhotos} Photos • ✅ No Issue`
+      );
+
+      sectionSummaries.push(
+        `Submitted by: ${
           section
             ?.submittedBy
             ?.name ||
           "-"
         }`
+      );
+
+      sectionSummaries.push(
+        ""
       );
 
 
@@ -1253,12 +1366,22 @@ export default function ProductionFinalizationActions({
               ?.questionId
           );
 
-        const number =
-          followUps.length +
+        followUpCount +=
           1;
 
+        if (
+          followUpCount >
+          maxSummaryIssues
+        ) {
+          continue;
+        }
+
         followUps.push(
-          `${number}. ${sectionName} — ${
+          `${followUpCount}. *${sectionName}*`
+        );
+
+        followUps.push(
+          `${
             question
               ?.question_text ||
             question
@@ -1268,9 +1391,9 @@ export default function ProductionFinalizationActions({
         );
 
         followUps.push(
-          `   ❌ ${formatAnswerValue(
+          `❌ ${formatAnswerValue(
             answer?.value
-          )}`
+          )} / OUT OF STANDARD`
         );
 
         if (
@@ -1281,7 +1404,7 @@ export default function ProductionFinalizationActions({
           ).trim()
         ) {
           followUps.push(
-            `   Notes: ${String(
+            `📝 Notes: ${String(
               answer.notes
             ).trim()}`
           );
@@ -1295,7 +1418,7 @@ export default function ProductionFinalizationActions({
           ).trim()
         ) {
           followUps.push(
-            `   Corrective: ${String(
+            `🔧 Corrective: ${String(
               answer
                 .correctiveAction
             ).trim()}`
@@ -1309,34 +1432,37 @@ export default function ProductionFinalizationActions({
     }
 
 
-    const pdfSignedUrl =
-      await getPdfSignedUrl();
+    const pdfShareUrl =
+      getPdfShareUrl(
+        existingFinalization
+          ?.id
+      );
 
 
     const lines:
       string[] = [
-        "*CENTRAL KITCHEN CLOSING*",
+        "*CENTRAL KITCHEN CLOSING REPORT*",
         "",
-        `📍 Outlet: ${outletName}`,
-        `👤 Production Leader: ${leaderName}`,
-        "🏭 Area: PRODUCTION",
-        `📅 Date: ${formatProductionDate(
+        `📍 ${outletName}`,
+        `📅 ${formatProductionDate(
           businessDate
-        )}`,
-        `⏰ Finalized: ${formatProductionTime(
+        )} • ⏰ ${formatProductionTime(
           finalizedAt
         )}`,
-        `🏷️ Sections Reviewed: ${reviewedCount}/${requiredCount}`,
+        `👤 ${leaderName} • Production Leader`,
+        `🏭 Production • ✅ ${reviewedCount}/${requiredCount} Reviewed`,
         "",
-        "*OVERALL SUMMARY*",
-        `- Total Checklist: ${totalAnswered}/${totalChecklist}`,
-        `- Photo Evidence: ${totalPhotos}`,
-        `- Issues: ${totalIssues}`,
-        "- Status: FINALIZED",
+        "*📊 OVERALL RESULT*",
+        `✅ Checklist: ${totalAnswered}/${totalChecklist}`,
+        `📷 Photo Evidence: ${totalPhotos}`,
+        `⚠️ Issues: ${totalIssues}`,
+        `📋 Sections: ${reviewedCount}/${requiredCount}`,
+        "🟢 Status: FINALIZED",
         "",
-        "*SECTION SUMMARY*",
+        "*📌 SECTION PERFORMANCE*",
         ...sectionSummaries,
       ];
+
 
 
     if (
@@ -1344,32 +1470,52 @@ export default function ProductionFinalizationActions({
     ) {
       lines.push(
         "",
-        "*FOLLOW-UP REQUIRED*",
+        `*⚠️ ACTION REQUIRED — ${totalIssues} ${
+          totalIssues === 1
+            ? "ISSUE"
+            : "ISSUES"
+        }*`,
         ...followUps
       );
+
+      if (
+        totalIssues >
+        maxSummaryIssues
+      ) {
+        lines.push(
+          `... + ${
+            totalIssues -
+            maxSummaryIssues
+          } additional issues.`,
+          "See full PDF report for complete details."
+        );
+      }
     } else {
       lines.push(
         "",
-        "*FOLLOW-UP REQUIRED*",
-        "- No outstanding issues."
+        "*✅ ACTION REQUIRED*",
+        "No outstanding issues."
       );
     }
 
 
     lines.push(
       "",
-      "*REPORT INFO*",
-      `- Report ID: ${finalReportNumber}`,
-      `- Production Leader: ${leaderName}`,
-      `- Sections: ${reviewedCount}/${requiredCount}`
+      "*📄 REPORT INFO*",
+      "Report ID:",
+      finalReportNumber
     );
 
 
     if (
-      pdfSignedUrl
+      pdfShareUrl
     ) {
       lines.push(
-        `- PDF (valid 7 days): ${pdfSignedUrl}`
+        "",
+        "🔗 PDF Report:",
+        pdfShareUrl,
+        "",
+        "⏳ Link valid for 7 days after finalization."
       );
     }
 
@@ -1446,24 +1592,84 @@ export default function ProductionFinalizationActions({
           })
         )
       ) {
-        await navigator.share({
-          title:
-            "Central Kitchen Closing",
+        const isMobileShare =
+          typeof window !== "undefined" &&
+          (
+            window.matchMedia(
+              "(pointer: coarse)"
+            ).matches ||
+            /Android|iPhone|iPad|iPod/i.test(
+              navigator.userAgent
+            )
+          );
 
-          text:
-            summary,
 
-          files: [
-            file,
-          ],
-        });
+        if (
+          isMobileShare
+        ) {
+          await navigator.share({
+            title:
+              "Central Kitchen Closing",
 
+            text:
+              summary,
 
-        setStatus(
-          summaryCopied
-            ? "PDF + summary shared. Jika caption tidak ikut di WhatsApp, summary sudah dicopy dan tinggal paste."
-            : "PDF + summary shared."
-        );
+            files: [
+              file,
+            ],
+          });
+
+          setStatus(
+            summaryCopied
+              ? "PDF + summary shared. Jika caption tidak ikut di WhatsApp, summary sudah dicopy dan tinggal paste."
+              : "PDF + summary shared."
+          );
+        } else {
+          // Native desktop share on macOS/WhatsApp has been
+          // observed to duplicate the PDF attachment.
+          //
+          // Use deterministic desktop behavior instead:
+          // download exactly one PDF and keep the summary
+          // ready in clipboard.
+          const url =
+            URL.createObjectURL(
+              file
+            );
+
+          const anchor =
+            document.createElement(
+              "a"
+            );
+
+          anchor.href =
+            url;
+
+          anchor.download =
+            file.name;
+
+          document.body.appendChild(
+            anchor
+          );
+
+          anchor.click();
+
+          anchor.remove();
+
+          window.setTimeout(
+            () => {
+              URL.revokeObjectURL(
+                url
+              );
+            },
+            1000
+          );
+
+          setStatus(
+            summaryCopied
+              ? "PDF downloaded. Summary sudah dicopy — tinggal paste ke WhatsApp."
+              : "PDF downloaded."
+          );
+        }
 
         return;
       }
@@ -1568,6 +1774,93 @@ export default function ProductionFinalizationActions({
   }
 
 
+  async function regenerateProductionPdf() {
+    if (
+      !reportId ||
+      busy
+    ) {
+      return;
+    }
+
+    try {
+      setBusy(true);
+      setErrorMessage("");
+
+      setStatus(
+        "Preparing Production report..."
+      );
+
+      const data =
+        await loadPayload();
+
+      const storagePath =
+        await generateProductionPdf(
+          data
+        );
+
+      setStatus(
+        "Updating Final Production PDF..."
+      );
+
+      const response =
+        await fetch(
+          "/api/operations/CLOSING_CK/finalize-production",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body:
+              JSON.stringify({
+                reportId,
+                pdfStoragePath:
+                  storagePath,
+                regeneratePdf:
+                  true,
+              }),
+          }
+        );
+
+      const result =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result?.error ||
+            "Regenerate Production PDF gagal."
+        );
+      }
+
+      setPdfStoragePath(
+        storagePath
+      );
+
+      setStatus(
+        "Final Production PDF regenerated successfully."
+      );
+
+      router.refresh();
+    } catch (
+      error: any
+    ) {
+      console.error(
+        "Production PDF regeneration failed:",
+        error
+      );
+
+      setErrorMessage(
+        error?.message ||
+          "Regenerate Production PDF gagal."
+      );
+
+      setStatus("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+
   // ==========================================================
   // FINALIZED STATE
   // ==========================================================
@@ -1638,6 +1931,20 @@ export default function ProductionFinalizationActions({
             className="rounded-xl border border-neutral-200 bg-white px-4 py-3 text-xs font-black text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50"
           >
             Copy Summary
+          </button>
+          <button
+            type="button"
+            disabled={
+              busy
+            }
+            onClick={
+              regenerateProductionPdf
+            }
+            className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-black text-amber-800 transition hover:bg-amber-100 disabled:opacity-50 sm:col-span-2"
+          >
+            {busy
+              ? "Processing..."
+              : "Regenerate Final PDF"}
           </button>
         </div>
 
