@@ -387,6 +387,399 @@ export default async function ReportsPage() {
 
 
   // ==========================================================
+
+  // ==========================================================
+  // REPORT CENTER ACCESS SCOPE
+  //
+  // Priority:
+  //
+  // 1. Administrator
+  //    -> full report visibility.
+  //
+  // 2. Area Leader
+  //    -> only sections owned by that area.
+  //
+  //    STORE      = Warehouse
+  //    PRODUCTION = Production
+  //
+  // 3. Section PIC / reviewer
+  //    -> only explicitly assigned sections.
+  //
+  // 4. Existing outlet-level management access
+  //    -> full report visibility inside accessible outlets.
+  //
+  // IMPORTANT:
+  // If a user already has CK scoped access at an outlet,
+  // another CK form without an explicit assignment FAILS CLOSED.
+  //
+  // This prevents:
+  //
+  // Wahyu -> seeing Warehouse
+  // Muzza -> seeing Production
+  // PIC   -> seeing another PIC section
+  // ==========================================================
+
+  const isAdministrator =
+    role?.is_admin ===
+    true;
+
+  const ckFormIds =
+    new Set(
+      forms
+        .filter(
+          (
+            form: any
+          ) =>
+            [
+              "OPENING_CK",
+              "CLOSING_CK",
+            ].includes(
+              String(
+                form.code ||
+                ""
+              )
+                .trim()
+                .toUpperCase()
+            )
+        )
+        .map(
+          (
+            form: any
+          ) =>
+            form.id
+        )
+    );
+
+
+  let areaLeaderRows:
+    any[] = [];
+
+  let sectionPermissionRows:
+    any[] = [];
+
+
+  if (
+    !isAdministrator &&
+    outletIds.length &&
+    formIds.length
+  ) {
+    const [
+      leaderResult,
+      permissionResult,
+    ] =
+      await Promise.all([
+        supabase
+          .from(
+            "form_area_leaders"
+          )
+          .select(`
+            outlet_id,
+            form_id,
+            area_code,
+            user_id
+          `)
+          .eq(
+            "user_id",
+            user.id
+          )
+          .in(
+            "outlet_id",
+            outletIds
+          )
+          .in(
+            "form_id",
+            formIds
+          ),
+
+        supabase
+          .from(
+            "user_section_permissions"
+          )
+          .select(`
+            outlet_id,
+            form_id,
+            section_id,
+            can_view,
+            can_submit,
+            can_review
+          `)
+          .eq(
+            "user_id",
+            user.id
+          )
+          .in(
+            "outlet_id",
+            outletIds
+          )
+          .in(
+            "form_id",
+            formIds
+          ),
+      ]);
+
+
+    if (
+      leaderResult.error
+    ) {
+      return (
+        <ErrorState
+          message={
+            leaderResult
+              .error
+              .message
+          }
+        />
+      );
+    }
+
+
+    if (
+      permissionResult.error
+    ) {
+      return (
+        <ErrorState
+          message={
+            permissionResult
+              .error
+              .message
+          }
+        />
+      );
+    }
+
+
+    areaLeaderRows =
+      leaderResult.data ??
+      [];
+
+    sectionPermissionRows =
+      (
+        permissionResult.data ??
+        []
+      ).filter(
+        (
+          row: any
+        ) =>
+          row.can_view ===
+            true ||
+          row.can_submit ===
+            true ||
+          row.can_review ===
+            true
+      );
+  }
+
+
+  function accessKey(
+    outletId: string,
+    formId: string
+  ) {
+    return (
+      `${outletId}:${formId}`
+    );
+  }
+
+
+  const leaderAreasByKey =
+    new Map<
+      string,
+      Set<string>
+    >();
+
+
+  for (
+    const row of
+    areaLeaderRows
+  ) {
+    const key =
+      accessKey(
+        row.outlet_id,
+        row.form_id
+      );
+
+    const areas =
+      leaderAreasByKey.get(
+        key
+      ) ??
+      new Set<string>();
+
+    const area =
+      String(
+        row.area_code ||
+        ""
+      )
+        .trim()
+        .toUpperCase();
+
+    if (area) {
+      areas.add(
+        area
+      );
+    }
+
+    leaderAreasByKey.set(
+      key,
+      areas
+    );
+  }
+
+
+  const permissionSectionsByKey =
+    new Map<
+      string,
+      Set<string>
+    >();
+
+
+  for (
+    const row of
+    sectionPermissionRows
+  ) {
+    const key =
+      accessKey(
+        row.outlet_id,
+        row.form_id
+      );
+
+    const sectionIds =
+      permissionSectionsByKey.get(
+        key
+      ) ??
+      new Set<string>();
+
+    if (
+      row.section_id
+    ) {
+      sectionIds.add(
+        row.section_id
+      );
+    }
+
+    permissionSectionsByKey.set(
+      key,
+      sectionIds
+    );
+  }
+
+
+  // A CK scoped user must not fall back to full CK visibility
+  // merely because they also have outlet access.
+  const scopedCkOutletIds =
+    new Set<string>();
+
+
+  for (
+    const row of
+    areaLeaderRows
+  ) {
+    if (
+      ckFormIds.has(
+        row.form_id
+      )
+    ) {
+      scopedCkOutletIds.add(
+        row.outlet_id
+      );
+    }
+  }
+
+
+  for (
+    const row of
+    sectionPermissionRows
+  ) {
+    if (
+      ckFormIds.has(
+        row.form_id
+      )
+    ) {
+      scopedCkOutletIds.add(
+        row.outlet_id
+      );
+    }
+  }
+
+
+  function getReportScope(
+    outletId: string,
+    formId: string
+  ) {
+    if (
+      isAdministrator
+    ) {
+      return {
+        kind:
+          "FULL" as const,
+      };
+    }
+
+
+    const key =
+      accessKey(
+        outletId,
+        formId
+      );
+
+
+    const leaderAreas =
+      leaderAreasByKey.get(
+        key
+      );
+
+    if (
+      leaderAreas &&
+      leaderAreas.size
+    ) {
+      return {
+        kind:
+          "AREA" as const,
+
+        areas:
+          leaderAreas,
+      };
+    }
+
+
+    const sectionIds =
+      permissionSectionsByKey.get(
+        key
+      );
+
+    if (
+      sectionIds &&
+      sectionIds.size
+    ) {
+      return {
+        kind:
+          "SECTION" as const,
+
+        sectionIds,
+      };
+    }
+
+
+    if (
+      ckFormIds.has(
+        formId
+      ) &&
+      scopedCkOutletIds.has(
+        outletId
+      )
+    ) {
+      return {
+        kind:
+          "NONE" as const,
+      };
+    }
+
+
+    return {
+      kind:
+        "FULL" as const,
+    };
+  }
+
+
   // ACTIVE FORM ASSIGNMENTS
   //
   // Determines which Outlet + Form combinations are expected.
@@ -479,6 +872,20 @@ export default async function ReportsPage() {
 
 
   // ==========================================================
+
+  const visibleAssignments =
+    assignments.filter(
+      (
+        assignment: any
+      ) =>
+        getReportScope(
+          assignment.outlet_id,
+          assignment.form_id
+        ).kind !==
+        "NONE"
+    );
+
+
   // REPORT HISTORY
   // ==========================================================
 
@@ -622,7 +1029,8 @@ export default async function ReportsPage() {
           id,
           form_id,
           code,
-          name
+          name,
+            area_code
         `)
         .in(
           "id",
@@ -645,6 +1053,112 @@ export default async function ReportsPage() {
 
 
   // ==========================================================
+
+  const reportByIdForScope =
+    new Map(
+      reports.map(
+        (
+          report: any
+        ) => [
+          report.id,
+          report,
+        ]
+      )
+    );
+
+
+  const sectionByIdForScope =
+    new Map(
+      sectionDefinitions.map(
+        (
+          section: any
+        ) => [
+          section.id,
+          section,
+        ]
+      )
+    );
+
+
+  reportSections =
+    reportSections.filter(
+      (
+        reportSection: any
+      ) => {
+        const report =
+          reportByIdForScope.get(
+            reportSection.report_id
+          );
+
+        if (!report) {
+          return false;
+        }
+
+
+        const scope =
+          getReportScope(
+            report.outlet_id,
+            report.form_id
+          );
+
+
+        if (
+          scope.kind ===
+          "FULL"
+        ) {
+          return true;
+        }
+
+
+        if (
+          scope.kind ===
+          "NONE"
+        ) {
+          return false;
+        }
+
+
+        if (
+          scope.kind ===
+          "SECTION"
+        ) {
+          return scope
+            .sectionIds
+            .has(
+              reportSection.section_id
+            );
+        }
+
+
+        const definition =
+          sectionByIdForScope.get(
+            reportSection.section_id
+          );
+
+        const areaCode =
+          String(
+            definition
+              ?.area_code ||
+            ""
+          )
+            .trim()
+            .toUpperCase();
+
+
+        return (
+          Boolean(
+            areaCode
+          ) &&
+          scope
+            .areas
+            .has(
+              areaCode
+            )
+        );
+      }
+    );
+
+
   // EXPECTED QUESTIONS BY VERSION SECTION
   // ==========================================================
 
@@ -796,7 +1310,7 @@ export default async function ReportsPage() {
     any[] = [];
 
   if (
-    reportIds.length
+    reportSectionIds.length
   ) {
     const {
       data,
@@ -807,11 +1321,12 @@ export default async function ReportsPage() {
         .select(`
           id,
           report_id,
+            report_section_id,
           status
         `)
         .in(
-          "report_id",
-          reportIds
+          "report_section_id",
+          reportSectionIds
         );
 
     if (error) {
@@ -823,6 +1338,89 @@ export default async function ReportsPage() {
       issueRows =
         data ?? [];
     }
+  }
+
+
+  // ==========================================================
+  // AREA FINALIZATIONS
+  //
+  // AREA scoped CK reports are considered complete only after
+  // the corresponding area leader explicitly finalizes them.
+  //
+  // STORE      = Warehouse
+  // PRODUCTION = Production
+  // ==========================================================
+
+  let areaFinalizationRows:
+    any[] = [];
+
+
+  if (
+    reportIds.length
+  ) {
+    const {
+      data,
+      error,
+    } =
+      await supabase
+        .from(
+          "report_area_finalizations"
+        )
+        .select(`
+          id,
+          report_id,
+          area_code,
+          finalized_at,
+          pdf_storage_path,
+          pdf_generated_at
+        `)
+        .in(
+          "report_id",
+          reportIds
+        );
+
+
+    if (error) {
+      console.error(
+        "Unable to load report area finalizations:",
+        error
+      );
+    } else {
+      areaFinalizationRows =
+        data ?? [];
+    }
+  }
+
+
+  const areaFinalizationByKey =
+    new Map<
+      string,
+      any
+    >();
+
+
+  for (
+    const finalization of
+    areaFinalizationRows
+  ) {
+    const areaCode =
+      String(
+        finalization.area_code ||
+        ""
+      )
+        .trim()
+        .toUpperCase();
+
+
+    if (!areaCode) {
+      continue;
+    }
+
+
+    areaFinalizationByKey.set(
+      `${finalization.report_id}:${areaCode}`,
+      finalization
+    );
   }
 
 
@@ -1158,7 +1756,18 @@ export default async function ReportsPage() {
   // ==========================================================
 
   const hydratedReports =
-    reports.map(
+    reports
+      .filter(
+        (
+          report: any
+        ) =>
+          getReportScope(
+            report.outlet_id,
+            report.form_id
+          ).kind !==
+          "NONE"
+      )
+      .map(
       (
         report: any
       ) => {
@@ -1242,8 +1851,205 @@ export default async function ReportsPage() {
             0
           );
 
+
+        // ------------------------------------------------------
+        // REPORT CENTER SCOPED STATUS
+        //
+        // Parent CK report status cannot represent Warehouse
+        // and Production independently.
+        // ------------------------------------------------------
+
+        const reportScope =
+          getReportScope(
+            report.outlet_id,
+            report.form_id
+          );
+
+
+        const completedSectionStatuses =
+          new Set([
+            "completed",
+            "submitted",
+            "reviewed",
+          ]);
+
+
+        const hasVisibleSections =
+          sections.length >
+          0;
+
+
+        const visibleSectionsCompleted =
+          hasVisibleSections &&
+          sections.every(
+            (
+              section: any
+            ) =>
+              completedSectionStatuses.has(
+                String(
+                  section.status ||
+                  ""
+                )
+                  .trim()
+                  .toLowerCase()
+              )
+          );
+
+
+        let scopedStatus =
+          report.status;
+
+
+        let scopedCompletedAt:
+          string | null =
+          report.completed_at ??
+          null;
+
+
+        // ------------------------------------------------------
+        // AREA LEADER
+        //
+        // Finalization is the source of truth.
+        //
+        // Muzza:
+        // STORE only.
+        //
+        // Wahyu:
+        // PRODUCTION only.
+        // ------------------------------------------------------
+
+        if (
+          reportScope.kind ===
+          "AREA"
+        ) {
+          const areaCodes =
+            Array.from(
+              reportScope.areas
+            );
+
+
+          const scopedFinalizations =
+            areaCodes
+              .map(
+                (
+                  areaCode
+                ) =>
+                  areaFinalizationByKey.get(
+                    `${report.id}:${areaCode}`
+                  )
+              )
+              .filter(
+                Boolean
+              );
+
+
+          const allAreasFinalized =
+            areaCodes.length >
+              0 &&
+            scopedFinalizations.length ===
+              areaCodes.length &&
+            scopedFinalizations.every(
+              (
+                finalization: any
+              ) =>
+                Boolean(
+                  finalization
+                    ?.finalized_at
+                )
+            );
+
+
+          if (
+            allAreasFinalized
+          ) {
+            const finalizedDates =
+              scopedFinalizations
+                .map(
+                  (
+                    finalization:
+                      any
+                  ) =>
+                    String(
+                      finalization
+                        .finalized_at
+                    )
+                )
+                .filter(
+                  Boolean
+                )
+                .sort();
+
+
+            scopedCompletedAt =
+              finalizedDates.length
+                ? finalizedDates[
+                    finalizedDates.length -
+                    1
+                  ]
+                : null;
+
+
+            scopedStatus =
+              "completed";
+
+          } else {
+            scopedCompletedAt =
+              null;
+
+            scopedStatus =
+              hasVisibleSections
+                ? "in_progress"
+                : "not_submitted";
+          }
+        }
+
+
+        // ------------------------------------------------------
+        // SECTION PIC
+        //
+        // PIC responsibility ends after submit / review.
+        // Area finalization belongs to the Area Leader.
+        // ------------------------------------------------------
+
+        if (
+          reportScope.kind ===
+          "SECTION"
+        ) {
+          scopedCompletedAt =
+            null;
+
+          scopedStatus =
+            visibleSectionsCompleted
+              ? "completed"
+              : hasVisibleSections
+                ? "in_progress"
+                : "not_submitted";
+        }
+
+
+        const isScopedReport =
+          reportScope.kind !==
+          "FULL";
+
+
         return {
           ...report,
+
+          status:
+            scopedStatus,
+
+          completed_at:
+            isScopedReport
+              ? scopedCompletedAt
+              : report.completed_at,
+
+          // Generic parent PDF can contain multiple CK areas.
+          // Scoped users must use their area/PIC PDF flow.
+          pdf_storage_path:
+            isScopedReport
+              ? null
+              : report.pdf_storage_path,
+
 
           form_code:
             form?.code ??
@@ -1255,8 +2061,12 @@ export default async function ReportsPage() {
             "Operational Form",
 
           created_by_email:
-            report.created_by_email ??
-            null,
+            isScopedReport
+              ? null
+              : (
+                  report.created_by_email ??
+                  null
+                ),
 
           sections,
 
@@ -1271,6 +2081,7 @@ export default async function ReportsPage() {
                 [
                   "completed",
                   "submitted",
+                  "reviewed",
                 ].includes(
                   String(
                     section.status ||
@@ -1321,7 +2132,7 @@ export default async function ReportsPage() {
         forms
       }
       assignments={
-        assignments
+        visibleAssignments
       }
       reports={
         hydratedReports
