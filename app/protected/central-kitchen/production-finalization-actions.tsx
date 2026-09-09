@@ -1443,8 +1443,8 @@ export default function ProductionFinalizationActions({
 
     const pdfShareUrl =
       getPdfShareUrl(
-        existingFinalization
-          ?.id
+        data?.report?.id ||
+          reportId
       );
 
 

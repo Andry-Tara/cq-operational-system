@@ -192,9 +192,8 @@ export async function GET(
           finalized_at,
           pdf_storage_path
         `)
-        .eq(
-          "id",
-          finalizationId
+        .or(
+          `id.eq.${finalizationId},report_id.eq.${finalizationId}`
         )
         .eq(
           "area_code",
