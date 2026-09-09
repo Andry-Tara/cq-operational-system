@@ -25,18 +25,6 @@ type RouteContext = {
 };
 
 
-const PRODUCTION_SECTION_CODES =
-  new Set([
-    "BEVERAGE",
-    "BUTCHER",
-    "STEWARD",
-    "PREMIX",
-    "COLD_KITCHEN",
-    "HOT_KITCHEN",
-    "HDS",
-  ]);
-
-
 export async function POST(
   request: NextRequest,
   {
@@ -66,7 +54,7 @@ export async function POST(
 
 
     // ========================================================
-    // ROUTE / PRODUCTION SAFETY
+    // ROUTE / CK SAFETY
     // ========================================================
 
     if (
@@ -81,25 +69,6 @@ export async function POST(
             "Return for Correction hanya tersedia untuk Closing Central Kitchen.",
           code:
             "INVALID_OPERATION",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-
-    if (
-      !PRODUCTION_SECTION_CODES.has(
-        normalizedSectionCode
-      )
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Section ini bukan Production section.",
-          code:
-            "NOT_PRODUCTION_SECTION",
         },
         {
           status: 400,
@@ -299,70 +268,6 @@ export async function POST(
 
 
     // ========================================================
-    // PRODUCTION FINALIZATION LOCK
-    //
-    // Once the consolidated Production report has been
-    // finalized, individual sections may no longer be returned
-    // for correction through the normal review workflow.
-    // A future explicit "reopen finalized production" flow must
-    // handle revised PDF generation separately.
-    // ========================================================
-
-    const {
-      data:
-        productionFinalization,
-      error:
-        productionFinalizationError,
-    } =
-      await admin
-        .from(
-          "report_area_finalizations"
-        )
-        .select(`
-          id,
-          finalized_at
-        `)
-        .eq(
-          "report_id",
-          report.id
-        )
-        .eq(
-          "area_code",
-          "PRODUCTION"
-        )
-        .maybeSingle();
-
-
-    if (
-      productionFinalizationError
-    ) {
-      throw productionFinalizationError;
-    }
-
-
-    if (
-      productionFinalization
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Production report sudah difinalisasi. Section tidak dapat dikembalikan untuk koreksi.",
-
-          code:
-            "PRODUCTION_ALREADY_FINALIZED",
-
-          finalizedAt:
-            productionFinalization
-              .finalized_at,
-        },
-        {
-          status: 409,
-        }
-      );
-    }
-
-
-    // ========================================================
     // FORM
     // ========================================================
 
@@ -431,8 +336,13 @@ export async function POST(
         .select(`
           id,
           code,
-          name
-        `)
+          name,
+          form_id,
+          area_code`)
+        .eq(
+          "form_id",
+          report.form_id
+        )
         .eq(
           "code",
           normalizedSectionCode
@@ -461,84 +371,59 @@ export async function POST(
 
 
     // ========================================================
-    // EXACT SECTION REVIEW PERMISSION
+    // EXACT CK AREA LEADER AUTHORIZATION
+    // + EXACT AREA FINALIZATION LOCK
+    //
+    // STORE      -> Warehouse Leader
+    // PRODUCTION -> Production Leader
+    //
+    // Authorization is checked before finalization state so
+    // unrelated users cannot inspect another area's status.
     // ========================================================
 
-    const {
-      data:
-        reviewPermission,
-      error:
-        reviewPermissionError,
-    } =
-      await admin
-        .from(
-          "user_section_permissions"
-        )
-        .select(`
-          user_id,
-          section_id,
-          can_review
-        `)
-        .eq(
-          "user_id",
-          user.id
-        )
-        .eq(
-          "outlet_id",
-          report.outlet_id
-        )
-        .eq(
-          "form_id",
-          report.form_id
-        )
-        .eq(
-          "section_id",
-          section.id
-        )
-        .eq(
-          "can_review",
-          true
-        )
-        .maybeSingle();
-
+    const sectionAreaCode =
+      String(
+        section.area_code ||
+        ""
+      )
+        .trim()
+        .toUpperCase();
 
     if (
-      reviewPermissionError
-    ) {
-      throw reviewPermissionError;
-    }
-
-
-    if (
-      !reviewPermission
+      ![
+        "STORE",
+        "PRODUCTION",
+      ].includes(
+        sectionAreaCode
+      )
     ) {
       return NextResponse.json(
         {
           error:
-            "Anda tidak memiliki permission untuk review section ini.",
+            "Section belum memiliki CK area yang valid.",
           code:
-            "NO_REVIEW_PERMISSION",
+            "INVALID_SECTION_AREA",
+          areaCode:
+            sectionAreaCode ||
+            null,
         },
         {
-          status: 403,
+          status: 409,
         }
       );
     }
 
-
-    // ========================================================
-    // EXPLICIT PRODUCTION LEADER
-    //
-    // can_review alone is NOT enough.
-    // This prevents manager/reviewer accounts such as Irwan
-    // from returning a Production section.
-    // ========================================================
+    const areaLabel =
+      sectionAreaCode ===
+      "STORE"
+        ? "Warehouse"
+        : "Production";
 
     const {
       data:
-        productionLeader,
+        leaderAssignment,
       error:
-        productionLeaderError,
+        leaderAssignmentError,
     } =
       await admin
         .from(
@@ -559,7 +444,7 @@ export async function POST(
         )
         .eq(
           "area_code",
-          "PRODUCTION"
+          sectionAreaCode
         )
         .eq(
           "user_id",
@@ -567,26 +452,74 @@ export async function POST(
         )
         .maybeSingle();
 
-
     if (
-      productionLeaderError
+      leaderAssignmentError
     ) {
-      throw productionLeaderError;
+      throw leaderAssignmentError;
     }
 
-
-    if (
-      !productionLeader
-    ) {
+    if (!leaderAssignment) {
       return NextResponse.json(
         {
           error:
-            "Hanya Production Leader yang dapat mengembalikan section untuk koreksi.",
+            `Hanya ${areaLabel} Leader yang dapat mengembalikan section untuk koreksi.`,
           code:
-            "NOT_PRODUCTION_LEADER",
+            "NOT_AREA_LEADER",
+          areaCode:
+            sectionAreaCode,
         },
         {
           status: 403,
+        }
+      );
+    }
+
+    const {
+      data:
+        areaFinalization,
+      error:
+        areaFinalizationError,
+    } =
+      await admin
+        .from(
+          "report_area_finalizations"
+        )
+        .select(`
+          id,
+          area_code,
+          finalized_at
+        `)
+        .eq(
+          "report_id",
+          report.id
+        )
+        .eq(
+          "area_code",
+          sectionAreaCode
+        )
+        .maybeSingle();
+
+    if (
+      areaFinalizationError
+    ) {
+      throw areaFinalizationError;
+    }
+
+    if (areaFinalization) {
+      return NextResponse.json(
+        {
+          error:
+            `${areaLabel} report sudah difinalisasi. Section tidak dapat dikembalikan untuk koreksi.`,
+          code:
+            "AREA_ALREADY_FINALIZED",
+          areaCode:
+            sectionAreaCode,
+          finalizedAt:
+            areaFinalization
+              .finalized_at,
+        },
+        {
+          status: 409,
         }
       );
     }

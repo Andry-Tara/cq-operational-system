@@ -1581,11 +1581,25 @@ export default async function ProtectedPage({
       : null;
 
   const activeStatus =
-    activeReport
-      ? normalizeStatus(
-          activeReport.status
+    useCkPicSummary
+      ? (
+          ckAssignedCount >
+            0 &&
+          ckCompletedCount >=
+            ckAssignedCount
+            ? "completed"
+            : ckCompletedCount >
+                  0 ||
+                ckInProgressCount >
+                  0
+              ? "in_progress"
+              : "not_submitted"
         )
-      : "not_submitted";
+      : activeReport
+        ? normalizeStatus(
+            activeReport.status
+          )
+        : "not_submitted";
 
   const activeAction =
     activeStatus ===
@@ -1782,7 +1796,7 @@ export default async function ProtectedPage({
 
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.15em] text-neutral-400">
-                  Report Completion Trend
+                  Outlet Completion Trend
                 </p>
 
                 <h2 className="mt-1 text-xl font-bold">
@@ -1889,7 +1903,21 @@ export default async function ProtectedPage({
 
             <div className="mt-4 flex flex-wrap items-center gap-5 text-xs text-neutral-400">
               <span>
-                Completion is calculated against{" "}
+                Outlet completion reaches 100% only when all required daily operations for the outlet are completed.
+              </span>
+
+              <span>
+                Today:{" "}
+                <strong className="text-neutral-700">
+                  {
+                    trend[
+                      trend.length -
+                        1
+                    ]?.completed ??
+                    0
+                  }
+                </strong>{" "}
+                /{" "}
                 <strong className="text-neutral-700">
                   {outlets.length}
                 </strong>{" "}
@@ -1897,23 +1925,19 @@ export default async function ProtectedPage({
                 {outlets.length ===
                 1
                   ? ""
-                  : "s"}.
-              </span>
-
-              <span>
-                Today:{" "}
+                  : "s"}{" "}
+                completed
+                {" "}(
                 <strong className="text-neutral-700">
-                  {outlets.length
-                    ? Math.round(
-                        (
-                          completed /
-                          outlets.length
-                        ) *
-                          100
-                      )
-                    : 0}
-                  %
+                  {
+                    trend[
+                      trend.length -
+                        1
+                    ]?.rate ??
+                    0
+                  }%
                 </strong>
+                )
               </span>
             </div>
 

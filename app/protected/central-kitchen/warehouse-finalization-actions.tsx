@@ -83,7 +83,7 @@ function safeName(
 ) {
   return String(
     value ||
-    "PRODUCTION"
+    "WAREHOUSE"
   )
     .normalize(
       "NFKD"
@@ -101,11 +101,11 @@ function safeName(
       ""
     )
     .toUpperCase() ||
-    "PRODUCTION";
+    "WAREHOUSE";
 }
 
 
-export default function ProductionFinalizationActions({
+export default function WarehouseFinalizationActions({
   reportId,
   reportNumber,
   leaderName,
@@ -149,8 +149,8 @@ export default function ProductionFinalizationActions({
     Boolean(
       reportId
     ) &&
-    requiredCount ===
-      7 &&
+    requiredCount >
+      0 &&
     reviewedCount ===
       requiredCount;
 
@@ -171,7 +171,7 @@ export default function ProductionFinalizationActions({
       try {
         const response =
           await fetch(
-            `/api/operations/CLOSING_CK/finalize-production?reportId=${encodeURIComponent(
+            `/api/operations/CLOSING_CK/finalize-warehouse?reportId=${encodeURIComponent(
               reportId!
             )}`,
             {
@@ -226,13 +226,13 @@ export default function ProductionFinalizationActions({
   async function loadPayload() {
     if (!reportId) {
       throw new Error(
-        "Production report belum tersedia."
+        "Warehouse report belum tersedia."
       );
     }
 
     const response =
       await fetch(
-        `/api/operations/CLOSING_CK/finalize-production?reportId=${encodeURIComponent(
+        `/api/operations/CLOSING_CK/finalize-warehouse?reportId=${encodeURIComponent(
           reportId
         )}`,
         {
@@ -247,7 +247,7 @@ export default function ProductionFinalizationActions({
     if (!response.ok) {
       throw new Error(
         data?.error ||
-        "Unable to prepare Production report."
+        "Unable to prepare Warehouse report."
       );
     }
 
@@ -256,7 +256,7 @@ export default function ProductionFinalizationActions({
         ?.readyForFinalize
     ) {
       throw new Error(
-        `Production belum siap. Submitted ${data?.submittedCount ?? 0}/${data?.requiredCount ?? 7}, Reviewed ${data?.reviewedCount ?? 0}/${data?.requiredCount ?? 7}.`
+        `Warehouse belum siap. Submitted ${data?.submittedCount ?? 0}/${data?.requiredCount ?? requiredCount}, Reviewed ${data?.reviewedCount ?? 0}/${data?.requiredCount ?? requiredCount}.`
       );
     }
 
@@ -268,7 +268,7 @@ export default function ProductionFinalizationActions({
   // BUILD PDF
   // ==========================================================
 
-  async function generateProductionPdf(
+  async function generateWarehousePdf(
     data: any
   ) {
     const sections:
@@ -281,10 +281,10 @@ export default function ProductionFinalizationActions({
 
     if (
       sections.length !==
-      7
+      requiredCount
     ) {
       throw new Error(
-        `Production PDF membutuhkan 7 section. Ditemukan ${sections.length}.`
+        `Warehouse PDF membutuhkan ${requiredCount} section. Ditemukan ${sections.length}.`
       );
     }
 
@@ -427,7 +427,7 @@ export default function ProductionFinalizationActions({
           const filename =
             photo
               .originalFilename ||
-            `production-photo-${currentIndex + 1}.jpg`;
+            `warehouse-photo-${currentIndex + 1}.jpg`;
 
 
           photoFileByStorageKey.set(
@@ -452,7 +452,7 @@ export default function ProductionFinalizationActions({
             1;
 
           setStatus(
-            `Loading Production photos ${completedPhotos} of ${photoItems.length}...`
+            `Loading Warehouse photos ${completedPhotos} of ${photoItems.length}...`
           );
         }
       }
@@ -527,7 +527,7 @@ export default function ProductionFinalizationActions({
 
       const generalGroupId =
         hasUngrouped
-          ? `production-general-${section.sectionId}`
+          ? `warehouse-general-${section.sectionId}`
           : null;
 
       if (
@@ -698,7 +698,7 @@ export default function ProductionFinalizationActions({
             !downloadedPhoto
           ) {
             throw new Error(
-              `Production photo was not prepared: ${photo.storagePath}`
+              `Warehouse photo was not prepared: ${photo.storagePath}`
             );
           }
 
@@ -726,17 +726,17 @@ export default function ProductionFinalizationActions({
         "CK-REPORT"
       );
 
-    const productionReportNumber =
-      `${parentReportNumber}-PRODUCTION`;
+    const warehouseReportNumber =
+      `${parentReportNumber}-WAREHOUSE`;
 
     setStatus(
-      "Generating Final Production PDF..."
+      "Generating Final Warehouse PDF..."
     );
 
     const pdfBytes =
       await buildClosingPdf({
         reportNumber:
-          productionReportNumber,
+          warehouseReportNumber,
 
         outletName:
           data
@@ -745,10 +745,10 @@ export default function ProductionFinalizationActions({
           "Central Kitchen",
 
         submittedBy:
-          `${leaderName} · Production Leader`,
+          `${leaderName} · Warehouse Leader`,
 
         reportArea:
-          "CENTRAL KITCHEN - PRODUCTION",
+          "CENTRAL KITCHEN - WAREHOUSE",
 
         reportBusinessDate:
           data
@@ -796,14 +796,14 @@ export default function ProductionFinalizationActions({
 
     const filename =
       `${safeName(
-        productionReportNumber
+        warehouseReportNumber
       )}.pdf`;
 
     const storagePath =
-      `reports/${reportId}/area/production/${filename}`;
+      `reports/${reportId}/area/warehouse/${filename}`;
 
     setStatus(
-      "Saving Final Production PDF..."
+      "Saving Final Warehouse PDF..."
     );
 
     const {
@@ -833,7 +833,7 @@ export default function ProductionFinalizationActions({
       uploadError
     ) {
       throw new Error(
-        `Production PDF upload gagal: ${uploadError.message}`
+        `Warehouse PDF upload gagal: ${uploadError.message}`
       );
     }
 
@@ -845,7 +845,7 @@ export default function ProductionFinalizationActions({
   // FINALIZE
   // ==========================================================
 
-  async function finalizeProduction() {
+  async function finalizeWarehouse() {
     if (
       !ready ||
       !reportId ||
@@ -858,24 +858,24 @@ export default function ProductionFinalizationActions({
       setBusy(true);
       setErrorMessage("");
       setStatus(
-        "Checking 7 Production sections..."
+        `Checking ${requiredCount} Warehouse sections...`
       );
 
       const data =
         await loadPayload();
 
       const storagePath =
-        await generateProductionPdf(
+        await generateWarehousePdf(
           data
         );
 
       setStatus(
-        "Finalizing Production..."
+        "Finalizing Warehouse..."
       );
 
       const response =
         await fetch(
-          "/api/operations/CLOSING_CK/finalize-production",
+          "/api/operations/CLOSING_CK/finalize-warehouse",
           {
             method:
               "POST",
@@ -900,7 +900,7 @@ export default function ProductionFinalizationActions({
       if (!response.ok) {
         throw new Error(
           result?.error ||
-          "Finalize Production gagal."
+          "Finalize Warehouse gagal."
         );
       }
 
@@ -909,7 +909,7 @@ export default function ProductionFinalizationActions({
       );
 
       setStatus(
-        "Production finalized successfully."
+        "Warehouse finalized successfully."
       );
 
       router.refresh();
@@ -918,13 +918,13 @@ export default function ProductionFinalizationActions({
       error: any
     ) {
       console.error(
-        "Production finalization failed:",
+        "Warehouse finalization failed:",
         error
       );
 
       setErrorMessage(
         error?.message ||
-        "Finalize Production gagal."
+        "Finalize Warehouse gagal."
       );
 
       setStatus("");
@@ -943,7 +943,7 @@ export default function ProductionFinalizationActions({
       !pdfStoragePath
     ) {
       throw new Error(
-        "Production PDF belum tersedia."
+        "Warehouse PDF belum tersedia."
       );
     }
 
@@ -965,7 +965,7 @@ export default function ProductionFinalizationActions({
     ) {
       throw new Error(
         error?.message ||
-        "Unable to download Production PDF."
+        "Unable to download Warehouse PDF."
       );
     }
 
@@ -973,7 +973,7 @@ export default function ProductionFinalizationActions({
       pdfStoragePath
         .split("/")
         .pop() ||
-      `${reportNumber || "CK"}-PRODUCTION.pdf`;
+      `${reportNumber || "CK"}-WAREHOUSE.pdf`;
 
     return new File(
       [
@@ -1035,8 +1035,9 @@ export default function ProductionFinalizationActions({
   }
 
 
-  function formatProductionDate(
-    value: unknown
+  function formatWarehouseDate(
+    value: unknown,
+    timeZone: string
   ) {
     if (!value) {
       return "-";
@@ -1058,8 +1059,7 @@ export default function ProductionFinalizationActions({
     return new Intl.DateTimeFormat(
       "id-ID",
       {
-        timeZone:
-          "Asia/Jakarta",
+        timeZone,
         day:
           "numeric",
         month:
@@ -1073,8 +1073,9 @@ export default function ProductionFinalizationActions({
   }
 
 
-  function formatProductionTime(
-    value: unknown
+  function formatWarehouseTime(
+    value: unknown,
+    timeZone: string
   ) {
     if (!value) {
       return "-";
@@ -1093,19 +1094,20 @@ export default function ProductionFinalizationActions({
       return "-";
     }
 
-    return `${new Intl.DateTimeFormat(
+    return new Intl.DateTimeFormat(
       "id-ID",
       {
-        timeZone:
-          "Asia/Jakarta",
+        timeZone,
         hour:
           "2-digit",
         minute:
           "2-digit",
+        timeZoneName:
+          "short",
       }
     ).format(
       date
-    )} WIB`;
+    );
   }
 
 
@@ -1139,25 +1141,14 @@ export default function ProductionFinalizationActions({
 
 
   function getPdfShareUrl(
-    finalizationId: unknown
+    _finalizationId: unknown
   ) {
-    const id =
-      String(
-        finalizationId ||
-        ""
-      ).trim();
-
-    if (!id) {
-      return null;
-    }
-
-    return `${window.location.origin}/r/p/${encodeURIComponent(
-      id
-    )}`;
+    // Public Warehouse PDF URL is intentionally disabled in V1.
+    return null;
   }
 
 
-  async function buildProductionSummary() {
+  async function buildWarehouseSummary() {
     const data =
       await loadPayload();
 
@@ -1194,6 +1185,15 @@ export default function ProductionFinalizationActions({
         ?.name ||
       "CQ Central";
 
+    const outletTimeZone =
+      String(
+        data
+          ?.outlet
+          ?.timezone ||
+        "Asia/Jakarta"
+      ).trim() ||
+      "Asia/Jakarta";
+
     const baseReportNumber =
       String(
         data
@@ -1209,10 +1209,10 @@ export default function ProductionFinalizationActions({
     const finalReportNumber =
       baseReportNumber
         .endsWith(
-          "-PRODUCTION"
+          "-WAREHOUSE"
         )
         ? baseReportNumber
-        : `${baseReportNumber}-PRODUCTION`;
+        : `${baseReportNumber}-WAREHOUSE`;
 
 
     let totalChecklist =
@@ -1453,13 +1453,15 @@ export default function ProductionFinalizationActions({
         "*CENTRAL KITCHEN CLOSING REPORT*",
         "",
         `📍 ${outletName}`,
-        `📅 ${formatProductionDate(
-          businessDate
-        )} • ⏰ ${formatProductionTime(
-          finalizedAt
-        )}`,
-        `👤 ${leaderName} • Production Leader`,
-        `🏭 Production • ✅ ${reviewedCount}/${requiredCount} Reviewed`,
+        `📅 ${formatWarehouseDate(
+            businessDate,
+            outletTimeZone
+          )} • ⏰ ${formatWarehouseTime(
+            finalizedAt,
+            outletTimeZone
+          )}`,
+        `👤 ${leaderName} • Warehouse Leader`,
+        `🏭 Warehouse • ✅ ${reviewedCount}/${requiredCount} Reviewed`,
         "",
         "*📊 OVERALL RESULT*",
         `✅ Checklist: ${totalAnswered}/${totalChecklist}`,
@@ -1531,7 +1533,7 @@ export default function ProductionFinalizationActions({
 
     lines.push(
       "",
-      "✅ *PRODUCTION FINALIZED*"
+      "✅ *WAREHOUSE FINALIZED*"
     );
 
 
@@ -1558,7 +1560,7 @@ export default function ProductionFinalizationActions({
       ] =
         await Promise.all([
           getPdfFile(),
-          buildProductionSummary(),
+          buildWarehouseSummary(),
         ]);
 
 
@@ -1584,7 +1586,7 @@ export default function ProductionFinalizationActions({
         clipboardError
       ) {
         console.warn(
-          "Unable to pre-copy Production summary:",
+          "Unable to pre-copy Warehouse summary:",
           clipboardError
         );
       }
@@ -1719,7 +1721,7 @@ export default function ProductionFinalizationActions({
 
 
       const summary =
-        await buildProductionSummary();
+        await buildWarehouseSummary();
 
       const whatsappUrl =
         `https://wa.me/?text=${encodeURIComponent(
@@ -1755,7 +1757,7 @@ export default function ProductionFinalizationActions({
 
 
       const text =
-        await buildProductionSummary();
+        await buildWarehouseSummary();
 
 
       await navigator
@@ -1766,7 +1768,7 @@ export default function ProductionFinalizationActions({
 
 
       setStatus(
-        "Production summary copied."
+        "Warehouse summary copied."
       );
 
     } catch (
@@ -1783,7 +1785,7 @@ export default function ProductionFinalizationActions({
   }
 
 
-  async function regenerateProductionPdf() {
+  async function regenerateWarehousePdf() {
     if (
       !reportId ||
       busy
@@ -1796,24 +1798,24 @@ export default function ProductionFinalizationActions({
       setErrorMessage("");
 
       setStatus(
-        "Preparing Production report..."
+        "Preparing Warehouse report..."
       );
 
       const data =
         await loadPayload();
 
       const storagePath =
-        await generateProductionPdf(
+        await generateWarehousePdf(
           data
         );
 
       setStatus(
-        "Updating Final Production PDF..."
+        "Updating Final Warehouse PDF..."
       );
 
       const response =
         await fetch(
-          "/api/operations/CLOSING_CK/finalize-production",
+          "/api/operations/CLOSING_CK/finalize-warehouse",
           {
             method: "POST",
             headers: {
@@ -1837,7 +1839,7 @@ export default function ProductionFinalizationActions({
       if (!response.ok) {
         throw new Error(
           result?.error ||
-            "Regenerate Production PDF gagal."
+            "Regenerate Warehouse PDF gagal."
         );
       }
 
@@ -1846,7 +1848,7 @@ export default function ProductionFinalizationActions({
       );
 
       setStatus(
-        "Final Production PDF regenerated successfully."
+        "Final Warehouse PDF regenerated successfully."
       );
 
       router.refresh();
@@ -1854,13 +1856,13 @@ export default function ProductionFinalizationActions({
       error: any
     ) {
       console.error(
-        "Production PDF regeneration failed:",
+        "Warehouse PDF regeneration failed:",
         error
       );
 
       setErrorMessage(
         error?.message ||
-          "Regenerate Production PDF gagal."
+          "Regenerate Warehouse PDF gagal."
       );
 
       setStatus("");
@@ -1881,11 +1883,11 @@ export default function ProductionFinalizationActions({
       <div>
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
           <p className="text-xs font-black uppercase tracking-wide text-emerald-700">
-            ✓ Production Finalized
+            ✓ Warehouse Finalized
           </p>
 
           <p className="mt-1 text-xs font-semibold text-neutral-600">
-            Final Production PDF is ready.
+            Final Warehouse PDF is ready.
           </p>
         </div>
 
@@ -1947,7 +1949,7 @@ export default function ProductionFinalizationActions({
               busy
             }
             onClick={
-              regenerateProductionPdf
+              regenerateWarehousePdf
             }
             className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-black text-amber-800 transition hover:bg-amber-100 disabled:opacity-50 sm:col-span-2"
           >
@@ -1986,7 +1988,7 @@ export default function ProductionFinalizationActions({
           busy
         }
         onClick={
-          finalizeProduction
+          finalizeWarehouse
         }
         className={`flex w-full items-center justify-center rounded-xl px-4 py-3.5 text-xs font-black uppercase tracking-wide transition ${
           ready &&
@@ -1997,12 +1999,12 @@ export default function ProductionFinalizationActions({
       >
         {busy
           ? "Processing..."
-          : "Finalize Production"}
+          : "Finalize Warehouse"}
       </button>
 
       <p className="mt-2 text-center text-[11px] font-semibold text-neutral-400">
         {ready
-          ? "7/7 sections reviewed. Production is ready to finalize."
+          ? `${requiredCount}/${requiredCount} sections reviewed. Warehouse is ready to finalize.`
           : submittedCount < requiredCount
             ? `${Math.max(
                 0,
@@ -2025,7 +2027,7 @@ export default function ProductionFinalizationActions({
                 1
                   ? ""
                   : "s"
-              } belum direview oleh Production Leader.`}
+              } belum direview oleh Warehouse Leader.`}
       </p>
 
       {status && (

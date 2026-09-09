@@ -1706,6 +1706,15 @@ export default async function ReportsPage() {
         definition?.code ??
         "Operational Section",
 
+      area_code:
+        String(
+          definition?.area_code ||
+          ""
+        )
+          .trim()
+          .toUpperCase() ||
+        null,
+
       status:
         reportSection.status,
 
@@ -2059,6 +2068,20 @@ export default async function ReportsPage() {
             form?.name ??
             form?.code ??
             "Operational Form",
+
+          can_finalize_warehouse:
+            String(
+              form?.code ||
+              ""
+            )
+              .trim()
+              .toUpperCase() ===
+              "CLOSING_CK" &&
+            reportScope.kind ===
+              "AREA" &&
+            reportScope.areas.has(
+              "STORE"
+            ),
 
           created_by_email:
             isScopedReport

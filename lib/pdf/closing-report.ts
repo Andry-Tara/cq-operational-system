@@ -75,6 +75,72 @@ function formatTimeID(date = new Date()) {
   }).format(date);
 }
 
+function formatBusinessDateID(
+  value?: string | null
+) {
+  const match =
+    String(
+      value ||
+      ""
+    )
+      .trim()
+      .match(
+        /^(\d{4})-(\d{2})-(\d{2})$/
+      );
+
+  if (!match) {
+    return null;
+  }
+
+  const year =
+    Number(
+      match[1]
+    );
+
+  const month =
+    Number(
+      match[2]
+    );
+
+  const day =
+    Number(
+      match[3]
+    );
+
+  const date =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day,
+        12,
+        0,
+        0
+      )
+    );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat(
+    "id-ID",
+    {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }
+  ).format(
+    date
+  );
+}
+
+
 function isException(
   question: Question,
   answer?: Answer
@@ -668,6 +734,7 @@ async function drawCoverPage(
     submittedBy,
     reportArea,
     reportTimestamp,
+    reportBusinessDate,
     groups,
     questions,
     answers,
@@ -677,6 +744,7 @@ async function drawCoverPage(
     submittedBy: string;
     reportArea: string;
     reportTimestamp?: string | null;
+    reportBusinessDate?: string | null;
     groups: Group[];
     questions: Question[];
     answers: Record<string, Answer>;
@@ -708,6 +776,9 @@ async function drawCoverPage(
       : requestedNow;
 
   const reportDate =
+    formatBusinessDateID(
+      reportBusinessDate
+    ) ??
     formatDateID(
       now
     );
@@ -1719,6 +1790,7 @@ export async function buildClosingPdf({
   submittedBy,
   reportArea = "BOH / KITCHEN",
   reportTimestamp,
+  reportBusinessDate,
   groups,
   questions,
   answers,
@@ -1728,6 +1800,7 @@ export async function buildClosingPdf({
   submittedBy: string;
   reportArea?: string;
   reportTimestamp?: string | null;
+  reportBusinessDate?: string | null;
   groups: Group[];
   questions: Question[];
   answers: Record<string, Answer>;
@@ -1771,6 +1844,9 @@ export async function buildClosingPdf({
       : requestedReportMoment;
 
   const reportDate =
+    formatBusinessDateID(
+      reportBusinessDate
+    ) ??
     formatDateID(
       reportMoment
     );
@@ -1783,6 +1859,7 @@ export async function buildClosingPdf({
     reportTimestamp:
       reportMoment
         .toISOString(),
+    reportBusinessDate,
     groups,
     questions: orderedQuestions,
     answers,

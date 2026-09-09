@@ -142,7 +142,8 @@ export async function loadOperationDefinition({
       form_id,
       code,
       name,
-      description
+      description,
+      area_code
     `)
     .eq("form_id", form.id)
     .eq(

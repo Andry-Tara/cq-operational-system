@@ -12,6 +12,9 @@ import {
 import ReopenReportButton from "./reopen-report-button";
 
 
+import WarehouseFinalizationActions from "../central-kitchen/warehouse-finalization-actions";
+
+
 type Outlet = {
   id: string;
   code: string;
@@ -39,6 +42,9 @@ type ReportSection = {
   section_id: string;
   code: string;
   name: string;
+  area_code:
+    string | null;
+
   status: string;
   created_by_email:
     string | null;
@@ -57,6 +63,9 @@ type Report = {
 
   form_code: string;
   form_name: string;
+
+  can_finalize_warehouse:
+    boolean;
 
   report_number: string;
   business_date: string;
@@ -171,7 +180,8 @@ function normalizeStatus(
 
   if (
     value === "completed" ||
-    value === "submitted"
+    value === "submitted" ||
+    value === "reviewed"
   ) {
     return "completed";
   }
@@ -233,6 +243,112 @@ function percentage(
 }
 
 
+function isCentralKitchenForm(
+  formCode: string
+) {
+  const code =
+    String(
+      formCode ||
+      ""
+    )
+      .trim()
+      .toUpperCase();
+
+
+  return (
+    code ===
+      "OPENING_CK" ||
+    code ===
+      "CLOSING_CK"
+  );
+}
+
+
+function operationKind(
+  formCode: string
+) {
+  const code =
+    String(
+      formCode ||
+      ""
+    )
+      .trim()
+      .toUpperCase();
+
+
+  if (
+    code.startsWith(
+      "OPENING"
+    )
+  ) {
+    return "OPENING";
+  }
+
+
+  if (
+    code.startsWith(
+      "CLOSING"
+    )
+  ) {
+    return "CLOSING";
+  }
+
+
+  return "OTHER";
+}
+
+
+function reportSubmitterLabel(
+  report: Report
+) {
+  const sectionSubmitters =
+    new Set(
+      report.sections
+        .map(
+          (
+            section
+          ) =>
+            section
+              .created_by_email
+        )
+        .filter(
+          (
+            value
+          ): value is string =>
+            Boolean(
+              value
+            )
+        )
+    );
+
+
+  if (
+    sectionSubmitters.size ===
+    1
+  ) {
+    return Array.from(
+      sectionSubmitters
+    )[0];
+  }
+
+
+  if (
+    sectionSubmitters.size >
+    1
+  ) {
+    return (
+      `${sectionSubmitters.size} Section PICs`
+    );
+  }
+
+
+  return (
+    report.created_by_email ||
+    "Not recorded"
+  );
+}
+
+
 export default function ReportsHistoryClient({
   outlets,
   forms,
@@ -255,6 +371,33 @@ export default function ReportsHistoryClient({
     useState(
       today
     );
+
+  const [
+    selectedScope,
+    setSelectedScope,
+  ] =
+    useState(
+      "ALL"
+    );
+
+
+  const [
+    selectedOperation,
+    setSelectedOperation,
+  ] =
+    useState(
+      "ALL"
+    );
+
+
+  const [
+    issuesOnly,
+    setIssuesOnly,
+  ] =
+    useState(
+      false
+    );
+
 
   const [
     selectedOutlet,
@@ -520,6 +663,94 @@ export default function ReportsHistoryClient({
     );
 
 
+  // ==========================================================
+  // MANAGEMENT SCOPE
+  //
+  // Restaurant Outlets + Central Kitchen
+  // Opening + Closing
+  //
+  // Server-side report scope remains authoritative.
+  // ==========================================================
+
+  const managementRows =
+    useMemo(
+      () =>
+        dailyRows.filter(
+          (
+            row
+          ) => {
+            const isCk =
+              isCentralKitchenForm(
+                row.form.code
+              );
+
+
+            if (
+              selectedScope ===
+                "RESTAURANT" &&
+              isCk
+            ) {
+              return false;
+            }
+
+
+            if (
+              selectedScope ===
+                "CK" &&
+              !isCk
+            ) {
+              return false;
+            }
+
+
+            if (
+              selectedOperation !==
+                "ALL" &&
+              operationKind(
+                row.form.code
+              ) !==
+                selectedOperation
+            ) {
+              return false;
+            }
+
+
+            if (
+              selectedOutlet !==
+                "ALL" &&
+              row.outlet.id !==
+                selectedOutlet
+            ) {
+              return false;
+            }
+
+
+            if (
+              issuesOnly &&
+              (
+                row.report
+                  ?.open_issue_count ??
+                0
+              ) <=
+                0
+            ) {
+              return false;
+            }
+
+
+            return true;
+          }
+        ),
+      [
+        dailyRows,
+        issuesOnly,
+        selectedOperation,
+        selectedOutlet,
+        selectedScope,
+      ]
+    );
+
+
   const sectionOptions =
     useMemo(
       () => {
@@ -614,7 +845,7 @@ export default function ReportsHistoryClient({
             .trim()
             .toLowerCase();
 
-        return dailyRows.filter(
+        return managementRows.filter(
           (
             row
           ) => {
@@ -744,7 +975,7 @@ export default function ReportsHistoryClient({
         );
       },
       [
-        dailyRows,
+        managementRows,
         search,
         selectedCreator,
         selectedForm,
@@ -756,7 +987,7 @@ export default function ReportsHistoryClient({
 
 
   const completed =
-    dailyRows.filter(
+    managementRows.filter(
       (
         row
       ) =>
@@ -765,7 +996,7 @@ export default function ReportsHistoryClient({
     ).length;
 
   const inProgress =
-    dailyRows.filter(
+    managementRows.filter(
       (
         row
       ) =>
@@ -774,7 +1005,7 @@ export default function ReportsHistoryClient({
     ).length;
 
   const notSubmitted =
-    dailyRows.filter(
+    managementRows.filter(
       (
         row
       ) =>
@@ -783,7 +1014,7 @@ export default function ReportsHistoryClient({
     ).length;
 
   const openIssues =
-    dailyRows.reduce(
+    managementRows.reduce(
       (
         total,
         row
@@ -798,7 +1029,97 @@ export default function ReportsHistoryClient({
     );
 
 
+  const totalAnswers =
+    managementRows.reduce(
+      (
+        total,
+        row
+      ) =>
+        total +
+        (
+          row.report
+            ?.answer_count ??
+          0
+        ),
+      0
+    );
+
+
+  const totalQuestions =
+    managementRows.reduce(
+      (
+        total,
+        row
+      ) =>
+        total +
+        (
+          row.report
+            ?.question_count ??
+          0
+        ),
+      0
+    );
+
+
+  const checklistProgress =
+    percentage(
+      totalAnswers,
+      totalQuestions
+    );
+
+
+  const completedEvidence =
+    managementRows.reduce(
+      (
+        total,
+        row
+      ) =>
+        total +
+        (
+          row.report
+            ?.required_photo_complete_count ??
+          0
+        ),
+      0
+    );
+
+
+  const requiredEvidence =
+    managementRows.reduce(
+      (
+        total,
+        row
+      ) =>
+        total +
+        (
+          row.report
+            ?.required_photo_count ??
+          0
+        ),
+      0
+    );
+
+
+  const evidenceProgress =
+    percentage(
+      completedEvidence,
+      requiredEvidence
+    );
+
+
   function resetFilters() {
+    setSelectedScope(
+      "ALL"
+    );
+
+    setSelectedOperation(
+      "ALL"
+    );
+
+    setIssuesOnly(
+      false
+    );
+
     setSelectedOutlet(
       "ALL"
     );
@@ -853,7 +1174,7 @@ export default function ReportsHistoryClient({
             </h1>
 
             <p className="mt-1.5 max-w-2xl text-[12px] leading-5 text-neutral-500 md:text-sm md:leading-6">
-              Opening, Closing and multi-section operational reports in one place.
+              Opening and Closing performance across restaurant outlets and Central Kitchen in one place.
             </p>
           </div>
 
@@ -877,13 +1198,13 @@ export default function ReportsHistoryClient({
         {/* SUMMARY */}
         {/* ================================================== */}
 
-        <section className="mt-4 grid grid-cols-2 gap-2.5 xl:grid-cols-4">
+        <section className="mt-4 grid grid-cols-2 gap-2.5 lg:grid-cols-3 xl:grid-cols-6">
           <SummaryCard
             label="Completed"
             value={
               completed
             }
-            sub={`${dailyRows.length} assigned reports`}
+            sub={`${managementRows.length} scoped reports`}
             variant="success"
           />
 
@@ -912,6 +1233,31 @@ export default function ReportsHistoryClient({
             }
             sub="Needs follow-up"
             variant="danger"
+          />
+          <SummaryCard
+            label="Checklist"
+            value={
+              `${checklistProgress}%`
+            }
+            sub={
+              totalQuestions
+                ? `${totalAnswers}/${totalQuestions} answered`
+                : "No checklist data"
+            }
+            variant="neutral"
+          />
+
+          <SummaryCard
+            label="Evidence"
+            value={
+              `${evidenceProgress}%`
+            }
+            sub={
+              requiredEvidence
+                ? `${completedEvidence}/${requiredEvidence} required photos`
+                : "No required evidence"
+            }
+            variant="neutral"
           />
         </section>
 
@@ -1022,7 +1368,53 @@ export default function ReportsHistoryClient({
 
           {/* SELECT FILTERS */}
 
-          <div className="mt-4 grid grid-cols-2 gap-2.5 lg:grid-cols-5">
+          <div className="mt-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4 xl:grid-cols-7">
+
+            <FilterSelect
+              label="Scope"
+              value={
+                selectedScope
+              }
+              onChange={
+                setSelectedScope
+              }
+            >
+              <option value="ALL">
+                All Operations
+              </option>
+
+              <option value="RESTAURANT">
+                Restaurant Outlets
+              </option>
+
+              <option value="CK">
+                Central Kitchen
+              </option>
+            </FilterSelect>
+
+
+            <FilterSelect
+              label="Operation"
+              value={
+                selectedOperation
+              }
+              onChange={
+                setSelectedOperation
+              }
+            >
+              <option value="ALL">
+                Opening & Closing
+              </option>
+
+              <option value="OPENING">
+                Opening
+              </option>
+
+              <option value="CLOSING">
+                Closing
+              </option>
+            </FilterSelect>
+
 
             <FilterSelect
               label="Outlet"
@@ -1059,7 +1451,7 @@ export default function ReportsHistoryClient({
 
 
             <FilterSelect
-              label="Form"
+              label="Exact Form"
               value={
                 selectedForm
               }
@@ -1151,7 +1543,7 @@ export default function ReportsHistoryClient({
 
 
             <FilterSelect
-              label="Created By"
+              label="PIC / Submitted By"
               value={
                 selectedCreator
               }
@@ -1204,10 +1596,29 @@ export default function ReportsHistoryClient({
                     event.target.value
                   )
                 }
-                placeholder="Search report, outlet, section or email..."
+                placeholder="Search report, outlet, section, PIC or email..."
                 className="h-10 w-full rounded-[11px] border border-neutral-200 bg-neutral-50 px-3.5 text-[11px] font-semibold text-neutral-700 outline-none transition placeholder:text-neutral-400 focus:border-red-300"
               />
             </label>
+
+            <button
+              type="button"
+              onClick={() =>
+                setIssuesOnly(
+                  (
+                    current
+                  ) =>
+                    !current
+                )
+              }
+              className={`h-10 rounded-[11px] border px-4 text-[10px] font-black uppercase tracking-[0.08em] transition ${
+                issuesOnly
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : "border-neutral-200 bg-white text-neutral-500"
+              }`}
+            >
+              Open Issues Only
+            </button>
 
             <button
               type="button"
@@ -1281,6 +1692,9 @@ export default function ReportsHistoryClient({
                     canReopen={
                       user.canReopen
                     }
+                    leaderName={
+                      user.full_name
+                    }
                   />
                 )
               )}
@@ -1302,9 +1716,11 @@ export default function ReportsHistoryClient({
 function ReportCard({
   row,
   canReopen,
+  leaderName,
 }: {
   row: DailyRow;
   canReopen: boolean;
+  leaderName: string;
 }) {
   const {
     outlet,
@@ -1349,6 +1765,78 @@ function ReportCard({
       answerCount,
       questionCount
     );
+
+  const warehouseSections =
+    report
+      ?.sections
+      .filter(
+        (
+          section
+        ) =>
+          String(
+            section.area_code ||
+            ""
+          )
+            .trim()
+            .toUpperCase() ===
+          "STORE"
+      ) ??
+    [];
+
+  const warehouseRequiredCount =
+    warehouseSections.length;
+
+  const warehouseSubmittedCount =
+    warehouseSections.filter(
+      (
+        section
+      ) =>
+        [
+          "submitted",
+          "reviewed",
+          "completed",
+        ].includes(
+          String(
+            section.status ||
+            ""
+          )
+            .trim()
+            .toLowerCase()
+        )
+    ).length;
+
+  const warehouseReviewedCount =
+    warehouseSections.filter(
+      (
+        section
+      ) =>
+        [
+          "reviewed",
+          "completed",
+        ].includes(
+          String(
+            section.status ||
+            ""
+          )
+            .trim()
+            .toLowerCase()
+        )
+    ).length;
+
+  const showWarehouseFinalization =
+    Boolean(
+      report
+        ?.can_finalize_warehouse
+    ) &&
+    String(
+      form.code ||
+      ""
+    )
+      .trim()
+      .toUpperCase() ===
+      "CLOSING_CK" &&
+    warehouseRequiredCount >
+      0;
 
   return (
     <article className="overflow-hidden rounded-[18px] border border-neutral-200 bg-white shadow-sm">
@@ -1406,12 +1894,13 @@ function ReportCard({
 
                 <div className="min-w-0">
                   <p className="text-[8px] font-black uppercase tracking-[0.1em] text-neutral-400">
-                    Created By
+                    Submitted By
                   </p>
 
                   <p className="mt-0.5 break-all text-[10px] font-bold text-neutral-600">
-                    {report.created_by_email ||
-                      "Unknown user"}
+                    {reportSubmitterLabel(
+                      report
+                    )}
                   </p>
                 </div>
               </div>
@@ -1549,6 +2038,12 @@ function ReportCard({
                     section={
                       section
                     }
+                    reportId={
+                      report.id
+                    }
+                    formCode={
+                      form.code
+                    }
                   />
                 )
               )}
@@ -1557,6 +2052,47 @@ function ReportCard({
           </details>
         )}
 
+
+      {showWarehouseFinalization &&
+        report && (
+          <div className="border-t border-emerald-100 bg-emerald-50/40 px-4 py-4 md:px-5">
+            <div className="mb-3">
+              <p className="text-[8px] font-black uppercase tracking-[0.14em] text-emerald-700">
+                Warehouse Final Review
+              </p>
+
+              <p className="mt-1 text-[10px] font-bold text-neutral-500">
+                Historical report ·{" "}
+                {
+                  warehouseReviewedCount
+                }/{
+                  warehouseRequiredCount
+                } sections reviewed
+              </p>
+            </div>
+
+            <WarehouseFinalizationActions
+              reportId={
+                report.id
+              }
+              reportNumber={
+                report.report_number
+              }
+              leaderName={
+                leaderName
+              }
+              submittedCount={
+                warehouseSubmittedCount
+              }
+              reviewedCount={
+                warehouseReviewedCount
+              }
+              requiredCount={
+                warehouseRequiredCount
+              }
+            />
+          </div>
+        )}
 
       {/* ACTION */}
 
@@ -1572,15 +2108,16 @@ function ReportCard({
           >
             View PDF
           </a>
-        ) : report ? (
+        ) : report &&
+          !showWarehouseFinalization ? (
           <span className="inline-flex min-h-9 items-center text-[10px] font-bold text-neutral-400">
             PDF not available
           </span>
-        ) : (
+        ) : !report ? (
           <span className="text-[10px] font-bold text-neutral-300">
             No actions
           </span>
-        )}
+        ) : null}
 
         {report &&
           canReopen &&
@@ -1624,12 +2161,34 @@ function ReportCard({
 
 function SectionCard({
   section,
+  reportId,
+  formCode,
 }: {
   section: ReportSection;
+  reportId: string;
+  formCode: string;
 }) {
+  const rawStatus =
+    String(
+      section.status ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
   const status =
     normalizeStatus(
-      section.status
+      rawStatus
+    );
+
+  const historicalReviewAvailable =
+    formCode ===
+      "CLOSING_CK" &&
+    [
+      "submitted",
+      "reviewed",
+    ].includes(
+      rawStatus
     );
 
   const questionCount =
@@ -1673,7 +2232,7 @@ function SectionCard({
 
       <div className="mt-2 rounded-[10px] bg-neutral-50 px-2.5 py-2">
         <p className="text-[8px] font-black uppercase tracking-[0.1em] text-neutral-400">
-          Section Created By
+          Section PIC / Submitted By
         </p>
 
         <p className="mt-0.5 break-all text-[9px] font-bold text-neutral-600">
@@ -1721,6 +2280,26 @@ function SectionCard({
             }}
           />
         </div>
+      )}
+
+      {historicalReviewAvailable && (
+        <a
+          href={
+            `/protected/operations/${encodeURIComponent(
+              formCode
+            )}/${encodeURIComponent(
+              section.code
+            )}?reportId=${encodeURIComponent(
+              reportId
+            )}`
+          }
+          className="mt-3 inline-flex min-h-9 w-full items-center justify-center rounded-[10px] bg-red-700 px-3 text-[9px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-red-800"
+        >
+          {rawStatus ===
+          "reviewed"
+            ? "Open Review"
+            : "Review Section"}
+        </a>
       )}
 
     </div>
@@ -1823,7 +2402,7 @@ function SummaryCard({
   variant,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   sub: string;
   variant:
     | "success"

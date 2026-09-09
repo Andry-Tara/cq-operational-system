@@ -187,6 +187,7 @@ export default function OperationClient({
   pic,
   groups,
   questions,
+  requestedReportId,
 }: {
   outlet: {
     id: string;
@@ -209,6 +210,9 @@ export default function OperationClient({
 
   groups: Group[];
   questions: Question[];
+
+  requestedReportId?:
+    string | null;
 }) {
   const supabase = createClient();
 
@@ -284,10 +288,37 @@ export default function OperationClient({
       sessionData?.reportSectionId
     );
 
-  const isProductionReviewMode =
+  const reviewAreaCode =
+    String(
+      sessionData?.reviewAreaCode ||
+        ""
+    )
+      .trim()
+      .toUpperCase();
+
+  const isAreaLeaderReviewMode =
     Boolean(
       sessionData?.reviewMode
     );
+
+  const reviewAreaLabel =
+    reviewAreaCode === "STORE"
+      ? "Warehouse"
+      : reviewAreaCode ===
+          "PRODUCTION"
+        ? "Production"
+        : "Central Kitchen";
+
+  const reviewLeaderLabel =
+    `${reviewAreaLabel} Leader`;
+
+  const reviewProgressLabel =
+    reviewAreaCode === "STORE"
+      ? "Warehouse Progress"
+      : reviewAreaCode ===
+          "PRODUCTION"
+        ? "Production Progress"
+        : "Central Kitchen Progress";
 
   const isSectionCorrectionMode =
     Boolean(
@@ -405,7 +436,7 @@ export default function OperationClient({
         !submitting &&
         !result &&
         !isReopenedDraftSession &&
-        !isProductionReviewMode &&
+        !isAreaLeaderReviewMode &&
         !isSectionCorrectionMode,
     });
 
@@ -448,6 +479,16 @@ export default function OperationClient({
                 {
                   method: "POST",
                   cache: "no-store",
+                  headers: {
+                    "Content-Type":
+                      "application/json",
+                  },
+                  body:
+                    JSON.stringify({
+                      reportId:
+                        requestedReportId ||
+                        null,
+                    }),
                 }
               );
 
@@ -655,6 +696,7 @@ export default function OperationClient({
   }, [
     apiBase,
     operationLabel,
+    requestedReportId,
     sessionRetryKey,
   ]);
 
@@ -3192,12 +3234,12 @@ export default function OperationClient({
   }
 
   // ==========================================================
-  // MARK PRODUCTION SECTION REVIEWED
+  // MARK CK AREA SECTION REVIEWED
   // ==========================================================
 
-  async function markProductionSectionReviewed() {
+  async function markAreaSectionReviewed() {
     if (
-      !isProductionReviewMode ||
+      !isAreaLeaderReviewMode ||
       !sessionData?.canMarkReviewed ||
       !sessionData?.reportId ||
       reviewBusy
@@ -3209,7 +3251,7 @@ export default function OperationClient({
       setReviewBusy(true);
       setErrorMessage("");
       setReviewMessage(
-        "Saving Production Leader review..."
+        `Saving ${reviewLeaderLabel} review...`
       );
 
       const response =
@@ -3325,9 +3367,9 @@ export default function OperationClient({
   }
 
 
-  async function returnProductionSectionForCorrection() {
+  async function returnAreaSectionForCorrection() {
     if (
-      !isProductionReviewMode ||
+      !isAreaLeaderReviewMode ||
       !sessionData?.reportId ||
       correctionReturnBusy ||
       reviewBusy
@@ -3504,7 +3546,7 @@ export default function OperationClient({
 
 
   if (
-    isProductionReviewMode &&
+    isAreaLeaderReviewMode &&
     !result
   ) {
     const reviewed =
@@ -3560,7 +3602,7 @@ export default function OperationClient({
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-red-700">
-                Production Leader Review
+                {reviewLeaderLabel} Review
               </p>
 
               <h2 className="mt-1 text-2xl font-black text-neutral-950">
@@ -3828,7 +3870,7 @@ export default function OperationClient({
                   .length < 5
               }
               onClick={
-                returnProductionSectionForCorrection
+                returnAreaSectionForCorrection
               }
               className="mt-3 flex w-full items-center justify-center rounded-xl bg-amber-700 px-4 py-3.5 text-xs font-black uppercase tracking-wide text-white transition hover:bg-amber-800 disabled:cursor-not-allowed disabled:bg-amber-200 disabled:text-amber-500"
             >
@@ -3871,7 +3913,7 @@ export default function OperationClient({
                   ?.canMarkReviewed
               }
               onClick={
-                markProductionSectionReviewed
+                markAreaSectionReviewed
               }
               className="flex w-full items-center justify-center rounded-xl bg-red-700 px-4 py-3.5 text-xs font-black uppercase tracking-wide text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500"
             >
@@ -3905,7 +3947,7 @@ export default function OperationClient({
             href="/protected/central-kitchen"
             className="mt-3 flex w-full items-center justify-center rounded-xl border border-neutral-200 bg-white px-4 py-3 text-xs font-black text-neutral-700 transition hover:bg-neutral-100"
           >
-            Back to Production Progress
+            Back to {reviewProgressLabel}
           </Link>
         </div>
 

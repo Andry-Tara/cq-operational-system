@@ -30,16 +30,41 @@ type PageProps = {
     formCode: string;
     sectionCode: string;
   }>;
+
+  searchParams?: Promise<{
+    reportId?:
+      | string
+      | string[];
+  }>;
 };
 
 
 export default async function OperationPage({
   params,
+  searchParams,
 }: PageProps) {
   const {
     formCode,
     sectionCode,
   } = await params;
+
+  const resolvedSearchParams =
+    searchParams
+      ? await searchParams
+      : {};
+
+  const historicalReportIdRaw =
+    resolvedSearchParams
+      .reportId;
+
+  const historicalReportId =
+    Array.isArray(
+      historicalReportIdRaw
+    )
+      ? historicalReportIdRaw[0] ||
+        null
+      : historicalReportIdRaw ||
+        null;
 
   const normalizedFormCode =
     normalizeOperationCode(
@@ -284,9 +309,75 @@ export default async function OperationPage({
         throw submitError;
       }
 
+      const sectionAreaCode =
+        String(
+          (operation.section as any)
+            .area_code ||
+          ""
+        )
+          .trim()
+          .toUpperCase();
+
+      let isExactAreaLeader =
+        false;
+
+      if (
+        normalizedFormCode ===
+          "CLOSING_CK" &&
+        [
+          "STORE",
+          "PRODUCTION",
+        ].includes(
+          sectionAreaCode
+        )
+      ) {
+        const {
+          data:
+            areaLeaderAssignment,
+          error:
+            areaLeaderError,
+        } =
+          await supabase
+            .from(
+              "form_area_leaders"
+            )
+            .select(`
+              id,
+              user_id,
+              area_code
+            `)
+            .eq(
+              "outlet_id",
+              outlet.id
+            )
+            .eq(
+              "form_id",
+              operation.form.id
+            )
+            .eq(
+              "area_code",
+              sectionAreaCode
+            )
+            .eq(
+              "user_id",
+              user.id
+            )
+            .maybeSingle();
+
+        if (areaLeaderError) {
+          throw areaLeaderError;
+        }
+
+        isExactAreaLeader =
+          Boolean(
+            areaLeaderAssignment
+          );
+      }
+
       if (
         canFill !== true &&
-        canSubmit !== true
+        canSubmit !== true &&
+        !isExactAreaLeader
       ) {
         return (
           <ErrorState
@@ -426,6 +517,9 @@ export default async function OperationPage({
 
 
           <OperationClient
+            requestedReportId={
+              historicalReportId
+            }
             outlet={{
               id:
                 outlet.id,

@@ -25,18 +25,6 @@ type RouteContext = {
 };
 
 
-const PRODUCTION_SECTION_CODES =
-  new Set([
-    "BEVERAGE",
-    "BUTCHER",
-    "STEWARD",
-    "PREMIX",
-    "COLD_KITCHEN",
-    "HOT_KITCHEN",
-    "HDS",
-  ]);
-
-
 function normalized(
   value: unknown
 ) {
@@ -79,25 +67,6 @@ export async function POST(
         {
           error:
             "Section review hanya tersedia untuk Closing Central Kitchen.",
-        },
-        {
-          status: 409,
-        }
-      );
-    }
-
-
-    if (
-      !PRODUCTION_SECTION_CODES.has(
-        normalizedSectionCode
-      )
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Section ini bukan Production section.",
-          code:
-            "NOT_PRODUCTION_SECTION",
         },
         {
           status: 409,
@@ -268,8 +237,8 @@ export async function POST(
           id,
           code,
           name,
-          form_id
-        `)
+          form_id,
+          area_code`)
         .eq(
           "form_id",
           report.form_id
@@ -287,7 +256,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            "Production section tidak ditemukan.",
+            "Section tidak ditemukan.",
         },
         {
           status: 404,
@@ -297,75 +266,49 @@ export async function POST(
 
 
     // ========================================================
-    // CAN REVIEW PERMISSION
+    // EXACT CK AREA LEADER AUTHORIZATION
+    //
+    // STORE      -> Warehouse Leader
+    // PRODUCTION -> Production Leader
+    //
+    // form_area_leaders is the authority source.
+    // can_review is not required for an assigned Area Leader.
     // ========================================================
 
-    const {
-      data:
-        reviewPermission,
-      error:
-        reviewPermissionError,
-    } =
-      await admin
-        .from(
-          "user_section_permissions"
-        )
-        .select(`
-          user_id,
-          outlet_id,
-          form_id,
-          section_id,
-          can_review
-        `)
-        .eq(
-          "user_id",
-          user.id
-        )
-        .eq(
-          "outlet_id",
-          report.outlet_id
-        )
-        .eq(
-          "form_id",
-          report.form_id
-        )
-        .eq(
-          "section_id",
-          section.id
-        )
-        .eq(
-          "can_review",
-          true
-        )
-        .maybeSingle();
+    const sectionAreaCode =
+      normalized(
+        section.area_code
+      );
 
     if (
-      reviewPermissionError
+      ![
+        "STORE",
+        "PRODUCTION",
+      ].includes(
+        sectionAreaCode
+      )
     ) {
-      throw reviewPermissionError;
-    }
-
-    if (!reviewPermission) {
       return NextResponse.json(
         {
           error:
-            "Anda tidak memiliki permission review untuk section ini.",
+            "Section belum memiliki CK area yang valid.",
           code:
-            "NO_REVIEW_PERMISSION",
+            "INVALID_SECTION_AREA",
+          areaCode:
+            sectionAreaCode ||
+            null,
         },
         {
-          status: 403,
+          status: 409,
         }
       );
     }
 
-
-    // ========================================================
-    // EXPLICIT PRODUCTION LEADER GATE
-    //
-    // Irwan may have can_review for monitoring,
-    // but only the assigned PRODUCTION leader may approve.
-    // ========================================================
+    const areaLabel =
+      sectionAreaCode ===
+      "STORE"
+        ? "Warehouse"
+        : "Production";
 
     const {
       data:
@@ -392,7 +335,7 @@ export async function POST(
         )
         .eq(
           "area_code",
-          "PRODUCTION"
+          sectionAreaCode
         )
         .eq(
           "user_id",
@@ -410,9 +353,11 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            "Hanya Production Leader yang dapat Mark as Reviewed.",
+            `Hanya ${areaLabel} Leader yang dapat Mark as Reviewed.`,
           code:
-            "NOT_PRODUCTION_LEADER",
+            "NOT_AREA_LEADER",
+          areaCode:
+            sectionAreaCode,
         },
         {
           status: 403,

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import PicReportActions from "./pic-report-actions";
 import ProductionFinalizationActions from "./production-finalization-actions";
+import WarehouseFinalizationActions from "./warehouse-finalization-actions";
 import { redirect } from "next/navigation";
 
 import {
@@ -374,6 +375,7 @@ export default async function CentralKitchenPage() {
           form_id,
           code,
           name,
+          area_code,
           is_active
         `)
         .in(
@@ -533,6 +535,29 @@ export default async function CentralKitchenPage() {
           (item: any) =>
             item.area_code ===
             "PRODUCTION"
+        )
+        .map(
+          (item: any) =>
+            item.form_id
+        )
+    );
+
+
+  const warehouseLeaderFormIds =
+    new Set(
+      (
+        areaLeaderRows ??
+        []
+      )
+        .filter(
+          (item: any) =>
+            String(
+              item.area_code ||
+              ""
+            )
+              .trim()
+              .toUpperCase() ===
+            "STORE"
         )
         .map(
           (item: any) =>
@@ -931,6 +956,23 @@ export default async function CentralKitchenPage() {
       continue;
     }
 
+    // Warehouse Area Leader visibility comes from
+    // form_area_leaders, not user_section_permissions.
+    //
+    // This grants VIEW ONLY for the dashboard.
+    // It must never grant fill / submit authority.
+    const isWarehouseAreaLeaderSection =
+      warehouseLeaderFormIds.has(
+        form.id
+      ) &&
+      String(
+        section.area_code ||
+        ""
+      )
+        .trim()
+        .toUpperCase() ===
+        "STORE";
+
     const permission =
       isAdmin
         ? {
@@ -945,6 +987,20 @@ export default async function CentralKitchenPage() {
           }
         : permissionByKey.get(
             `${form.id}:${section.id}`
+          ) ??
+          (
+            isWarehouseAreaLeaderSection
+              ? {
+                  can_view:
+                    true,
+                  can_fill:
+                    false,
+                  can_submit:
+                    false,
+                  can_review:
+                    false,
+                }
+              : null
           );
 
     if (
@@ -1025,6 +1081,27 @@ export default async function CentralKitchenPage() {
         item.form.code ===
         "CLOSING_CK"
     );
+
+  const warehouseLeaderCards =
+    closingCards.filter(
+      (item: any) =>
+        warehouseLeaderFormIds.has(
+          item.form.id
+        ) &&
+        String(
+          item.section
+            ?.area_code ||
+          ""
+        )
+          .trim()
+          .toUpperCase() ===
+        "STORE"
+    );
+
+  const isWarehouseLeader =
+    warehouseLeaderCards.length >
+    0;
+
 
   const productionLeaderCards =
     closingCards.filter(
@@ -1272,6 +1349,18 @@ export default async function CentralKitchenPage() {
           }
         />
 
+        {isWarehouseLeader && (
+          <WarehouseLeaderPanel
+            items={
+              warehouseLeaderCards
+            }
+            leaderName={
+              profile.full_name ||
+              "Warehouse Leader"
+            }
+          />
+        )}
+
         {isProductionLeader && (
           <ProductionLeaderPanel
             items={
@@ -1284,32 +1373,312 @@ export default async function CentralKitchenPage() {
           />
         )}
 
-        <OperationGroup
-          title="Closing CK"
-          subtitle={closingSubtitle}
-          formCode="CLOSING_CK"
-          items={
-            closingCards
-          }
-          isProductionLeader={
-            isProductionLeader
-          }
-          picExport={
-            closingCards[0]
-              ?.report?.id
-              ? picExportByReportId.get(
-                  closingCards[0]
-                    .report.id
-                ) ??
-                null
-              : null
-          }
-        />
+        {(!isWarehouseLeader ||
+          isProductionLeader) && (
+          <OperationGroup
+            title="Closing CK"
+            subtitle={closingSubtitle}
+            formCode="CLOSING_CK"
+            items={
+              closingCards
+            }
+            isProductionLeader={
+              isProductionLeader
+            }
+            picExport={
+              closingCards[0]
+                ?.report?.id
+                ? picExportByReportId.get(
+                    closingCards[0]
+                      .report.id
+                  ) ??
+                  null
+                : null
+            }
+          />
+        )}
 
       </div>
     </main>
   );
 }
+
+
+function WarehouseLeaderPanel({
+  items,
+  leaderName,
+}: {
+  items: any[];
+  leaderName: string;
+}) {
+  if (!items.length) {
+    return null;
+  }
+
+  const submitted =
+    items.filter(
+      (item: any) =>
+        item.status ===
+          "SUBMITTED" ||
+        item.status ===
+          "REVIEWED"
+    ).length;
+
+  const reviewed =
+    items.filter(
+      (item: any) =>
+        item.status ===
+          "REVIEWED"
+    ).length;
+
+  const report =
+    items.find(
+      (item: any) =>
+        Boolean(
+          item.report?.id
+        )
+    )?.report ??
+    null;
+
+  return (
+    <section className="mt-5 overflow-hidden rounded-[22px] border border-red-200 bg-white shadow-sm">
+      <div className="border-b border-red-100 bg-red-50/50 px-5 py-5 sm:px-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-red-700">
+              Warehouse Leader
+            </p>
+
+            <h2 className="mt-1 text-xl font-black text-neutral-950">
+              Warehouse Progress
+            </h2>
+
+            <p className="mt-1 text-sm text-neutral-500">
+              Leader:{" "}
+              <strong className="text-neutral-800">
+                {leaderName}
+              </strong>
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-right shadow-sm">
+              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-neutral-400">
+                Submitted
+              </p>
+
+              <p className="mt-1 text-2xl font-black text-amber-700">
+                {submitted}
+                <span className="text-sm text-neutral-400">
+                  /{items.length}
+                </span>
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-right shadow-sm">
+              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-neutral-400">
+                Reviewed
+              </p>
+
+              <p className="mt-1 text-2xl font-black text-emerald-700">
+                {reviewed}
+                <span className="text-sm text-neutral-400">
+                  /{items.length}
+                </span>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 h-2 overflow-hidden rounded-full bg-amber-100">
+          <div
+            className="h-full rounded-full bg-amber-500 transition-all"
+            style={{
+              width:
+                `${Math.round(
+                  (
+                    submitted /
+                    Math.max(
+                      items.length,
+                      1
+                    )
+                  ) *
+                    100
+                )}%`,
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-3 p-4 sm:p-5 lg:grid-cols-2">
+        {items.map(
+          (item: any) => {
+            const locked =
+              item.status ===
+                "SUBMITTED" ||
+              item.status ===
+                "REVIEWED";
+
+            const href =
+              `/protected/operations/CLOSING_CK/${item.section.code}`;
+
+            const assignedPic =
+              (
+                item.assignedPicNames ??
+                []
+              ).join(" / ") ||
+              "—";
+
+
+            const lockedActionClass =
+              item.status ===
+              "REVIEWED"
+                ? "border-emerald-100 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                : "border-amber-100 bg-amber-50 text-amber-700 hover:bg-amber-100";
+
+
+            const openActionClass =
+              item.status ===
+              "NEEDS CORRECTION"
+                ? "border-rose-100 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                : item.status ===
+                    "IN PROGRESS"
+                  ? "border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                  : "border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100";
+
+
+            const openActionLabel =
+              item.status ===
+              "NEEDS CORRECTION"
+                ? "Correct as Backup"
+                : item.status ===
+                    "IN PROGRESS"
+                  ? "Open / Backup Input"
+                  : "Input as Backup";
+
+
+            return (
+              <div
+                key={
+                  `leader:${item.section.id}`
+                }
+                className="overflow-hidden rounded-2xl border border-neutral-200 bg-white"
+              >
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black text-neutral-950">
+                        {
+                          item
+                            .versionSection
+                            .display_name ||
+                          item.section
+                            .name
+                        }
+                      </p>
+
+                      <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+                        {
+                          item.section.code.replaceAll(
+                            "_",
+                            " "
+                          )
+                        }
+                      </p>
+                    </div>
+
+                    <span
+                      className={`shrink-0 rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wide ${statusClass(
+                        item.status
+                      )}`}
+                    >
+                      {item.status}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-1.5 rounded-xl bg-neutral-50 p-3">
+                    <div className="flex items-start justify-between gap-3 text-xs">
+                      <span className="font-semibold text-neutral-400">
+                        Assigned PIC
+                      </span>
+
+                      <span className="text-right font-bold text-neutral-800">
+                        {assignedPic}
+                      </span>
+                    </div>
+
+                    <div className="flex items-start justify-between gap-3 text-xs">
+                      <span className="font-semibold text-neutral-400">
+                        Submitted by
+                      </span>
+
+                      <span className="text-right font-bold text-neutral-800">
+                        {
+                          item
+                            .submittedByName ||
+                          "—"
+                        }
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {locked ? (
+                  <Link
+                    href={href}
+                    className={`flex items-center justify-between border-t px-4 py-3.5 text-xs font-black transition ${lockedActionClass}`}
+                  >
+                    <span>
+                      Review Section
+                    </span>
+                    <span>→</span>
+                  </Link>
+                ) : (
+                  <Link
+                    href={href}
+                    className={`flex items-center justify-between border-t px-4 py-3.5 text-xs font-black transition ${openActionClass}`}
+                  >
+                    <span>
+                      {openActionLabel}
+                    </span>
+                    <span>→</span>
+                  </Link>
+                )}
+              </div>
+            );
+          }
+        )}
+      </div>
+
+      <div className="border-t border-neutral-100 bg-neutral-50 px-5 py-5 sm:px-6">
+        <WarehouseFinalizationActions
+          reportId={
+            report?.id ??
+            null
+          }
+          reportNumber={
+            report?.report_number ??
+            null
+          }
+          leaderName={
+            leaderName
+          }
+          submittedCount={
+            submitted
+          }
+          reviewedCount={
+            reviewed
+          }
+          requiredCount={
+            items.length
+          }
+        />
+      </div>
+    </section>
+  );
+}
+
+
 
 
 function ProductionLeaderPanel({
@@ -1655,7 +2024,7 @@ function OperationGroup({
 
   const reportArea =
     isCentralKitchenStore
-      ? "CENTRAL KITCHEN - STORE"
+      ? "CENTRAL KITCHEN - WAREHOUSE"
       : "CENTRAL KITCHEN - PRODUCTION";
 
   const picReportReady =

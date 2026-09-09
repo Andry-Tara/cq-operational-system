@@ -27,7 +27,7 @@ type RouteContext = {
 };
 
 export async function POST(
-  _req: Request,
+  req: Request,
   context: RouteContext
 ) {
   try {
@@ -57,6 +57,55 @@ export async function POST(
       normalizeOperationCode(
         sectionCode
       );
+
+    // ========================================================
+    // OPTIONAL HISTORICAL REVIEW TARGET
+    //
+    // reportId is never trusted by itself. It is validated
+    // against active outlet, form, version, section and
+    // exact CK Area Leader authority below.
+    // ========================================================
+
+    const requestBody =
+      await req
+        .json()
+        .catch(
+          () => ({})
+        );
+
+    const requestedReportId =
+      typeof requestBody
+        ?.reportId ===
+        "string"
+        ? requestBody
+            .reportId
+            .trim()
+        : "";
+
+    const historicalReviewRequested =
+      Boolean(
+        requestedReportId
+      );
+
+    if (
+      requestedReportId &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        requestedReportId
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Historical reportId tidak valid.",
+          code:
+            "INVALID_REPORT_ID",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
 
     // ========================================================
     // PERMISSION
@@ -213,6 +262,84 @@ export async function POST(
     // from disagreeing for Outlet Manager / BOH / FOH.
     // ========================================================
 
+    // ========================================================
+    // EXACT CK AREA LEADER ACCESS
+    //
+    // STORE      -> Warehouse Leader
+    // PRODUCTION -> Production Leader
+    //
+    // This grants review access only. It does not grant
+    // fill / submit permission to the section.
+    // ========================================================
+
+    const authorizationAreaCode =
+      String(
+        (section as any)
+          .area_code ||
+        ""
+      )
+        .trim()
+        .toUpperCase();
+
+    const supportedLeaderArea =
+      config.sectionScoped &&
+      config.formCode ===
+        "CLOSING_CK" &&
+      [
+        "STORE",
+        "PRODUCTION",
+      ].includes(
+        authorizationAreaCode
+      );
+
+    let exactAreaLeader =
+      false;
+
+    if (supportedLeaderArea) {
+      const {
+        data:
+          exactLeaderAssignment,
+        error:
+          exactLeaderError,
+      } =
+        await supabase
+          .from(
+            "form_area_leaders"
+          )
+          .select(`
+            id,
+            user_id,
+            area_code
+          `)
+          .eq(
+            "outlet_id",
+            outlet.id
+          )
+          .eq(
+            "form_id",
+            form.id
+          )
+          .eq(
+            "area_code",
+            authorizationAreaCode
+          )
+          .eq(
+            "user_id",
+            user.id
+          )
+          .maybeSingle();
+
+      if (exactLeaderError) {
+        throw exactLeaderError;
+      }
+
+      exactAreaLeader =
+        Boolean(
+          exactLeaderAssignment
+        );
+    }
+
+
     const {
       data: canStartOperationalReport,
       error: operationalPermissionError,
@@ -238,7 +365,25 @@ export async function POST(
     }
 
     if (
-      canStartOperationalReport !== true
+      historicalReviewRequested &&
+      !exactAreaLeader
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Historical section review hanya dapat dibuka oleh Area Leader yang ditugaskan.",
+          code:
+            "HISTORICAL_REVIEW_FORBIDDEN",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
+
+    if (
+      canStartOperationalReport !== true &&
+      !exactAreaLeader
     ) {
       return NextResponse.json(
         {
@@ -310,7 +455,8 @@ export async function POST(
 
       if (
         canFillSection !== true &&
-        canSubmitSection !== true
+        canSubmitSection !== true &&
+        !exactAreaLeader
       ) {
         return NextResponse.json(
           {
@@ -334,7 +480,7 @@ export async function POST(
       outlet.timezone ||
       "Asia/Jakarta";
 
-    const businessDate =
+    let businessDate =
       new Intl.DateTimeFormat(
         "en-CA",
         {
@@ -352,45 +498,116 @@ export async function POST(
       );
 
     // ========================================================
-    // DAILY REPORT
+    // DAILY / HISTORICAL REPORT
+    //
+    // Normal operation resolves by today's business date.
+    // Historical review resolves only the exact supplied report.
     // ========================================================
+
+    let reportQuery =
+      supabase
+        .from("reports")
+        .select(`
+          id,
+          report_number,
+          status,
+          pdf_storage_path,
+          reopened_at,
+          reopen_reason,
+          reopen_question_ids,
+          resubmitted_at,
+          business_date,
+          form_version_id
+        `)
+        .eq(
+          "outlet_id",
+          outlet.id
+        )
+        .eq(
+          "form_id",
+          form.id
+        );
+
+    reportQuery =
+      historicalReviewRequested
+        ? reportQuery.eq(
+            "id",
+            requestedReportId
+          )
+        : reportQuery.eq(
+            "business_date",
+            businessDate
+          );
 
     const {
       data:
         todaysReport,
       error:
         todaysReportError,
-    } = await supabase
-      .from("reports")
-      .select(`
-        id,
-        report_number,
-        status,
-        pdf_storage_path,
-        reopened_at,
-        reopen_reason,
-        reopen_question_ids,
-        resubmitted_at
-      `)
-      .eq(
-        "outlet_id",
-        outlet.id
-      )
-      .eq(
-        "form_id",
-        form.id
-      )
-      .eq(
-        "business_date",
-        businessDate
-      )
-      .maybeSingle();
+    } =
+      await reportQuery
+        .maybeSingle();
 
     if (
       todaysReportError
     ) {
       throw todaysReportError;
     }
+
+    if (
+      historicalReviewRequested &&
+      !todaysReport
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Historical report tidak ditemukan untuk outlet dan form ini.",
+          code:
+            "HISTORICAL_REPORT_NOT_FOUND",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    if (
+      historicalReviewRequested &&
+      todaysReport
+    ) {
+      if (
+        String(
+          todaysReport
+            .form_version_id ||
+          ""
+        ) !==
+        String(
+          assignment
+            .form_version_id ||
+          ""
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Versi historical report berbeda dengan versi form aktif. Review diblokir untuk mencegah mismatch pertanyaan.",
+            code:
+              "HISTORICAL_VERSION_MISMATCH",
+          },
+          {
+            status: 409,
+          }
+        );
+      }
+
+      businessDate =
+        String(
+          todaysReport
+            .business_date ||
+          businessDate
+        );
+    }
+
 
     // ========================================================
     // COMPLETED DAILY LOCK
@@ -479,7 +696,9 @@ export async function POST(
           reopened_at,
           reopen_reason,
           reopen_question_ids,
-          resubmitted_at
+          resubmitted_at,
+          business_date,
+          form_version_id
         `)
         .single();
 
@@ -508,6 +727,20 @@ export async function POST(
 
       report =
         newReport;
+    }
+
+    if (!report) {
+      return NextResponse.json(
+        {
+          error:
+            "Unable to resolve operational report session.",
+          code:
+            "REPORT_SESSION_UNAVAILABLE",
+        },
+        {
+          status: 500,
+        }
+      );
     }
 
     const reportStatus =
@@ -577,36 +810,89 @@ export async function POST(
     let reportSection =
       existingSection;
 
+    if (
+      historicalReviewRequested
+    ) {
+      if (!reportSection) {
+        return NextResponse.json(
+          {
+            error:
+              "Section tidak ditemukan pada historical report ini.",
+            code:
+              "HISTORICAL_SECTION_NOT_FOUND",
+          },
+          {
+            status: 404,
+          }
+        );
+      }
+
+      const historicalSectionStatus =
+        String(
+          reportSection.status ||
+          ""
+        )
+          .trim()
+          .toLowerCase();
+
+      if (
+        ![
+          "submitted",
+          "reviewed",
+        ].includes(
+          historicalSectionStatus
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Historical section belum berada pada status yang dapat direview.",
+            code:
+              "HISTORICAL_SECTION_NOT_REVIEWABLE",
+            sectionStatus:
+              historicalSectionStatus,
+          },
+          {
+            status: 409,
+          }
+        );
+      }
+    }
+
 
     // ========================================================
-    // PRODUCTION LEADER REVIEW MODE
+    // CK AREA LEADER REVIEW MODE
     //
-    // Submitted Production sections remain locked for normal
-    // PICs. The explicit Production Leader may open them as
-    // read-only for review.
+    // Authority follows sections.area_code:
     //
-    // Security requires BOTH:
-    // - can_review on the exact section
-    // - form_area_leaders(PRODUCTION)
+    // STORE      -> Warehouse Leader
+    // PRODUCTION -> Production Leader
+    //
+    // Explicit form_area_leaders assignment is the
+    // source of truth for review authority.
     // ========================================================
 
-    let productionLeaderReviewMode =
+    let areaLeaderReviewMode =
       false;
 
-    const isProductionSection =
+    const sectionAreaCode =
+      String(
+        (section as any)
+          .area_code ||
+        ""
+      )
+        .trim()
+        .toUpperCase();
+
+    const supportedArea =
       config.sectionScoped &&
       config.formCode ===
         "CLOSING_CK" &&
       [
-        "BEVERAGE",
-        "BUTCHER",
-        "STEWARD",
-        "PREMIX",
-        "COLD_KITCHEN",
-        "HOT_KITCHEN",
-        "HDS",
+        "STORE",
+        "PRODUCTION",
       ].includes(
-        normalizedSectionCode
+        sectionAreaCode
       );
 
     const currentSectionStatus =
@@ -626,57 +912,15 @@ export async function POST(
       );
 
     if (
-      isProductionSection &&
+      supportedArea &&
       reportSection &&
       submittedForReview
     ) {
       const {
         data:
-          reviewPermission,
+          areaLeader,
         error:
-          reviewPermissionError,
-      } =
-        await supabase
-          .from(
-            "user_section_permissions"
-          )
-          .select(`
-            section_id,
-            can_review
-          `)
-          .eq(
-            "user_id",
-            user.id
-          )
-          .eq(
-            "outlet_id",
-            outlet.id
-          )
-          .eq(
-            "form_id",
-            form.id
-          )
-          .eq(
-            "section_id",
-            section.id
-          )
-          .eq(
-            "can_review",
-            true
-          )
-          .maybeSingle();
-
-      if (
-        reviewPermissionError
-      ) {
-        throw reviewPermissionError;
-      }
-
-      const {
-        data:
-          productionLeader,
-        error:
-          productionLeaderError,
+          areaLeaderError,
       } =
         await supabase
           .from(
@@ -697,7 +941,7 @@ export async function POST(
           )
           .eq(
             "area_code",
-            "PRODUCTION"
+            sectionAreaCode
           )
           .eq(
             "user_id",
@@ -706,15 +950,14 @@ export async function POST(
           .maybeSingle();
 
       if (
-        productionLeaderError
+        areaLeaderError
       ) {
-        throw productionLeaderError;
+        throw areaLeaderError;
       }
 
-      productionLeaderReviewMode =
+      areaLeaderReviewMode =
         Boolean(
-          reviewPermission &&
-          productionLeader
+          areaLeader
         );
     }
 
@@ -724,7 +967,7 @@ export async function POST(
     // edited again through the explicit reopen flow.
     if (
       config.sectionScoped &&
-      !productionLeaderReviewMode &&
+      !areaLeaderReviewMode &&
       reportStatus !== "reopened" &&
       reportSection &&
       [
@@ -1164,10 +1407,12 @@ export async function POST(
         reportSection.status,
 
       reviewMode:
-        productionLeaderReviewMode,
+        areaLeaderReviewMode,
 
+      reviewAreaCode:
+        sectionAreaCode,
       canMarkReviewed:
-        productionLeaderReviewMode &&
+        areaLeaderReviewMode &&
         String(
           reportSection.status ||
           ""
