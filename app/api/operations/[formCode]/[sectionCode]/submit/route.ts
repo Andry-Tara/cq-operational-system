@@ -465,11 +465,307 @@ export async function POST(
       throw questionError;
     }
 
+    const allQuestions =
+      questions ?? [];
+
+    // ========================================================
+    // AUTHORITATIVE QUESTION APPLICABILITY
+    //
+    // Legacy forms:
+    //   no applicability metadata -> existing behavior
+    //
+    // Applicability-enabled forms:
+    //   report_question_applicability is authoritative.
+    //
+    // N/A questions:
+    //   - cannot be submitted
+    //   - require no answer
+    //   - require no photo
+    //   - create no issue
+    // ========================================================
+
+    const applicabilityEnabled =
+      allQuestions.some(
+        (question: any) =>
+          question?.config
+            ?.applicability != null
+      );
+
+    let applicableQuestions =
+      allQuestions;
+
+    if (applicabilityEnabled) {
+      const invalidApplicabilityConfig =
+        allQuestions.filter(
+          (question: any) => {
+            const applicability =
+              question?.config
+                ?.applicability;
+
+            const sourceType =
+              String(
+                applicability?.type ||
+                  ""
+              )
+                .trim()
+                .toLowerCase();
+
+            if (
+              ![
+                "global",
+                "facility",
+              ].includes(
+                sourceType
+              )
+            ) {
+              return true;
+            }
+
+            if (
+              sourceType ===
+                "global" &&
+              applicability
+                ?.facility_key != null
+            ) {
+              return true;
+            }
+
+            if (
+              sourceType ===
+                "facility" &&
+              !String(
+                applicability
+                  ?.facility_key ||
+                  ""
+              ).trim()
+            ) {
+              return true;
+            }
+
+            return false;
+          }
+        );
+
+      if (
+        invalidApplicabilityConfig.length >
+        0
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Konfigurasi applicability pertanyaan belum lengkap.",
+            code:
+              "APPLICABILITY_CONFIG_INCOMPLETE",
+            questionIds:
+              invalidApplicabilityConfig.map(
+                (question: any) =>
+                  question.id
+              ),
+          },
+          {
+            status: 409,
+          }
+        );
+      }
+
+      const {
+        data:
+          applicabilityRows,
+        error:
+          applicabilityError,
+      } = await supabase
+        .from(
+          "report_question_applicability"
+        )
+        .select(`
+          question_id,
+          is_applicable,
+          source_type,
+          source_key
+        `)
+        .eq(
+          "report_section_id",
+          reportSectionId
+        );
+
+      if (
+        applicabilityError
+      ) {
+        throw applicabilityError;
+      }
+
+      const snapshotRows =
+        applicabilityRows ?? [];
+
+      if (
+        snapshotRows.length !==
+        allQuestions.length
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Snapshot applicability report belum lengkap. Buka ulang section untuk membuat atau memuat snapshot yang benar.",
+            code:
+              "APPLICABILITY_SNAPSHOT_INCOMPLETE",
+            expectedCount:
+              allQuestions.length,
+            existingCount:
+              snapshotRows.length,
+          },
+          {
+            status: 409,
+          }
+        );
+      }
+
+      const activeQuestionIdSet =
+        new Set<string>(
+          allQuestions.map(
+            (question: any) =>
+              String(
+                question.id
+              )
+          )
+        );
+
+      const snapshotQuestionIdSet =
+        new Set<string>(
+          snapshotRows.map(
+            (row: any) =>
+              String(
+                row.question_id
+              )
+          )
+        );
+
+      const missingSnapshotQuestionIds =
+        allQuestions
+          .map(
+            (question: any) =>
+              String(
+                question.id
+              )
+          )
+          .filter(
+            (questionId: string) =>
+              !snapshotQuestionIdSet.has(
+                questionId
+              )
+          );
+
+      const unexpectedSnapshotQuestionIds =
+        snapshotRows
+          .map(
+            (row: any) =>
+              String(
+                row.question_id
+              )
+          )
+          .filter(
+            (questionId: string) =>
+              !activeQuestionIdSet.has(
+                questionId
+              )
+          );
+
+      if (
+        missingSnapshotQuestionIds
+          .length >
+          0 ||
+        unexpectedSnapshotQuestionIds
+          .length >
+          0
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Snapshot applicability tidak sesuai dengan pertanyaan aktif report section.",
+            code:
+              "APPLICABILITY_SNAPSHOT_MISMATCH",
+            missingQuestionIds:
+              missingSnapshotQuestionIds,
+            unexpectedQuestionIds:
+              unexpectedSnapshotQuestionIds,
+          },
+          {
+            status: 409,
+          }
+        );
+      }
+
+      const applicableQuestionIdSet =
+        new Set<string>(
+          snapshotRows
+            .filter(
+              (row: any) =>
+                row.is_applicable ===
+                true
+            )
+            .map(
+              (row: any) =>
+                String(
+                  row.question_id
+                )
+            )
+        );
+
+      const invalidIncomingQuestionIds =
+        answers
+          .map(
+            (answer: any) =>
+              String(
+                answer
+                  ?.questionId ||
+                  ""
+              ).trim()
+          )
+          .filter(Boolean)
+          .filter(
+            (
+              questionId: string
+            ) =>
+              !applicableQuestionIdSet.has(
+                questionId
+              )
+          );
+
+      if (
+        invalidIncomingQuestionIds.length >
+        0
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Submission mencoba mengirim jawaban untuk pertanyaan N/A atau pertanyaan yang tidak berlaku.",
+            code:
+              "NON_APPLICABLE_ANSWER_PAYLOAD",
+            questionIds:
+              Array.from(
+                new Set(
+                  invalidIncomingQuestionIds
+                )
+              ),
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+      applicableQuestions =
+        allQuestions.filter(
+          (question: any) =>
+            applicableQuestionIdSet.has(
+              String(
+                question.id
+              )
+            )
+        );
+    }
+
     const questionMap =
       new Map(
-        (
-          questions ?? []
-        ).map(
+        applicableQuestions.map(
           (
             question: any
           ) => [
@@ -580,17 +876,13 @@ export async function POST(
       const question of
       (
         isSectionCorrection
-          ? (
-              questions ??
-              []
-            ).filter(
+          ? applicableQuestions.filter(
               (item: any) =>
                 correctionQuestionIdSet.has(
                   item.id
                 )
             )
-          : questions ??
-            []
+          : applicableQuestions
       )
     ) {
       const incoming:

@@ -186,7 +186,7 @@ export default function OperationClient({
   operation,
   pic,
   groups,
-  questions,
+  questions: allQuestions,
   requestedReportId,
 }: {
   outlet: {
@@ -273,6 +273,81 @@ export default function OperationClient({
 
   const [sessionData, setSessionData] =
     useState<any>(null);
+
+  // ==========================================================
+  // PIC QUESTION APPLICABILITY
+  //
+  // V1 / legacy:
+  //   session has no applicability lifecycle -> all questions.
+  //
+  // V2:
+  //   authoritative report snapshot decides which questions
+  //   participate in UI, progress, evidence and submission.
+  //
+  // N/A questions intentionally disappear from the PIC form.
+  // PIC has no control to mark a question N/A.
+  // ==========================================================
+
+  const applicabilityEnabled =
+    sessionData?.applicability
+      ?.enabled === true;
+
+  const applicableQuestionIds =
+    useMemo(
+      () =>
+        new Set<string>(
+          applicabilityEnabled &&
+          Array.isArray(
+            sessionData
+              ?.applicability
+              ?.applicableQuestionIds
+          )
+            ? sessionData
+                .applicability
+                .applicableQuestionIds
+                .map(
+                  (
+                    value: unknown
+                  ) =>
+                    String(
+                      value ||
+                        ""
+                    ).trim()
+                )
+                .filter(Boolean)
+            : []
+        ),
+      [
+        applicabilityEnabled,
+        sessionData?.applicability
+          ?.applicableQuestionIds,
+      ]
+    );
+
+  const questions =
+    useMemo(
+      () => {
+        if (
+          !applicabilityEnabled
+        ) {
+          return allQuestions;
+        }
+
+        return allQuestions.filter(
+          (question) =>
+            applicableQuestionIds.has(
+              String(
+                question.id
+              )
+            )
+        );
+      },
+      [
+        allQuestions,
+        applicabilityEnabled,
+        applicableQuestionIds,
+      ]
+    );
 
   const [loadingExisting, setLoadingExisting] =
     useState(true);

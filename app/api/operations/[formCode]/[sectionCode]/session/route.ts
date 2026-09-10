@@ -5,6 +5,9 @@ import {
 import {
   createClient,
 } from "@/lib/supabase/server";
+import {
+  createAdminClient,
+} from "@/lib/supabase/admin";
 
 import {
   getActiveOutlet,
@@ -251,6 +254,8 @@ export async function POST(
       assignment,
       section,
       versionSection,
+      questions:
+        operationQuestions,
     } = operation;
 
 
@@ -645,6 +650,482 @@ export async function POST(
       );
     }
 
+    const applicabilityOutletId =
+      outlet.id;
+
+    const applicabilityOutletOrganizationId =
+      outlet.organization_id;
+
+    const applicabilityOutletCode =
+      outlet.code;
+
+    let applicabilityPreflight:
+      any = null;
+
+    async function
+    resolveApplicabilityPreflight() {
+      const sectionQuestions =
+        operationQuestions ??
+        [];
+
+      const applicabilityConfigured =
+        sectionQuestions.some(
+          (question: any) =>
+            question?.config
+              ?.applicability != null
+        );
+
+      if (
+        !applicabilityConfigured
+      ) {
+        return {
+          enabled:
+            false,
+
+          questions:
+            sectionQuestions,
+
+          snapshotRows:
+            [],
+        };
+      }
+
+      const invalidQuestions =
+        sectionQuestions.filter(
+          (question: any) => {
+            const applicability =
+              question?.config
+                ?.applicability;
+
+            const sourceType =
+              String(
+                applicability?.type ||
+                  ""
+              )
+                .trim()
+                .toLowerCase();
+
+            if (
+              ![
+                "global",
+                "facility",
+              ].includes(
+                sourceType
+              )
+            ) {
+              return true;
+            }
+
+            if (
+              sourceType ===
+                "global" &&
+              applicability
+                ?.facility_key != null
+            ) {
+              return true;
+            }
+
+            if (
+              sourceType ===
+                "facility" &&
+              !String(
+                applicability
+                  ?.facility_key ||
+                  ""
+              ).trim()
+            ) {
+              return true;
+            }
+
+            return false;
+          }
+        );
+
+      if (
+        invalidQuestions.length >
+        0
+      ) {
+        return {
+          response:
+            NextResponse.json(
+              {
+                error:
+                  "Konfigurasi applicability section belum lengkap.",
+                code:
+                  "APPLICABILITY_CONFIG_INCOMPLETE",
+                sectionCode:
+                  normalizedSectionCode,
+                questionIds:
+                  invalidQuestions.map(
+                    (question: any) =>
+                      question.id
+                  ),
+              },
+              {
+                status: 409,
+              }
+            ),
+        };
+      }
+
+      const facilityKeys =
+        Array.from(
+          new Set<string>(
+            sectionQuestions
+              .filter(
+                (question: any) =>
+                  String(
+                    question?.config
+                      ?.applicability
+                      ?.type ||
+                      ""
+                  )
+                    .trim()
+                    .toLowerCase() ===
+                  "facility"
+              )
+              .map(
+                (question: any) =>
+                  String(
+                    question?.config
+                      ?.applicability
+                      ?.facility_key ||
+                      ""
+                  )
+                    .trim()
+                    .toUpperCase()
+              )
+              .filter(Boolean)
+          )
+        );
+
+      const facilityAvailability =
+        new Map<
+          string,
+          boolean
+        >();
+
+      if (
+        facilityKeys.length >
+        0
+      ) {
+        const adminSupabase =
+          createAdminClient();
+
+        const {
+          data:
+            facilityDefinitionRows,
+          error:
+            facilityDefinitionError,
+        } = await adminSupabase
+          .from(
+            "facility_definitions"
+          )
+          .select(`
+            id,
+            code
+          `)
+          .eq(
+            "organization_id",
+            applicabilityOutletOrganizationId
+          )
+          .eq(
+            "is_active",
+            true
+          )
+          .in(
+            "code",
+            facilityKeys
+          );
+
+        if (
+          facilityDefinitionError
+        ) {
+          throw (
+            facilityDefinitionError
+          );
+        }
+
+        const facilityDefinitionMap =
+          new Map<
+            string,
+            string
+          >(
+            (
+              facilityDefinitionRows ??
+              []
+            ).map(
+              (row: any) => [
+                String(
+                  row.code ||
+                    ""
+                )
+                  .trim()
+                  .toUpperCase(),
+                String(
+                  row.id
+                ),
+              ]
+            )
+          );
+
+        const missingDefinitions =
+          facilityKeys.filter(
+            (facilityKey) =>
+              !facilityDefinitionMap.has(
+                facilityKey
+              )
+          );
+
+        if (
+          missingDefinitions.length >
+          0
+        ) {
+          return {
+            response:
+              NextResponse.json(
+                {
+                  error:
+                    "Master facility untuk applicability belum lengkap.",
+                  code:
+                    "APPLICABILITY_FACILITY_DEFINITION_MISSING",
+                  missingFacilityKeys:
+                    missingDefinitions,
+                },
+                {
+                  status: 409,
+                }
+              ),
+          };
+        }
+
+        const facilityIds =
+          facilityKeys.map(
+            (facilityKey) =>
+              facilityDefinitionMap.get(
+                facilityKey
+              )!
+          );
+
+        const {
+          data:
+            outletFacilityRows,
+          error:
+            outletFacilityError,
+        } = await adminSupabase
+          .from(
+            "outlet_facilities"
+          )
+          .select(`
+            facility_id,
+            is_available
+          `)
+          .eq(
+            "outlet_id",
+            applicabilityOutletId
+          )
+          .in(
+            "facility_id",
+            facilityIds
+          );
+
+        if (
+          outletFacilityError
+        ) {
+          throw (
+            outletFacilityError
+          );
+        }
+
+        const outletFacilityById =
+          new Map<
+            string,
+            boolean
+          >(
+            (
+              outletFacilityRows ??
+              []
+            ).map(
+              (row: any) => [
+                String(
+                  row.facility_id
+                ),
+                Boolean(
+                  row.is_available
+                ),
+              ]
+            )
+          );
+
+        const missingFacilityConfig =
+          facilityKeys.filter(
+            (facilityKey) => {
+              const facilityId =
+                facilityDefinitionMap.get(
+                  facilityKey
+                );
+
+              return (
+                !facilityId ||
+                !outletFacilityById.has(
+                  facilityId
+                )
+              );
+            }
+          );
+
+        if (
+          missingFacilityConfig.length >
+          0
+        ) {
+          return {
+            response:
+              NextResponse.json(
+                {
+                  error:
+                    "Konfigurasi facility outlet belum lengkap. Missing configuration tidak dianggap N/A.",
+                  code:
+                    "OUTLET_FACILITY_CONFIG_INCOMPLETE",
+                  outletCode:
+                    applicabilityOutletCode,
+                  missingFacilityKeys:
+                    missingFacilityConfig,
+                },
+                {
+                  status: 409,
+                }
+              ),
+          };
+        }
+
+        for (
+          const facilityKey of
+          facilityKeys
+        ) {
+          const facilityId =
+            facilityDefinitionMap.get(
+              facilityKey
+            )!;
+
+          facilityAvailability.set(
+            facilityKey,
+            outletFacilityById.get(
+              facilityId
+            ) === true
+          );
+        }
+      }
+
+      const snapshotRows =
+        sectionQuestions.map(
+          (question: any) => {
+            const applicability =
+              question?.config
+                ?.applicability ??
+              {};
+
+            const sourceType =
+              String(
+                applicability.type ||
+                  ""
+              )
+                .trim()
+                .toLowerCase();
+
+            if (
+              sourceType ===
+              "global"
+            ) {
+              return {
+                question_id:
+                  question.id,
+
+                is_applicable:
+                  true,
+
+                source_type:
+                  "global",
+
+                source_key:
+                  null,
+
+                reason_snapshot:
+                  "Global question applicable to all outlets.",
+              };
+            }
+
+            const facilityKey =
+              String(
+                applicability
+                  .facility_key ||
+                  ""
+              )
+                .trim()
+                .toUpperCase();
+
+            const isApplicable =
+              facilityAvailability.get(
+                facilityKey
+              );
+
+            if (
+              typeof isApplicable !==
+              "boolean"
+            ) {
+              throw new Error(
+                `Facility configuration unresolved for ${facilityKey}.`
+              );
+            }
+
+            return {
+              question_id:
+                question.id,
+
+              is_applicable:
+                isApplicable,
+
+              source_type:
+                "facility",
+
+              source_key:
+                facilityKey,
+
+              reason_snapshot:
+                isApplicable
+                  ? `Facility ${facilityKey} available at outlet when report started.`
+                  : `Facility ${facilityKey} not available at outlet when report started.`,
+            };
+          }
+        );
+
+      return {
+        enabled:
+          true,
+
+        questions:
+          sectionQuestions,
+
+        snapshotRows,
+      };
+    }
+
+    // A brand-new parent report must pass applicability preflight
+    // before any report row is created.
+    if (!todaysReport) {
+      applicabilityPreflight =
+        await resolveApplicabilityPreflight();
+
+      if (
+        applicabilityPreflight
+          ?.response
+      ) {
+        return (
+          applicabilityPreflight
+            .response
+        );
+      }
+    }
+
     let report =
       todaysReport;
 
@@ -809,6 +1290,11 @@ export async function POST(
 
     let reportSection =
       existingSection;
+
+    const reportSectionWasExisting =
+      Boolean(
+        existingSection
+      );
 
     if (
       historicalReviewRequested
@@ -1001,6 +1487,23 @@ export async function POST(
     }
 
     if (!reportSection) {
+      if (
+        !applicabilityPreflight
+      ) {
+        applicabilityPreflight =
+          await resolveApplicabilityPreflight();
+
+        if (
+          applicabilityPreflight
+            ?.response
+        ) {
+          return (
+            applicabilityPreflight
+              .response
+          );
+        }
+      }
+
       const {
         data:
           newSection,
@@ -1053,6 +1556,378 @@ export async function POST(
       reportSection =
         newSection;
     }
+
+    // ========================================================
+    // QUESTION APPLICABILITY SNAPSHOT
+    //
+    // Existing section:
+    //   read historical snapshot only.
+    //   NEVER recalculate from current outlet facilities.
+    //
+    // New section:
+    //   use the preflight snapshot calculated before INSERT.
+    // ========================================================
+
+    const sectionQuestionsForApplicability =
+      operationQuestions ??
+      [];
+
+    const applicabilityEnabled =
+      sectionQuestionsForApplicability.some(
+        (question: any) =>
+          question?.config
+            ?.applicability != null
+      );
+
+    let applicabilityRows:
+      any[] = [];
+
+    if (applicabilityEnabled) {
+      const adminSupabase =
+        createAdminClient();
+
+      const expectedQuestionIdSet =
+        new Set<string>(
+          sectionQuestionsForApplicability.map(
+            (question: any) =>
+              String(
+                question.id
+              )
+          )
+        );
+
+      const expectedCount =
+        expectedQuestionIdSet.size;
+
+      if (
+        reportSectionWasExisting
+      ) {
+        const {
+          data:
+            existingApplicabilityRows,
+          error:
+            existingApplicabilityError,
+        } = await adminSupabase
+          .from(
+            "report_question_applicability"
+          )
+          .select(`
+            id,
+            report_section_id,
+            question_id,
+            is_applicable,
+            source_type,
+            source_key,
+            reason_snapshot,
+            created_at
+          `)
+          .eq(
+            "report_section_id",
+            reportSection.id
+          );
+
+        if (
+          existingApplicabilityError
+        ) {
+          throw (
+            existingApplicabilityError
+          );
+        }
+
+        const existingRows =
+          existingApplicabilityRows ??
+          [];
+
+        if (
+          existingRows.length ===
+          0
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                "Applicability snapshot tidak ditemukan untuk report section yang sudah ada. Recalculation dari facility saat ini diblokir untuk menjaga historical report.",
+              code:
+                "APPLICABILITY_SNAPSHOT_MISSING",
+              reportSectionId:
+                reportSection.id,
+            },
+            {
+              status: 409,
+            }
+          );
+        }
+
+        if (
+          existingRows.length !==
+          expectedCount
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                "Snapshot applicability report tidak lengkap.",
+              code:
+                "APPLICABILITY_SNAPSHOT_INCOMPLETE",
+              expectedCount,
+              existingCount:
+                existingRows.length,
+            },
+            {
+              status: 409,
+            }
+          );
+        }
+
+        const existingQuestionIdSet =
+          new Set<string>(
+            existingRows.map(
+              (row: any) =>
+                String(
+                  row.question_id
+                )
+            )
+          );
+
+        const missingQuestionIds =
+          Array.from(
+            expectedQuestionIdSet
+          ).filter(
+            (questionId) =>
+              !existingQuestionIdSet.has(
+                questionId
+              )
+          );
+
+        const unexpectedQuestionIds =
+          Array.from(
+            existingQuestionIdSet
+          ).filter(
+            (questionId) =>
+              !expectedQuestionIdSet.has(
+                questionId
+              )
+          );
+
+        if (
+          missingQuestionIds.length >
+            0 ||
+          unexpectedQuestionIds.length >
+            0
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                "Snapshot applicability tidak sesuai dengan pertanyaan exact form version.",
+              code:
+                "APPLICABILITY_SNAPSHOT_MISMATCH",
+              missingQuestionIds,
+              unexpectedQuestionIds,
+            },
+            {
+              status: 409,
+            }
+          );
+        }
+
+        applicabilityRows =
+          existingRows;
+      } else {
+        if (
+          !applicabilityPreflight ||
+          applicabilityPreflight
+            .enabled !== true
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                "Applicability preflight tidak tersedia untuk report section baru.",
+              code:
+                "APPLICABILITY_PREFLIGHT_MISSING",
+            },
+            {
+              status: 409,
+            }
+          );
+        }
+
+        const snapshotRows =
+          (
+            applicabilityPreflight
+              .snapshotRows ??
+            []
+          ).map(
+            (row: any) => ({
+              ...row,
+
+              report_section_id:
+                reportSection.id,
+            })
+          );
+
+        if (
+          snapshotRows.length !==
+          expectedCount
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                "Applicability preflight menghasilkan snapshot yang tidak lengkap.",
+              code:
+                "APPLICABILITY_PREFLIGHT_INCOMPLETE",
+              expectedCount,
+              existingCount:
+                snapshotRows.length,
+            },
+            {
+              status: 409,
+            }
+          );
+        }
+
+        const {
+          data:
+            insertedApplicabilityRows,
+          error:
+            insertApplicabilityError,
+        } = await adminSupabase
+          .from(
+            "report_question_applicability"
+          )
+          .insert(
+            snapshotRows
+          )
+          .select(`
+            id,
+            report_section_id,
+            question_id,
+            is_applicable,
+            source_type,
+            source_key,
+            reason_snapshot,
+            created_at
+          `);
+
+        if (
+          insertApplicabilityError
+        ) {
+          if (
+            insertApplicabilityError.code ===
+            "23505"
+          ) {
+            const {
+              data:
+                racedRows,
+              error:
+                racedRowsError,
+            } = await adminSupabase
+              .from(
+                "report_question_applicability"
+              )
+              .select(`
+                id,
+                report_section_id,
+                question_id,
+                is_applicable,
+                source_type,
+                source_key,
+                reason_snapshot,
+                created_at
+              `)
+              .eq(
+                "report_section_id",
+                reportSection.id
+              );
+
+            if (
+              racedRowsError
+            ) {
+              throw (
+                racedRowsError
+              );
+            }
+
+            const raced =
+              racedRows ??
+              [];
+
+            if (
+              raced.length !==
+              expectedCount
+            ) {
+              return NextResponse.json(
+                {
+                  error:
+                    "Concurrent applicability snapshot tidak menghasilkan snapshot lengkap.",
+                  code:
+                    "APPLICABILITY_SNAPSHOT_RACE_INCOMPLETE",
+                },
+                {
+                  status: 409,
+                }
+              );
+            }
+
+            applicabilityRows =
+              raced;
+          } else {
+            throw (
+              insertApplicabilityError
+            );
+          }
+        } else {
+          applicabilityRows =
+            insertedApplicabilityRows ??
+            [];
+        }
+      }
+    }
+
+    const applicableQuestionIds =
+      applicabilityEnabled
+        ? applicabilityRows
+            .filter(
+              (row: any) =>
+                row.is_applicable ===
+                true
+            )
+            .map(
+              (row: any) =>
+                String(
+                  row.question_id
+                )
+            )
+        : sectionQuestionsForApplicability.map(
+            (question: any) =>
+              String(
+                question.id
+              )
+          );
+
+    const notApplicableQuestions =
+      applicabilityEnabled
+        ? applicabilityRows
+            .filter(
+              (row: any) =>
+                row.is_applicable ===
+                false
+            )
+            .map(
+              (row: any) => ({
+                questionId:
+                  String(
+                    row.question_id
+                  ),
+
+                sourceType:
+                  row.source_type,
+
+                sourceKey:
+                  row.source_key,
+
+                reason:
+                  row.reason_snapshot,
+              })
+            )
+        : [];
 
     // ========================================================
     // EXISTING ANSWERS
@@ -1405,6 +2280,27 @@ export async function POST(
 
       reportSectionStatus:
         reportSection.status,
+
+      applicability: {
+        enabled:
+          applicabilityEnabled,
+
+        totalQuestionCount:
+          (
+            sectionQuestionsForApplicability ??
+            []
+          ).length,
+
+        applicableQuestionCount:
+          applicableQuestionIds.length,
+
+        notApplicableQuestionCount:
+          notApplicableQuestions.length,
+
+        applicableQuestionIds,
+
+        notApplicableQuestions,
+      },
 
       reviewMode:
         areaLeaderReviewMode,
