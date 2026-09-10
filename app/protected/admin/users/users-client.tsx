@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CkAccessEditor } from "./ck-access-editor";
 
 type Role = {
   id: string;
@@ -99,6 +100,17 @@ export function UsersClient({
         role.id === form.roleId
     );
 
+  const selectedIsCk =
+
+    selectedRole?.code ===
+
+      "CK_STAFF" ||
+
+    selectedRole?.code ===
+
+      "CK_MANAGER";
+
+
   const filteredUsers =
     useMemo(() => {
       const q =
@@ -191,11 +203,67 @@ export function UsersClient({
   }
 
   async function saveUser(
-    event: React.FormEvent
+    event: React.FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
+        setError(null);
 
-    setError(null);
+        const submittedForm =
+          new FormData(
+            event.currentTarget
+          );
+
+        const ckAccessReady =
+          String(
+            submittedForm.get(
+              "ckAccessReady"
+            ) ?? "false"
+          ) === "true";
+
+        let ckSectionAssignments:
+          unknown[] = [];
+
+        let ckLeaderAssignments:
+          unknown[] = [];
+
+        try {
+          const parsedSections =
+            JSON.parse(
+              String(
+                submittedForm.get(
+                  "ckSectionAssignments"
+                ) ?? "[]"
+              )
+            );
+
+          const parsedLeaders =
+            JSON.parse(
+              String(
+                submittedForm.get(
+                  "ckLeaderAssignments"
+                ) ?? "[]"
+              )
+            );
+
+          ckSectionAssignments =
+            Array.isArray(
+              parsedSections
+            )
+              ? parsedSections
+              : [];
+
+          ckLeaderAssignments =
+            Array.isArray(
+              parsedLeaders
+            )
+              ? parsedLeaders
+              : [];
+        } catch {
+          setError(
+            "Unable to read Central Kitchen access configuration."
+          );
+          return;
+        }
 
     if (
       !form.fullName.trim() ||
@@ -228,6 +296,25 @@ export function UsersClient({
       );
       return;
     }
+
+    if (
+
+      selectedIsCk &&
+
+      !ckAccessReady
+
+    ) {
+
+      setError(
+
+        "Central Kitchen access is still loading or could not be loaded."
+
+      );
+
+      return;
+
+    }
+
 
     setSaving(true);
 
@@ -263,6 +350,8 @@ export function UsersClient({
                 form.roleId,
               outletIds:
                 form.outletIds,
+              ckSectionAssignments,
+              ckLeaderAssignments,
               isActive:
                 form.isActive,
             }),
@@ -429,7 +518,7 @@ export function UsersClient({
 
       {open && (
         <div className="fixed inset-0 z-[70] overflow-y-auto bg-black/50 px-4 py-8">
-          <div className="mx-auto w-full max-w-[620px] rounded-[28px] bg-white p-6 shadow-2xl md:p-8">
+          <div className="mx-auto w-full max-w-[860px] rounded-[28px] bg-white p-6 shadow-2xl md:p-8">
             <div className="flex items-start justify-between gap-5">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.16em] text-red-700">
@@ -661,6 +750,39 @@ export function UsersClient({
                   </div>
                 )}
               </div>
+
+              {selectedIsCk && (
+
+                <CkAccessEditor
+
+                  key={
+
+                    form.id ??
+
+                    "new-user"
+
+                  }
+
+                  userId={form.id}
+
+                  roleCode={
+
+                    selectedRole?.code
+
+                  }
+
+                  outletIds={
+
+                    form.outletIds
+
+                  }
+
+                  disabled={saving}
+
+                />
+
+              )}
+
 
               {form.id && (
                 <label className="flex items-center justify-between gap-5 rounded-2xl border border-neutral-200 px-4 py-4">

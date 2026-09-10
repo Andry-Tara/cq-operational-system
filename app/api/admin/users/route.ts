@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 
 import { checkAdminApi } from "@/lib/admin/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  parseCkAccessPayload,
+  saveCkUserAccess,
+} from "@/lib/admin/ck-user-access";
 
 export async function POST(
   request: Request
@@ -23,6 +27,8 @@ export async function POST(
   try {
     const body =
       await request.json();
+    const ckAccess =
+      parseCkAccessPayload(body);
 
     const fullName =
       String(
@@ -57,14 +63,15 @@ export async function POST(
         body?.roleId ?? ""
       );
 
-    const outletIds =
+    const outletIds: string[] =
       Array.isArray(
         body?.outletIds
       )
         ? [
-            ...new Set(
+            ...new Set<string>(
               body.outletIds.map(
-                String
+                (value: unknown) =>
+                  String(value)
               )
             ),
           ]
@@ -287,6 +294,15 @@ export async function POST(
           throw outletError;
         }
       }
+
+      await saveCkUserAccess({
+        admin,
+        organizationId,
+        userId,
+        roleId,
+        outletIds,
+        payload: ckAccess,
+      });
 
       return NextResponse.json({
         success: true,
