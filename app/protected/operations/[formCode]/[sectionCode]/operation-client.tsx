@@ -18,6 +18,12 @@ import {
   hasOperationalPhotoEvidence,
   isOperationalPhotoRequired,
 } from "@/lib/operations/evidence";
+import {
+  isSupportedLocale,
+  OPERATION_COPY,
+  resolveLocalizedText,
+  type AppLocale,
+} from "@/lib/localization/locale";
 
 type Group = {
   id: string;
@@ -40,6 +46,10 @@ type Question = {
   max_value: number | null;
   sort_order: number;
   config: Record<string, any> | null;
+  translation?: {
+    question_text?: string | null;
+    help_text?: string | null;
+  } | null;
 };
 
 type AnswerState = {
@@ -199,6 +209,10 @@ export default function OperationClient({
     sectionCode: string;
     displayName: string;
     sectionName: string;
+    sectionTranslation?: {
+      display_name?: string | null;
+      description?: string | null;
+    } | null;
     sectionScoped: boolean;
   };
 
@@ -229,8 +243,40 @@ export default function OperationClient({
   const operationLabel =
     operation.displayName;
 
+  const [displayLocale, setDisplayLocale] =
+    useState<AppLocale>("en");
+
+  const copy =
+    OPERATION_COPY[displayLocale];
+
   const sectionLabel =
-    operation.sectionName;
+    resolveLocalizedText(
+      displayLocale,
+      operation.sectionName,
+      operation.sectionTranslation
+        ?.display_name
+    );
+
+  function questionText(
+    question: Question
+  ) {
+    return resolveLocalizedText(
+      displayLocale,
+      question.question_text,
+      question.translation
+        ?.question_text
+    );
+  }
+
+  function questionHelpText(
+    question: Question
+  ) {
+    return resolveLocalizedText(
+      displayLocale,
+      question.help_text,
+      question.translation?.help_text
+    );
+  }
 
   // ==========================================================
   // CK PRODUCTION SECTION PIC
@@ -658,6 +704,14 @@ export default function OperationClient({
 
         setSessionData(
           session
+        );
+
+        setDisplayLocale(
+          isSupportedLocale(
+            session.locale
+          )
+            ? session.locale
+            : "en"
         );
 
         const loadedAnswers:
@@ -3756,9 +3810,7 @@ export default function OperationClient({
                       )}
 
                       <p className="mt-1 text-sm font-bold leading-6 text-neutral-900">
-                        {
-                          question.question_text
-                        }
+                        {questionText(question)}
                       </p>
                     </div>
 
@@ -3814,7 +3866,7 @@ export default function OperationClient({
                     ?.trim() && (
                     <div className="mt-3 rounded-xl border border-neutral-200 px-4 py-3">
                       <p className="text-[10px] font-black uppercase tracking-wide text-neutral-400">
-                        Notes
+                        {copy.notes}
                       </p>
 
                       <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-neutral-700">
@@ -3830,7 +3882,7 @@ export default function OperationClient({
                     ?.trim() && (
                     <div className="mt-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3">
                       <p className="text-[10px] font-black uppercase tracking-wide text-red-600">
-                        Corrective Action
+                        {copy.correctiveAction}
                       </p>
 
                       <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-red-800">
@@ -4333,6 +4385,35 @@ export default function OperationClient({
 
   return (
     <>
+      <div className="mt-6 flex justify-end">
+        <div className="inline-flex rounded-xl border border-neutral-200 bg-white p-1 shadow-sm">
+          {([
+            ["id-ID", "ID"],
+            ["en", "EN"],
+          ] as const).map(
+            ([locale, label]) => (
+              <button
+                key={locale}
+                type="button"
+                onClick={() =>
+                  setDisplayLocale(locale)
+                }
+                className={`rounded-lg px-3 py-1.5 text-[10px] font-black tracking-wide transition ${
+                  displayLocale === locale
+                    ? "bg-neutral-900 text-white"
+                    : "text-neutral-500 hover:bg-neutral-100"
+                }`}
+                aria-pressed={
+                  displayLocale === locale
+                }
+              >
+                {label}
+              </button>
+            )
+          )}
+        </div>
+      </div>
+
       {isReopenedSession && (
         <section className="mt-6 overflow-hidden rounded-[24px] border border-amber-200 bg-amber-50 shadow-sm">
           <div className="p-6 md:p-7">
@@ -4593,11 +4674,8 @@ export default function OperationClient({
                             <div className="min-w-0 flex-1">
                               <div className="flex items-start gap-2">
                                 <p className="font-semibold leading-6 text-neutral-900">
-                                  {
-                                    question.question_text
-                                  }
+                                  {questionText(question)}
                                 </p>
-
                                 {question.is_required && (
                                   <span className="text-red-600">
                                     *
@@ -4609,8 +4687,8 @@ export default function OperationClient({
                                 <div className="mt-3">
                                   <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-800">
                                     {isSectionCorrectionMode
-                                      ? "Correction Required"
-                                      : "Admin Requested Correction"}
+                                      ? copy.correctionRequired
+                                      : copy.adminRequestedCorrection}
                                   </span>
                                 </div>
                               )}
@@ -4623,11 +4701,9 @@ export default function OperationClient({
                                 </div>
                               )}
 
-                              {question.help_text && (
+                              {questionHelpText(question) && (
                                 <p className="mt-2 text-sm text-neutral-500">
-                                  {
-                                    question.help_text
-                                  }
+                                  {questionHelpText(question)}
                                 </p>
                               )}
 
@@ -4649,7 +4725,7 @@ export default function OperationClient({
                                         : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
                                     }`}
                                   >
-                                    YES
+                                      {copy.yes}
                                   </button>
 
                                   <button
@@ -4667,7 +4743,7 @@ export default function OperationClient({
                                         : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
                                     }`}
                                   >
-                                    NO
+                                      {copy.no}
                                   </button>
                                 </div>
                               )}
@@ -4722,7 +4798,7 @@ export default function OperationClient({
                                     question.max_value !==
                                       null && (
                                       <p className="mt-2 text-xs text-neutral-500">
-                                        Standard{" "}
+                                        {copy.standard}{" "}
                                         {
                                           question.min_value
                                         }{" "}
@@ -4741,7 +4817,7 @@ export default function OperationClient({
                                     question.max_value !==
                                       null && (
                                       <p className="mt-2 text-xs text-neutral-500">
-                                        Standard ≤{" "}
+                                        {copy.standard} ≤{" "}
                                         {
                                           question.max_value
                                         }
@@ -4761,8 +4837,8 @@ export default function OperationClient({
                                       }`}
                                     >
                                       {exception
-                                        ? "OUT OF STANDARD"
-                                        : "WITHIN STANDARD"}
+                                        ? copy.outOfStandard
+                                        : copy.withinStandard}
                                     </span>
                                   )}
                                 </div>
@@ -4772,7 +4848,7 @@ export default function OperationClient({
                                 <div className="flex items-center justify-between gap-3">
                                   <div>
                                     <p className="text-sm font-semibold">
-                                      Photo Evidence
+                                      {copy.photoEvidence}
                                       {photoRequired
                                         ? " *"
                                         : ""}
@@ -4838,7 +4914,7 @@ export default function OperationClient({
                                   <div className="mt-4 grid grid-cols-2 gap-2.5">
                                   <label className={`flex min-h-[52px] items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 text-center text-xs font-black text-red-700 transition ${submitting || !sessionData?.reportId || !sessionData?.reportSectionId ? "cursor-wait opacity-45" : "cursor-pointer active:scale-[0.99]"}`}>
                                     <span className="text-base">📷</span>
-                                    <span>Take Photo</span>
+                                    <span>{copy.takePhoto}</span>
                                     <input
                                       type="file"
                                       accept="image/*"
@@ -4857,7 +4933,7 @@ export default function OperationClient({
 
                                   <label className={`flex min-h-[52px] items-center justify-center gap-2 rounded-xl border border-sky-100 bg-sky-50 px-3 text-center text-xs font-black text-sky-700 transition ${submitting || !sessionData?.reportId || !sessionData?.reportSectionId ? "cursor-wait opacity-45" : "cursor-pointer active:scale-[0.99]"}`}>
                                     <span className="text-base">🖼️</span>
-                                    <span>Gallery / Device</span>
+                                    <span>{copy.gallery}</span>
                                     <input
                                       type="file"
                                       accept="image/*"
@@ -4890,8 +4966,7 @@ export default function OperationClient({
                               {exception && (
                                 <div className="mt-5 rounded-2xl border border-red-100 bg-red-50 p-5">
                                   <p className="text-sm font-bold text-red-800">
-                                    Action
-                                    Required
+                                    {copy.actionRequired}
                                   </p>
 
                                   <p className="mt-1 text-xs text-red-700">
@@ -4906,7 +4981,7 @@ export default function OperationClient({
                                   <div className="mt-4 space-y-4">
                                     <div>
                                       <label className="text-xs font-semibold text-neutral-600">
-                                        Notes
+                                        {copy.notes}
                                         *
                                       </label>
 
@@ -4934,8 +5009,7 @@ export default function OperationClient({
 
                                     <div>
                                       <label className="text-xs font-semibold text-neutral-600">
-                                        Corrective
-                                        Action
+                                        {copy.correctiveAction}
                                         *
                                       </label>
 
@@ -5029,15 +5103,15 @@ export default function OperationClient({
                 >
                   {!sessionReady
                     ? loadingExisting
-                      ? "Starting..."
-                      : "Session Error"
+                      ? copy.startingSession
+                      : copy.sessionError
                     : draftStatus === "error"
                       ? "Draft error"
                       : draftStatus === "saving"
-                        ? "Saving..."
+                        ? copy.saving
                         : draftStatus === "loading"
-                          ? "Loading..."
-                          : "✓ Saved"}
+                          ? copy.loading
+                          : `✓ ${copy.saved}`}
                 </div>
               </div>
             </div>
@@ -5173,13 +5247,13 @@ export default function OperationClient({
             >
               {submitting
                 ? isSectionCorrectionMode
-                  ? "Resubmitting Correction..."
-                  : "Submitting..."
+                  ? copy.resubmittingCorrection
+                  : copy.submitting
                 : isSectionCorrectionMode
-                  ? "Resubmit Correction"
+                  ? copy.resubmitCorrection
                   : operation.sectionScoped
-                    ? `Submit ${sectionLabel}`
-                    : `Submit ${operationKind}`}
+                    ? `${copy.submit} ${sectionLabel}`
+                    : `${copy.submit} ${operationKind}`}
             </button>
           </div>
 

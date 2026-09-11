@@ -554,6 +554,11 @@ export default async function OperationPage({
               sectionName:
                 sectionDisplayName,
 
+              sectionTranslation:
+                operation.versionSection
+                  .translation ??
+                null,
+
               sectionScoped:
                 Boolean(
                   config.sectionScoped

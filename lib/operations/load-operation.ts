@@ -275,15 +275,77 @@ export async function loadOperationDefinition({
   const questions =
     questionsData ?? [];
 
-  // ==========================================================
-  // QUESTION RULES
-  // ==========================================================
-
   const questionIds =
     questions.map(
       (question: any) =>
         question.id
     );
+
+  const {
+    data: sectionTranslation,
+    error: sectionTranslationError,
+  } = await supabase
+    .from("form_version_section_translations")
+    .select(`
+      locale,
+      display_name,
+      description
+    `)
+    .eq(
+      "version_section_id",
+      versionSection.id
+    )
+    .eq("locale", "id-ID")
+    .maybeSingle();
+
+  if (sectionTranslationError) {
+    throw sectionTranslationError;
+  }
+
+  let questionTranslations: any[] = [];
+
+  if (questionIds.length) {
+    const {
+      data,
+      error,
+    } = await supabase
+      .from("question_translations")
+      .select(`
+        question_id,
+        locale,
+        question_text,
+        help_text
+      `)
+      .in(
+        "question_id",
+        questionIds
+      )
+      .eq("locale", "id-ID");
+
+    if (error) {
+      throw error;
+    }
+
+    questionTranslations =
+      data ?? [];
+  }
+
+  const questionTranslationsById =
+    new Map<string, any>();
+
+  for (
+    const translation of
+    questionTranslations
+  ) {
+    questionTranslationsById.set(
+      translation.question_id,
+      translation
+    );
+  }
+
+  // ==========================================================
+  // QUESTION RULES
+  // ==========================================================
 
   let rulesData: any[] = [];
 
@@ -341,6 +403,10 @@ export async function loadOperationDefinition({
     questions.map(
       (question: any) => ({
         ...question,
+        translation:
+          questionTranslationsById.get(
+            question.id
+          ) ?? null,
         rules:
           rulesByQuestion.get(
             question.id
@@ -353,7 +419,11 @@ export async function loadOperationDefinition({
     assignment,
     formVersion,
     section,
-    versionSection,
+    versionSection: {
+      ...versionSection,
+      translation:
+        sectionTranslation ?? null,
+    },
     groups,
     questions:
       questionsWithRules,
