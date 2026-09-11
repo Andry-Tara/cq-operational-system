@@ -136,19 +136,23 @@ export function isSupportedLocale(
 }
 
 export function resolveLocalizedText(
-  locale: AppLocale,
   canonicalText: string | null | undefined,
-  translatedText: string | null | undefined
-): string {
+  translations: Partial<
+    Record<AppLocale, string | null | undefined>
+  > | null | undefined,
+  locale: AppLocale
+): string | null {
+  const translatedText =
+    translations?.[locale];
+
   if (
-    locale === "id-ID" &&
     typeof translatedText === "string" &&
     translatedText.trim() !== ""
   ) {
     return translatedText;
   }
 
-  return canonicalText ?? "";
+  return canonicalText ?? null;
 }
 
 export function resolveOperationLocale({

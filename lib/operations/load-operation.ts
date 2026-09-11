@@ -1,6 +1,9 @@
 import {
   normalizeOperationCode,
 } from "./config";
+import type {
+  AppLocale,
+} from "@/lib/localization/locale";
 
 type LoadOperationArgs = {
   supabase: any;
@@ -259,7 +262,7 @@ export async function loadOperationDefinition({
         "question_group_id",
         groupIds
       )
-      .eq("locale", "id-ID");
+      .in("locale", ["en", "id-ID"]);
 
     if (error) {
       throw error;
@@ -270,15 +273,24 @@ export async function loadOperationDefinition({
   }
 
   const groupTranslationsById =
-    new Map<string, any>();
+    new Map<string, Partial<Record<AppLocale, any>>>();
 
   for (
     const translation of
     groupTranslations
   ) {
+    const translations =
+      groupTranslationsById.get(
+        translation.question_group_id
+      ) ?? {};
+
+    translations[
+      translation.locale as AppLocale
+    ] = translation;
+
     groupTranslationsById.set(
       translation.question_group_id,
-      translation
+        translations
     );
   }
 
@@ -289,7 +301,7 @@ export async function loadOperationDefinition({
         translation:
           groupTranslationsById.get(
             group.id
-          ) ?? null,
+          ) ?? {},
       })
     );
 
@@ -340,7 +352,7 @@ export async function loadOperationDefinition({
     );
 
   const {
-    data: sectionTranslation,
+    data: sectionTranslations,
     error: sectionTranslationError,
   } = await supabase
     .from("form_version_section_translations")
@@ -353,8 +365,8 @@ export async function loadOperationDefinition({
       "version_section_id",
       versionSection.id
     )
-    .eq("locale", "id-ID")
-    .maybeSingle();
+    .in("locale", ["en", "id-ID"])
+    ;
 
   if (sectionTranslationError) {
     throw sectionTranslationError;
@@ -378,7 +390,7 @@ export async function loadOperationDefinition({
         "question_id",
         questionIds
       )
-      .eq("locale", "id-ID");
+      .in("locale", ["en", "id-ID"]);
 
     if (error) {
       throw error;
@@ -389,15 +401,24 @@ export async function loadOperationDefinition({
   }
 
   const questionTranslationsById =
-    new Map<string, any>();
+    new Map<string, Partial<Record<AppLocale, any>>>();
 
   for (
     const translation of
     questionTranslations
   ) {
+    const translations =
+      questionTranslationsById.get(
+        translation.question_id
+      ) ?? {};
+
+    translations[
+      translation.locale as AppLocale
+    ] = translation;
+
     questionTranslationsById.set(
       translation.question_id,
-      translation
+      translations
     );
   }
 
@@ -461,10 +482,10 @@ export async function loadOperationDefinition({
     questions.map(
       (question: any) => ({
         ...question,
-        translation:
+        translations:
           questionTranslationsById.get(
             question.id
-          ) ?? null,
+          ) ?? {},
         rules:
           rulesByQuestion.get(
             question.id
@@ -480,7 +501,18 @@ export async function loadOperationDefinition({
     versionSection: {
       ...versionSection,
       translation:
-        sectionTranslation ?? null,
+        (sectionTranslations ?? []).reduce(
+          (
+            result: Partial<Record<AppLocale, any>>,
+            translation: any
+          ) => {
+            result[
+              translation.locale as AppLocale
+            ] = translation;
+            return result;
+          },
+          {}
+        ),
     },
     groups:
       groupsWithTranslations,

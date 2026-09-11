@@ -31,10 +31,10 @@ type Group = {
   name: string;
   description: string | null;
   sort_order: number;
-  translation?: {
+  translation?: Partial<Record<AppLocale, {
     display_name?: string | null;
     description?: string | null;
-  } | null;
+  }>>;
 };
 
 type Question = {
@@ -50,10 +50,10 @@ type Question = {
   max_value: number | null;
   sort_order: number;
   config: Record<string, any> | null;
-  translation?: {
+  translation?: Partial<Record<AppLocale, {
     question_text?: string | null;
     help_text?: string | null;
-  } | null;
+  }>>;
 };
 
 type AnswerState = {
@@ -213,10 +213,10 @@ export default function OperationClient({
     sectionCode: string;
     displayName: string;
     sectionName: string;
-    sectionTranslation?: {
+      sectionTranslation?: Partial<Record<AppLocale, {
       display_name?: string | null;
       description?: string | null;
-    } | null;
+      }>>;
     sectionScoped: boolean;
   };
 
@@ -255,20 +255,36 @@ export default function OperationClient({
 
   const sectionLabel =
     resolveLocalizedText(
-      displayLocale,
       operation.sectionName,
-      operation.sectionTranslation
-        ?.display_name
+      Object.fromEntries(
+        Object.entries(
+          operation.sectionTranslation ?? {}
+        ).map(
+          ([locale, translation]) => [
+            locale,
+            translation?.display_name,
+          ]
+        )
+      ) as Partial<Record<AppLocale, string | null>>,
+      displayLocale
     );
 
   function questionText(
     question: Question
   ) {
     return resolveLocalizedText(
-      displayLocale,
       question.question_text,
-      question.translation
-        ?.question_text
+      Object.fromEntries(
+        Object.entries(
+          question.translation ?? {}
+        ).map(
+          ([locale, translation]) => [
+            locale,
+            translation?.question_text,
+          ]
+        )
+      ) as Partial<Record<AppLocale, string | null>>,
+      displayLocale
     );
   }
 
@@ -276,9 +292,18 @@ export default function OperationClient({
     question: Question
   ) {
     return resolveLocalizedText(
-      displayLocale,
       question.help_text,
-      question.translation?.help_text
+      Object.fromEntries(
+        Object.entries(
+          question.translation ?? {}
+        ).map(
+          ([locale, translation]) => [
+            locale,
+            translation?.help_text,
+          ]
+        )
+      ) as Partial<Record<AppLocale, string | null>>,
+      displayLocale
     );
   }
 
@@ -286,9 +311,18 @@ export default function OperationClient({
     group: Group
   ) {
     return resolveLocalizedText(
-      displayLocale,
       group.name,
-      group.translation?.display_name
+      Object.fromEntries(
+        Object.entries(
+          group.translation ?? {}
+        ).map(
+          ([locale, translation]) => [
+            locale,
+            translation?.display_name,
+          ]
+        )
+      ) as Partial<Record<AppLocale, string | null>>,
+      displayLocale
     );
   }
 
@@ -296,9 +330,18 @@ export default function OperationClient({
     group: Group
   ) {
     return resolveLocalizedText(
-      displayLocale,
       group.description,
-      group.translation?.description
+      Object.fromEntries(
+        Object.entries(
+          group.translation ?? {}
+        ).map(
+          ([locale, translation]) => [
+            locale,
+            translation?.description,
+          ]
+        )
+      ) as Partial<Record<AppLocale, string | null>>,
+      displayLocale
     );
   }
 
@@ -2720,7 +2763,7 @@ export default function OperationClient({
       `*${
         result.completed
           ? `${operationLabel.toUpperCase()} COMPLETED`
-          : `${sectionLabel.toUpperCase()} SUBMITTED`
+            : `${(sectionLabel ?? operation.sectionName).toUpperCase()} SUBMITTED`
       }*`
     );
 
