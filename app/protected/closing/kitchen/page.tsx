@@ -488,12 +488,79 @@ export default async function ClosingKitchenPage() {
   // ==========================================================
 
   return (
-    <ClosingKitchenClient
-      outlet={outlet}
-      sectionTranslation={sectionTranslation}
-      groups={groupsWithTranslations}
-      questions={questionsWithRules}
-    />
+    <main className="min-h-screen bg-[#f4f4f4] text-[#202020]">
+      <div className="mx-auto max-w-[1180px] px-4 py-6 sm:px-5 md:px-8 md:py-10">
+        <section className="overflow-hidden rounded-[24px] border border-black/5 bg-white shadow-sm md:rounded-[28px]">
+          <div className="p-5 sm:p-6 md:p-8">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-red-50 text-2xl">
+                  🌙
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-red-700">
+                    Daily Operational
+                  </p>
+                  <h1 className="mt-1 text-2xl font-black tracking-tight text-neutral-950 md:text-3xl">
+                    Closing Outlet
+                  </h1>
+                  <p className="mt-2 text-sm font-medium text-neutral-500">
+                    {outlet.name} · Kitchen / BOH
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href="/protected"
+                  className="inline-flex items-center justify-center rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-xs font-bold text-neutral-700 transition hover:bg-neutral-50"
+                >
+                  Dashboard
+                </Link>
+                <Link
+                  href="/protected/select-outlet"
+                  className="inline-flex items-center justify-center rounded-xl bg-neutral-900 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-black"
+                >
+                  Change Outlet
+                </Link>
+              </div>
+            </div>
+
+            <div className="mt-6 grid grid-cols-3 gap-2 sm:gap-3">
+              <InfoBox label="Groups" value={String(groupsWithTranslations.length)} />
+              <InfoBox label="Questions" value={String(questionsWithRules.length)} />
+              <InfoBox label="Version" value={`v${formVersion.version_number}`} />
+            </div>
+          </div>
+        </section>
+
+        <ClosingKitchenClient
+          outlet={outlet}
+          sectionTranslation={sectionTranslation}
+          groups={groupsWithTranslations}
+          questions={questionsWithRules}
+        />
+      </div>
+    </main>
+  );
+}
+
+function InfoBox({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl bg-neutral-50 px-4 py-3">
+      <p className="text-[9px] font-black uppercase tracking-wide text-neutral-400">
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-bold text-neutral-800">
+        {value}
+      </p>
+    </div>
   );
 }
 

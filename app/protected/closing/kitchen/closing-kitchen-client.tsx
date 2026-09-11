@@ -2253,8 +2253,8 @@ export default function ClosingKitchenClient({
         </section>
       )}
 
-      <section className="mt-6 hidden rounded-[24px] border border-black/5 bg-white p-6 shadow-sm md:block">
-        <div className="grid gap-6 md:grid-cols-3">
+      <section className="mt-6 rounded-[24px] border border-black/5 bg-white p-5 shadow-sm sm:p-6">
+        <div className="grid gap-5 md:grid-cols-3">
           <ProgressSummaryItem
             label="Checklist"
             value={`${answeredCount}/${totalQuestions}`}
@@ -2283,7 +2283,7 @@ export default function ClosingKitchenClient({
           />
         </div>
 
-        <div className="mt-6">
+        <div className="mt-5">
           <div className="mb-2 flex items-center justify-between text-xs text-neutral-500">
             <span>
               Overall Completion
@@ -2330,7 +2330,7 @@ export default function ClosingKitchenClient({
         </div>
       )}
 
-      <div className="mt-4 space-y-6 sm:mt-8 sm:space-y-8">
+      <div className="mt-6 space-y-6 sm:mt-8 sm:space-y-8">
         {groups.map(
           (
             group,
@@ -2347,7 +2347,7 @@ export default function ClosingKitchenClient({
               <section
                 key={group.id}
               >
-                <div className="mb-3 flex items-start gap-3 sm:mb-4">
+                <div className="mb-4 flex items-start gap-3 sm:mb-5">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 font-bold text-red-700">
                     {groupIndex + 1}
                   </div>
@@ -2859,7 +2859,7 @@ export default function ClosingKitchenClient({
               : "hidden md:sticky md:block"
           }`}
         >
-        <div className="rounded-[22px] border border-black/5 bg-white p-4 text-neutral-950 shadow-lg">
+        <div className="rounded-[22px] border border-black/5 bg-white p-4 text-neutral-950 shadow-lg sm:p-5">
             {!submitting &&
               (
                 !sessionReady ||
@@ -2900,8 +2900,8 @@ export default function ClosingKitchenClient({
           )}
 
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="font-semibold">
+            <div className="min-w-0">
+              <p className="font-semibold text-neutral-950">
                 Closing
                 Checklist
               </p>
@@ -2939,7 +2939,7 @@ export default function ClosingKitchenClient({
                 !overallComplete ||
                 submitting
               }
-              className={`rounded-xl px-7 py-4 text-sm font-bold transition ${
+              className={`w-full rounded-xl px-7 py-4 text-sm font-bold transition md:w-auto ${
                 overallComplete &&
                 !submitting
                   ? "bg-red-700 text-white hover:bg-red-800"
