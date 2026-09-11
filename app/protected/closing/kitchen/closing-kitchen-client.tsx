@@ -17,6 +17,12 @@ import {
   hasOperationalPhotoEvidence,
   isOperationalPhotoRequired,
 } from "@/lib/operations/evidence";
+import {
+  isSupportedLocale,
+  OPERATION_COPY,
+  resolveLocalizedText,
+  type AppLocale,
+} from "@/lib/localization/locale";
 
 type Group = {
   id: string;
@@ -24,6 +30,10 @@ type Group = {
   name: string;
   description: string | null;
   sort_order: number;
+  translation?: Partial<Record<AppLocale, {
+    display_name?: string | null;
+    description?: string | null;
+  }>>;
 };
 
 type Question = {
@@ -39,6 +49,10 @@ type Question = {
   max_value: number | null;
   sort_order: number;
   config: Record<string, any> | null;
+  translations?: Partial<Record<AppLocale, {
+    question_text?: string | null;
+    help_text?: string | null;
+  }>>;
 };
 
 type AnswerState = {
@@ -172,6 +186,7 @@ function ProgressSummaryItem({
 
 export default function ClosingKitchenClient({
   outlet,
+  sectionTranslation,
   groups,
   questions,
 }: {
@@ -180,10 +195,69 @@ export default function ClosingKitchenClient({
     code: string;
     name: string;
   };
+  sectionTranslation: Partial<Record<AppLocale, {
+    display_name?: string | null;
+    description?: string | null;
+  }>>;
   groups: Group[];
   questions: Question[];
 }) {
   const supabase = createClient();
+
+  const [displayLocale, setDisplayLocale] =
+    useState<AppLocale>("en");
+
+  const copy = OPERATION_COPY[displayLocale];
+
+  const localized = (
+    canonical: string | null | undefined,
+    translations: Partial<Record<AppLocale, string | null | undefined>>
+  ) =>
+    resolveLocalizedText(
+      canonical,
+      translations,
+      displayLocale
+    );
+
+  const localizedGroupName = (group: Group) =>
+    localized(
+      group.name,
+      Object.fromEntries(
+        Object.entries(group.translation ?? {}).map(
+          ([locale, translation]) => [locale, translation?.display_name]
+        )
+      ) as Partial<Record<AppLocale, string | null>>
+    );
+
+  const localizedGroupDescription = (group: Group) =>
+    localized(
+      group.description,
+      Object.fromEntries(
+        Object.entries(group.translation ?? {}).map(
+          ([locale, translation]) => [locale, translation?.description]
+        )
+      ) as Partial<Record<AppLocale, string | null>>
+    );
+
+  const localizedQuestion = (question: Question) =>
+    localized(
+      question.question_text,
+      Object.fromEntries(
+        Object.entries(question.translations ?? {}).map(
+          ([locale, translation]) => [locale, translation?.question_text]
+        )
+      ) as Partial<Record<AppLocale, string | null>>
+    );
+
+  const localizedHelp = (question: Question) =>
+    localized(
+      question.help_text,
+      Object.fromEntries(
+        Object.entries(question.translations ?? {}).map(
+          ([locale, translation]) => [locale, translation?.help_text]
+        )
+      ) as Partial<Record<AppLocale, string | null>>
+    );
 
   const [answers, setAnswers] =
     useState<Record<string, AnswerState>>({});
@@ -386,6 +460,12 @@ export default function ClosingKitchenClient({
 
         setSessionData(
           session
+        );
+
+        setDisplayLocale(
+          isSupportedLocale(session.locale)
+            ? session.locale
+            : "en"
         );
 
         const loadedAnswers:
@@ -1957,6 +2037,31 @@ export default function ClosingKitchenClient({
   // SUCCESS SCREEN
   // ==========================================================
 
+  const localeSwitch = (
+    <div className="mt-6 flex justify-end">
+      <div className="inline-flex rounded-xl border border-neutral-200 bg-white p-1 shadow-sm">
+        {([
+          ["id-ID", "ID"],
+          ["en", "EN"],
+        ] as const).map(([locale, label]) => (
+          <button
+            key={locale}
+            type="button"
+            onClick={() => setDisplayLocale(locale)}
+            className={`rounded-lg px-3 py-1.5 text-[10px] font-black tracking-wide transition ${
+              displayLocale === locale
+                ? "bg-neutral-900 text-white"
+                : "text-neutral-500 hover:bg-neutral-100"
+            }`}
+            aria-pressed={displayLocale === locale}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   if (result) {
     const submittedTime =
       new Intl.DateTimeFormat(
@@ -1975,6 +2080,7 @@ export default function ClosingKitchenClient({
 
     return (
       <section className="mt-6">
+        {localeSwitch}
         <div className="mx-auto max-w-2xl rounded-[28px] border border-black/5 bg-white p-7 text-center shadow-sm md:p-10">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-3xl text-emerald-700 font-bold">
             ✓
@@ -2076,6 +2182,8 @@ export default function ClosingKitchenClient({
 
   return (
     <>
+      {localeSwitch}
+
       {isReopenedSession && (
         <section className="mt-6 overflow-hidden rounded-[24px] border border-amber-200 bg-amber-50 shadow-sm">
           <div className="p-6 md:p-7">
@@ -2246,14 +2354,12 @@ export default function ClosingKitchenClient({
 
                   <div>
                     <h2 className="text-xl font-black leading-tight tracking-tight text-neutral-950 sm:text-2xl">
-                      {group.name}
+                      {localizedGroupName(group)}
                     </h2>
 
-                    {group.description && (
+                    {localizedGroupDescription(group) && (
                       <p className="mt-1.5 text-sm font-medium leading-5 text-neutral-700">
-                        {
-                          group.description
-                        }
+                          {localizedGroupDescription(group)}
                       </p>
                     )}
                   </div>
@@ -2315,9 +2421,7 @@ export default function ClosingKitchenClient({
                             <div className="min-w-0 flex-1">
                               <div className="flex items-start gap-2">
                                 <p className="font-semibold leading-6 text-neutral-900">
-                                  {
-                                    question.question_text
-                                  }
+                                    {localizedQuestion(question)}
                                 </p>
 
                                 {question.is_required && (
@@ -2335,11 +2439,9 @@ export default function ClosingKitchenClient({
                                 </div>
                               )}
 
-                              {question.help_text && (
+                              {localizedHelp(question) && (
                                 <p className="mt-2 text-sm text-neutral-500">
-                                  {
-                                    question.help_text
-                                  }
+                                    {localizedHelp(question)}
                                 </p>
                               )}
 
@@ -2361,7 +2463,7 @@ export default function ClosingKitchenClient({
                                         : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
                                     }`}
                                   >
-                                    YES
+                                    {copy.yes}
                                   </button>
 
                                   <button
@@ -2379,7 +2481,7 @@ export default function ClosingKitchenClient({
                                         : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
                                     }`}
                                   >
-                                    NO
+                                    {copy.no}
                                   </button>
                                 </div>
                               )}
@@ -2484,7 +2586,7 @@ export default function ClosingKitchenClient({
                                 <div className="flex items-center justify-between gap-3">
                                   <div>
                                     <p className="text-sm font-semibold">
-                                      Photo Evidence
+                                      {copy.photoEvidence}
                                       {photoRequired
                                         ? " *"
                                         : ""}
@@ -2545,7 +2647,7 @@ export default function ClosingKitchenClient({
                                   <div className="mt-4 grid grid-cols-2 gap-2.5">
                                   <label className={`flex min-h-[52px] items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 text-center text-xs font-black text-red-700 transition ${submitting || !sessionData?.reportId || !sessionData?.reportSectionId ? "cursor-wait opacity-45" : "cursor-pointer active:scale-[0.99]"}`}>
                                     <span className="text-base">📷</span>
-                                    <span>Take Photo</span>
+                                    <span>{copy.takePhoto}</span>
                                     <input
                                       type="file"
                                       accept="image/*"
@@ -2564,7 +2666,7 @@ export default function ClosingKitchenClient({
 
                                   <label className={`flex min-h-[52px] items-center justify-center gap-2 rounded-xl border border-sky-100 bg-sky-50 px-3 text-center text-xs font-black text-sky-700 transition ${submitting || !sessionData?.reportId || !sessionData?.reportSectionId ? "cursor-wait opacity-45" : "cursor-pointer active:scale-[0.99]"}`}>
                                     <span className="text-base">🖼️</span>
-                                    <span>Gallery / Device</span>
+                                    <span>{copy.gallery}</span>
                                     <input
                                       type="file"
                                       accept="image/*"
@@ -2598,7 +2700,7 @@ export default function ClosingKitchenClient({
                                 <div className="mt-5 rounded-2xl border border-red-100 bg-red-50 p-5">
                                   <p className="text-sm font-bold text-red-800">
                                     Action
-                                    Required
+                                    {copy.required}
                                   </p>
 
                                   <p className="mt-1 text-xs text-red-700">
@@ -2613,7 +2715,7 @@ export default function ClosingKitchenClient({
                                   <div className="mt-4 space-y-4">
                                     <div>
                                       <label className="text-xs font-semibold text-neutral-600">
-                                        Notes
+                                        {copy.notes}
                                         *
                                       </label>
 
@@ -2641,8 +2743,7 @@ export default function ClosingKitchenClient({
 
                                     <div>
                                       <label className="text-xs font-semibold text-neutral-600">
-                                        Corrective
-                                        Action
+                                        {copy.correctiveAction}
                                         *
                                       </label>
 
@@ -2703,7 +2804,7 @@ export default function ClosingKitchenClient({
                   <p className="truncate text-[12px] font-semibold text-neutral-800">
                     {answeredCount}/{totalQuestions} answers
                     {" · "}
-                    {requiredPhotoCompleteCount}/{requiredPhotoCount} required photos
+                    {requiredPhotoCompleteCount}/{requiredPhotoCount} {copy.requiredPhotos}
                     {issueCount > 0
                       ? ` · ${issueCount} issue(s)`
                       : ""}
@@ -2737,14 +2838,14 @@ export default function ClosingKitchenClient({
                   {!sessionReady
                     ? loadingExisting
                       ? "Starting..."
-                      : "Session Error"
+                      : copy.sessionError
                     : draftStatus === "error"
                       ? "Draft error"
                       : draftStatus === "saving"
-                        ? "Saving..."
+                        ? copy.saving
                         : draftStatus === "loading"
-                          ? "Loading..."
-                          : "✓ Saved"}
+                          ? copy.loading
+                          : `✓ ${copy.saved}`}
                 </div>
               </div>
             </div>
@@ -2780,7 +2881,7 @@ export default function ClosingKitchenClient({
                 >
                   {!sessionReady
                     ? loadingExisting
-                      ? "Starting operational session..."
+                      ? copy.startingSession
                       : "Operational session belum siap."
                     : draftStatus === "loading"
                       ? "Loading draft..."
@@ -2846,8 +2947,8 @@ export default function ClosingKitchenClient({
               }`}
             >
               {submitting
-                ? "Submitting..."
-                : "Submit Closing"}
+                ? copy.submitting
+                : `${copy.submit} ${displayLocale === "id-ID" ? "Penutupan" : "Closing"}`}
             </button>
           </div>
 

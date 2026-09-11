@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { getActiveOutlet } from "@/lib/active-outlet";
+import type { AppLocale } from "@/lib/localization/locale";
 
 import ClosingKitchenClient from "./closing-kitchen-client";
 
@@ -343,6 +344,87 @@ export default async function ClosingKitchenPage() {
     );
   }
 
+  const {
+    data: sectionTranslations,
+    error: sectionTranslationsError,
+  } = await supabase
+    .from("form_version_section_translations")
+    .select("locale, display_name, description")
+    .eq("version_section_id", versionSection.id)
+    .in("locale", ["en", "id-ID"]);
+
+  if (sectionTranslationsError) {
+    return (
+      <ErrorState
+        message={`Unable to load section translations: ${sectionTranslationsError.message}`}
+      />
+    );
+  }
+
+  const groupIds = groups.map((group: any) => group.id);
+  const { data: groupTranslations, error: groupTranslationsError } =
+    groupIds.length
+      ? await supabase
+          .from("question_group_translations")
+          .select("question_group_id, locale, display_name, description")
+          .in("question_group_id", groupIds)
+          .in("locale", ["en", "id-ID"])
+      : { data: [], error: null };
+
+  if (groupTranslationsError) {
+    return (
+      <ErrorState
+        message={`Unable to load group translations: ${groupTranslationsError.message}`}
+      />
+    );
+  }
+
+  const questionTranslationIds = questions.map((question: any) => question.id);
+  const { data: questionTranslations, error: questionTranslationsError } =
+    await supabase
+      .from("question_translations")
+      .select("question_id, locale, question_text, help_text")
+      .in("question_id", questionTranslationIds)
+      .in("locale", ["en", "id-ID"]);
+
+  if (questionTranslationsError) {
+    return (
+      <ErrorState
+        message={`Unable to load question translations: ${questionTranslationsError.message}`}
+      />
+    );
+  }
+
+  const toLocaleMap = (rows: any[], key: string) =>
+    rows.reduce(
+      (result: Record<string, Partial<Record<AppLocale, any>>>, row: any) => {
+        const entityId = row[key];
+        result[entityId] ??= {};
+        result[entityId][row.locale as AppLocale] = row;
+        return result;
+      },
+      {}
+    );
+
+  const sectionTranslation = (sectionTranslations ?? []).reduce(
+    (result: Partial<Record<AppLocale, any>>, row: any) => {
+      result[row.locale as AppLocale] = row;
+      return result;
+    }, {}) as Partial<Record<AppLocale, any>>;
+  const groupTranslationMap = toLocaleMap(
+    groupTranslations ?? [],
+    "question_group_id"
+  );
+  const questionTranslationMap = toLocaleMap(
+    questionTranslations ?? [],
+    "question_id"
+  );
+
+  const groupsWithTranslations = groups.map((group: any) => ({
+    ...group,
+    translation: groupTranslationMap[group.id] ?? {},
+  }));
+
   // ==========================================================
   // QUESTION RULES
   //
@@ -394,6 +476,7 @@ export default async function ClosingKitchenPage() {
   const questionsWithRules =
     questions.map((question: any) => ({
       ...question,
+      translations: questionTranslationMap[question.id] ?? {},
       rules:
         rulesByQuestion.get(
           question.id
@@ -407,7 +490,8 @@ export default async function ClosingKitchenPage() {
   return (
     <ClosingKitchenClient
       outlet={outlet}
-      groups={groups}
+      sectionTranslation={sectionTranslation}
+      groups={groupsWithTranslations}
       questions={questionsWithRules}
     />
   );

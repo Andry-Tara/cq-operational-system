@@ -50,7 +50,7 @@ type Question = {
   max_value: number | null;
   sort_order: number;
   config: Record<string, any> | null;
-  translation?: Partial<Record<AppLocale, {
+  translations?: Partial<Record<AppLocale, {
     question_text?: string | null;
     help_text?: string | null;
   }>>;
@@ -276,7 +276,7 @@ export default function OperationClient({
       question.question_text,
       Object.fromEntries(
         Object.entries(
-          question.translation ?? {}
+          question.translations ?? {}
         ).map(
           ([locale, translation]) => [
             locale,
@@ -295,7 +295,7 @@ export default function OperationClient({
       question.help_text,
       Object.fromEntries(
         Object.entries(
-          question.translation ?? {}
+          question.translations ?? {}
         ).map(
           ([locale, translation]) => [
             locale,
