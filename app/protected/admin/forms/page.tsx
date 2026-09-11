@@ -1,6 +1,7 @@
 
 import { requirePermission } from "@/lib/admin/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
+import CreateDraftButton from "@/components/admin/forms/create-draft-button";
 
 export default async function FormsAdminPage() {
   const {
@@ -177,6 +178,33 @@ export default async function FormsAdminPage() {
                       outletCount
                     )}
                   />
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {formVersions.map(
+                    (version: any) => (
+                      <div
+                        key={version.id}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-neutral-100 bg-neutral-50 px-3 py-2"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-neutral-800">
+                            v{version.version_number}
+                          </span>
+                          <span className="text-[10px] font-black uppercase tracking-wide text-neutral-400">
+                            {version.status}
+                          </span>
+                        </div>
+
+                        {version.status ===
+                          "published" && (
+                          <CreateDraftButton
+                            formVersionId={version.id}
+                          />
+                        )}
+                      </div>
+                    )
+                  )}
                 </div>
 
                 <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
