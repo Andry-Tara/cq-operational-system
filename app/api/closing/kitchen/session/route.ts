@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
 import { getActiveOutlet } from "@/lib/active-outlet";
+import {
+  resolveOperationLocale,
+} from "@/lib/localization/locale";
 export async function POST() {
   try {
     
@@ -60,6 +63,7 @@ const supabase = await createClient();
         code,
         name,
         timezone,
+        default_locale,
         organization_id
       `)
       .eq("id", activeOutlet.id)
@@ -312,7 +316,8 @@ const supabase = await createClient();
         reopened_at,
         reopen_reason,
         reopen_question_ids,
-        resubmitted_at
+        resubmitted_at,
+        locale_snapshot
       `)
       .eq("outlet_id", outlet.id)
       .eq("form_id", form.id)
@@ -419,6 +424,16 @@ const supabase = await createClient();
 
           started_by:
             user.id,
+
+          locale_snapshot:
+            resolveOperationLocale({
+              reportLocaleSnapshot:
+                null,
+              outletDefaultLocale:
+                outlet.default_locale,
+              hasExistingReport:
+                false,
+            }),
         })
         .select(`
           id,
@@ -428,7 +443,8 @@ const supabase = await createClient();
           reopened_at,
           reopen_reason,
           reopen_question_ids,
-          resubmitted_at
+          resubmitted_at,
+          locale_snapshot
         `)
         .single();
 
@@ -776,6 +792,14 @@ const supabase = await createClient();
 
       reportId:
         report.id,
+
+      locale: resolveOperationLocale({
+        reportLocaleSnapshot:
+          report.locale_snapshot,
+        outletDefaultLocale:
+          outlet.default_locale,
+        hasExistingReport: true,
+      }),
 
       reportNumber:
         report.report_number,

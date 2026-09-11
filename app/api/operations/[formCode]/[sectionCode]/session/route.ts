@@ -21,6 +21,9 @@ import {
 import {
   loadOperationDefinition,
 } from "@/lib/operations/load-operation";
+import {
+  resolveOperationLocale,
+} from "@/lib/localization/locale";
 
 type RouteContext = {
   params: Promise<{
@@ -171,6 +174,7 @@ export async function POST(
         code,
         name,
         timezone,
+        default_locale,
         organization_id
       `)
       .eq(
@@ -522,7 +526,8 @@ export async function POST(
           reopen_question_ids,
           resubmitted_at,
           business_date,
-          form_version_id
+          form_version_id,
+          locale_snapshot
         `)
         .eq(
           "outlet_id",
@@ -1168,6 +1173,15 @@ export async function POST(
             "in_progress",
           started_by:
             user.id,
+          locale_snapshot:
+            resolveOperationLocale({
+              reportLocaleSnapshot:
+                null,
+              outletDefaultLocale:
+                outlet.default_locale,
+              hasExistingReport:
+                false,
+            }),
         })
         .select(`
           id,
@@ -1179,7 +1193,8 @@ export async function POST(
           reopen_question_ids,
           resubmitted_at,
           business_date,
-          form_version_id
+          form_version_id,
+          locale_snapshot
         `)
         .single();
 
@@ -2268,6 +2283,14 @@ export async function POST(
 
       reportId:
         report.id,
+
+      locale: resolveOperationLocale({
+        reportLocaleSnapshot:
+          report.locale_snapshot,
+        outletDefaultLocale:
+          outlet.default_locale,
+        hasExistingReport: true,
+      }),
 
       reportNumber:
         report.report_number,
