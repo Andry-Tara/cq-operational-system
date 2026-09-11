@@ -31,6 +31,10 @@ type Group = {
   name: string;
   description: string | null;
   sort_order: number;
+  translation?: {
+    display_name?: string | null;
+    description?: string | null;
+  } | null;
 };
 
 type Question = {
@@ -275,6 +279,26 @@ export default function OperationClient({
       displayLocale,
       question.help_text,
       question.translation?.help_text
+    );
+  }
+
+  function groupName(
+    group: Group
+  ) {
+    return resolveLocalizedText(
+      displayLocale,
+      group.name,
+      group.translation?.display_name
+    );
+  }
+
+  function groupDescription(
+    group: Group
+  ) {
+    return resolveLocalizedText(
+      displayLocale,
+      group.description,
+      group.translation?.description
     );
   }
 
@@ -3805,7 +3829,7 @@ export default function OperationClient({
                     <div className="min-w-0 flex-1">
                       {group && (
                         <p className="text-[10px] font-black uppercase tracking-[0.13em] text-neutral-400">
-                          {group.name}
+                          {groupName(group)}
                         </p>
                       )}
 
@@ -4584,14 +4608,12 @@ export default function OperationClient({
 
                   <div>
                     <h2 className="text-xl font-black leading-tight tracking-tight text-neutral-950 sm:text-2xl">
-                      {group.name}
+                      {groupName(group)}
                     </h2>
 
-                    {group.description && (
+                    {groupDescription(group) && (
                       <p className="mt-1.5 text-sm font-medium leading-5 text-neutral-700">
-                        {
-                          group.description
-                        }
+                        {groupDescription(group)}
                       </p>
                     )}
                   </div>

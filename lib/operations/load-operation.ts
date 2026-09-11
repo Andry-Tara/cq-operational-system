@@ -235,6 +235,64 @@ export async function loadOperationDefinition({
   const groups =
     groupsData ?? [];
 
+  const groupIds =
+    groups.map(
+      (group: any) =>
+        group.id
+    );
+
+  let groupTranslations: any[] = [];
+
+  if (groupIds.length) {
+    const {
+      data,
+      error,
+    } = await supabase
+      .from("question_group_translations")
+      .select(`
+        question_group_id,
+        locale,
+        display_name,
+        description
+      `)
+      .in(
+        "question_group_id",
+        groupIds
+      )
+      .eq("locale", "id-ID");
+
+    if (error) {
+      throw error;
+    }
+
+    groupTranslations =
+      data ?? [];
+  }
+
+  const groupTranslationsById =
+    new Map<string, any>();
+
+  for (
+    const translation of
+    groupTranslations
+  ) {
+    groupTranslationsById.set(
+      translation.question_group_id,
+      translation
+    );
+  }
+
+  const groupsWithTranslations =
+    groups.map(
+      (group: any) => ({
+        ...group,
+        translation:
+          groupTranslationsById.get(
+            group.id
+          ) ?? null,
+      })
+    );
+
   // ==========================================================
   // QUESTIONS
   // ==========================================================
@@ -424,7 +482,8 @@ export async function loadOperationDefinition({
       translation:
         sectionTranslation ?? null,
     },
-    groups,
+    groups:
+      groupsWithTranslations,
     questions:
       questionsWithRules,
   };
