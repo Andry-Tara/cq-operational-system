@@ -11,6 +11,7 @@ type LoadOperationArgs = {
   outletId: string;
   formCode: string;
   sectionCode: string;
+  historicalReportId?: string | null;
 };
 
 export async function loadOperationDefinition({
@@ -19,6 +20,7 @@ export async function loadOperationDefinition({
   outletId,
   formCode,
   sectionCode,
+  historicalReportId,
 }: LoadOperationArgs) {
   const normalizedFormCode =
     normalizeOperationCode(formCode);
@@ -63,41 +65,69 @@ export async function loadOperationDefinition({
     );
   }
 
-  // ==========================================================
-  // OUTLET ASSIGNMENT
-  // ==========================================================
+  let assignment: any = null;
+  let pinnedHistoricalVersionId:
+    string | null = null;
 
-  const {
-    data: assignment,
-    error: assignmentError,
-  } = await supabase
-    .from("outlet_form_assignments")
-    .select(`
-      id,
-      outlet_id,
-      form_id,
-      form_version_id,
-      is_active,
-      effective_from,
-      effective_until
-    `)
-    .eq("outlet_id", outletId)
-    .eq("form_id", form.id)
-    .eq("is_active", true)
-    .order("effective_from", {
-      ascending: false,
-    })
-    .limit(1)
-    .maybeSingle();
+  if (historicalReportId) {
+    const {
+      data: historicalReport,
+      error: historicalReportError,
+    } = await supabase
+      .from("reports")
+      .select("form_version_id")
+      .eq("id", historicalReportId)
+      .eq("outlet_id", outletId)
+      .eq("form_id", form.id)
+      .maybeSingle();
 
-  if (assignmentError) {
-    throw assignmentError;
-  }
+    if (historicalReportError) {
+      throw historicalReportError;
+    }
 
-  if (!assignment) {
-    throw new Error(
-      `${form.name} belum diaktifkan untuk outlet ini.`
-    );
+    pinnedHistoricalVersionId =
+      historicalReport?.form_version_id ?? null;
+
+    if (!pinnedHistoricalVersionId) {
+      throw new Error(
+        `${form.name} historical report version tidak ditemukan.`
+      );
+    }
+  } else {
+    const {
+      data: currentAssignment,
+      error: assignmentError,
+    } = await supabase
+      .from("outlet_form_assignments")
+      .select(`
+        id,
+        outlet_id,
+        form_id,
+        form_version_id,
+        is_active,
+        effective_from,
+        effective_until
+      `)
+      .eq("outlet_id", outletId)
+      .eq("form_id", form.id)
+      .eq("is_active", true)
+      .order("effective_from", {
+        ascending: false,
+      })
+      .limit(1)
+      .maybeSingle();
+
+    if (assignmentError) {
+      throw assignmentError;
+    }
+
+    if (!currentAssignment) {
+      throw new Error(
+        `${form.name} belum diaktifkan untuk outlet ini.`
+      );
+    }
+
+    assignment = currentAssignment;
   }
 
   // ==========================================================
@@ -117,7 +147,8 @@ export async function loadOperationDefinition({
     `)
     .eq(
       "id",
-      assignment.form_version_id
+      pinnedHistoricalVersionId ||
+        assignment.form_version_id
     )
     .maybeSingle();
 
@@ -128,6 +159,15 @@ export async function loadOperationDefinition({
   if (!formVersion) {
     throw new Error(
       `${form.name} form version tidak ditemukan.`
+    );
+  }
+
+  if (
+    !pinnedHistoricalVersionId &&
+    formVersion.status !== "published"
+  ) {
+    throw new Error(
+      `${form.name} belum memiliki versi operasional yang tersedia.`
     );
   }
 

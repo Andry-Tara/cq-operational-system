@@ -236,6 +236,61 @@ export async function POST(
       );
     }
 
+    let existingDailyReportId:
+      string | null = requestedReportId || null;
+
+    if (!existingDailyReportId) {
+      const {
+        data: resolutionForm,
+        error: resolutionFormError,
+      } = await supabase
+        .from("forms")
+        .select("id")
+        .eq(
+          "organization_id",
+          outlet.organization_id
+        )
+        .eq("code", config.formCode)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (resolutionFormError || !resolutionForm) {
+        throw resolutionFormError ||
+          new Error("Operational form belum tersedia.");
+      }
+
+      const preloadedBusinessDate =
+        new Intl.DateTimeFormat(
+          "en-CA",
+          {
+            timeZone:
+              outlet.timezone ||
+              "Asia/Jakarta",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }
+        ).format(new Date());
+
+      const {
+        data: existingDailyReport,
+        error: existingDailyReportError,
+      } = await supabase
+        .from("reports")
+        .select("id")
+        .eq("outlet_id", outlet.id)
+        .eq("form_id", resolutionForm.id)
+        .eq("business_date", preloadedBusinessDate)
+        .maybeSingle();
+
+      if (existingDailyReportError) {
+        throw existingDailyReportError;
+      }
+
+      existingDailyReportId =
+        existingDailyReport?.id ?? null;
+    }
+
     // ========================================================
     // OPERATION DEFINITION
     // ========================================================
@@ -251,6 +306,8 @@ export async function POST(
           config.formCode,
         sectionCode:
           normalizedSectionCode,
+        historicalReportId:
+          existingDailyReportId,
       });
 
     const {

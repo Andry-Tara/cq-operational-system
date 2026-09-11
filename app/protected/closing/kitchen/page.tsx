@@ -109,49 +109,72 @@ export default async function ClosingKitchenPage() {
     );
   }
 
-  // ==========================================================
-  // OUTLET FORM ASSIGNMENT
-  //
-  // Each outlet can have its own active form version.
-  // ==========================================================
+  const businessDate = new Intl.DateTimeFormat(
+    "en-CA",
+    {
+      timeZone: outlet.timezone || "Asia/Jakarta",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }
+  ).format(new Date());
 
   const {
-    data: assignment,
-    error: assignmentError,
+    data: existingReport,
+    error: existingReportError,
   } = await supabase
-    .from("outlet_form_assignments")
-    .select(`
-      id,
-      outlet_id,
-      form_id,
-      form_version_id,
-      is_active,
-      effective_from
-    `)
+    .from("reports")
+    .select("form_version_id")
     .eq("outlet_id", outlet.id)
     .eq("form_id", form.id)
-    .eq("is_active", true)
-    .order("effective_from", {
-      ascending: false,
-    })
-    .limit(1)
+    .eq("business_date", businessDate)
     .maybeSingle();
 
-  if (assignmentError) {
+  if (existingReportError) {
     return (
       <ErrorState
-        message={`Unable to load Closing assignment: ${assignmentError.message}`}
+        message={`Unable to load Closing report: ${existingReportError.message}`}
       />
     );
   }
 
-  if (!assignment) {
-    return (
-      <ErrorState
-        message={`Closing belum diaktifkan untuk ${outlet.name}.`}
-        showChangeOutlet
-      />
-    );
+  let assignedFormVersionId =
+    existingReport?.form_version_id ?? null;
+
+  if (!assignedFormVersionId) {
+    const {
+      data: assignment,
+      error: assignmentError,
+    } = await supabase
+      .from("outlet_form_assignments")
+      .select("form_version_id")
+      .eq("outlet_id", outlet.id)
+      .eq("form_id", form.id)
+      .eq("is_active", true)
+      .order("effective_from", {
+        ascending: false,
+      })
+      .limit(1)
+      .maybeSingle();
+
+    if (assignmentError) {
+      return (
+        <ErrorState
+          message={`Unable to load Closing assignment: ${assignmentError.message}`}
+        />
+      );
+    }
+
+    if (!assignment) {
+      return (
+        <ErrorState
+          message={`Closing belum diaktifkan untuk ${outlet.name}.`}
+          showChangeOutlet
+        />
+      );
+    }
+
+    assignedFormVersionId = assignment.form_version_id;
   }
 
   // ==========================================================
@@ -171,7 +194,7 @@ export default async function ClosingKitchenPage() {
     `)
     .eq(
       "id",
-      assignment.form_version_id
+      assignedFormVersionId
     )
     .maybeSingle();
 
@@ -186,6 +209,12 @@ export default async function ClosingKitchenPage() {
   if (!formVersion) {
     return (
       <ErrorState message="Closing form version tidak ditemukan." />
+    );
+  }
+
+  if (!existingReport && formVersion.status !== "published") {
+    return (
+      <ErrorState message="Closing form belum memiliki versi operasional yang tersedia." />
     );
   }
 

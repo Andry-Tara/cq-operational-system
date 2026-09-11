@@ -263,6 +263,7 @@ export default async function OperationPage({
 
         sectionCode:
           normalizedSectionCode,
+        historicalReportId,
       });
 
 

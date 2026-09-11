@@ -191,29 +191,101 @@ const supabase = await createClient();
     // ACTIVE VERSION FOR SELECTED OUTLET
     // ========================================================
 
+    const timezone =
+      outlet.timezone ||
+      "Asia/Jakarta";
+
+    const businessDate =
+      new Intl.DateTimeFormat(
+        "en-CA",
+        {
+          timeZone: timezone,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }
+      ).format(new Date());
+
     const {
-      data: assignment,
-      error: assignmentError,
+      data: todaysReport,
+      error: todaysReportError,
     } = await supabase
-      .from("outlet_form_assignments")
+      .from("reports")
       .select(`
         id,
+        report_number,
+        status,
+        pdf_storage_path,
+        reopened_at,
+        reopen_reason,
+        reopen_question_ids,
+        resubmitted_at,
+        locale_snapshot,
         form_version_id
       `)
       .eq("outlet_id", outlet.id)
       .eq("form_id", form.id)
-      .eq("is_active", true)
-      .order("effective_from", {
-        ascending: false,
-      })
-      .limit(1)
+      .eq("business_date", businessDate)
       .maybeSingle();
 
-    if (assignmentError || !assignment) {
-      throw new Error(
-        assignmentError?.message ||
-          `Closing form belum diaktifkan untuk ${outlet.name}`
-      );
+    if (todaysReportError) {
+      throw todaysReportError;
+    }
+
+    let resolvedFormVersionId: string;
+
+    if (todaysReport) {
+      if (!todaysReport.form_version_id) {
+        throw new Error(
+          "Closing report form version tidak ditemukan."
+        );
+      }
+
+      resolvedFormVersionId =
+        todaysReport.form_version_id;
+    } else {
+      const {
+        data: currentAssignment,
+        error: assignmentError,
+      } = await supabase
+        .from("outlet_form_assignments")
+        .select(`
+          id,
+          form_version_id
+        `)
+        .eq("outlet_id", outlet.id)
+        .eq("form_id", form.id)
+        .eq("is_active", true)
+        .order("effective_from", {
+          ascending: false,
+        })
+        .limit(1)
+        .maybeSingle();
+
+      if (assignmentError || !currentAssignment) {
+        throw new Error(
+          assignmentError?.message ||
+            `Closing form belum diaktifkan untuk ${outlet.name}`
+        );
+      }
+
+      resolvedFormVersionId =
+        currentAssignment.form_version_id;
+
+      const {
+        data: assignedVersion,
+        error: assignedVersionError,
+      } = await supabase
+        .from("form_versions")
+        .select("status")
+        .eq("id", currentAssignment.form_version_id)
+        .maybeSingle();
+
+      if (assignedVersionError || assignedVersion?.status !== "published") {
+        throw new Error(
+          "Closing form belum memiliki versi operasional yang tersedia."
+        );
+      }
     }
 
     // ========================================================
@@ -254,7 +326,7 @@ const supabase = await createClient();
       .select("id")
       .eq(
         "form_version_id",
-        assignment.form_version_id
+        resolvedFormVersionId
       )
       .eq("section_id", section.id)
       .eq("is_active", true)
@@ -279,21 +351,6 @@ const supabase = await createClient();
     // Bali:          Asia/Makassar
     // ========================================================
 
-    const timezone =
-      outlet.timezone ||
-      "Asia/Jakarta";
-
-    const businessDate =
-      new Intl.DateTimeFormat(
-        "en-CA",
-        {
-          timeZone: timezone,
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-        }
-      ).format(new Date());
-
     // ========================================================
     // DAILY REPORT
     //
@@ -302,34 +359,6 @@ const supabase = await createClient();
     // outlet_id + form_id + business_date
     // = maximum 1 report
     // ========================================================
-
-    const {
-      data: todaysReport,
-      error: todaysReportError,
-    } = await supabase
-      .from("reports")
-      .select(`
-        id,
-        report_number,
-        status,
-        pdf_storage_path,
-        reopened_at,
-        reopen_reason,
-        reopen_question_ids,
-        resubmitted_at,
-        locale_snapshot
-      `)
-      .eq("outlet_id", outlet.id)
-      .eq("form_id", form.id)
-      .eq(
-        "business_date",
-        businessDate
-      )
-      .maybeSingle();
-
-    if (todaysReportError) {
-      throw todaysReportError;
-    }
 
     // ========================================================
     // COMPLETED REPORT
@@ -414,7 +443,7 @@ const supabase = await createClient();
             form.id,
 
           form_version_id:
-            assignment.form_version_id,
+            resolvedFormVersionId,
 
           business_date:
             businessDate,
@@ -444,7 +473,8 @@ const supabase = await createClient();
           reopen_reason,
           reopen_question_ids,
           resubmitted_at,
-          locale_snapshot
+          locale_snapshot,
+          form_version_id
         `)
         .single();
 
