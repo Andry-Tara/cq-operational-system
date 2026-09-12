@@ -2,6 +2,7 @@
 import { requirePermission } from "@/lib/admin/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import CreateDraftButton from "@/components/admin/forms/create-draft-button";
+import PublishVersionButton from "@/components/admin/forms/publish-version-button";
 import Link from "next/link";
 
 export default async function FormsAdminPage() {
@@ -206,12 +207,17 @@ export default async function FormsAdminPage() {
 
                         {version.status ===
                           "draft" && (
-                          <Link
-                            href={`/protected/admin/forms/${version.id}/builder`}
-                            className="text-xs font-semibold text-red-700 underline"
-                          >
-                            Open Builder
-                          </Link>
+                          <div className="flex items-center gap-3">
+                            <Link
+                              href={`/protected/admin/forms/${version.id}/builder`}
+                              className="text-xs font-semibold text-red-700 underline"
+                            >
+                              Open Builder
+                            </Link>
+                            <PublishVersionButton
+                              formVersionId={version.id}
+                            />
+                          </div>
                         )}
                       </div>
                     )
