@@ -3,9 +3,14 @@ import { requirePermission } from "@/lib/admin/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import CreateDraftButton from "@/components/admin/forms/create-draft-button";
 import PublishVersionButton from "@/components/admin/forms/publish-version-button";
+import ActivateVersionButton from "@/components/admin/forms/activate-version-button";
 import Link from "next/link";
 
-export default async function FormsAdminPage() {
+export default async function FormsAdminPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ q?: string }>;
+}) {
   const {
     profile,
   } =
@@ -24,6 +29,7 @@ export default async function FormsAdminPage() {
         code,
         name,
         description,
+        operational_scope,
         is_active
       `)
       .eq(
@@ -32,8 +38,16 @@ export default async function FormsAdminPage() {
       )
       .order("name");
 
+  const formSearch = (await searchParams)?.q?.trim().toLowerCase() ?? "";
+  const visibleForms = (forms ?? []).filter((form: any) => {
+    if (!formSearch) return true;
+    return [form.name, form.code, form.description]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(formSearch));
+  });
+
   const formIds =
-    (forms ?? []).map(
+    visibleForms.map(
       (form) => form.id
     );
 
@@ -74,7 +88,8 @@ export default async function FormsAdminPage() {
           )
           .select(`
             form_id,
-            outlet_id
+            outlet_id,
+            form_version_id
           `)
           .in(
             "form_id",
@@ -85,6 +100,16 @@ export default async function FormsAdminPage() {
             true
           )
       : { data: [] as any[] };
+
+  const {
+    data: outlets,
+  } =
+    await admin
+      .from("outlets")
+      .select("id, code, name, operational_scope")
+      .eq("organization_id", profile.organization_id)
+      .eq("is_active", true)
+      .order("name");
 
   return (
     <main className="mx-auto max-w-[1180px] px-5 py-8 md:px-8 md:py-12">
@@ -103,7 +128,19 @@ export default async function FormsAdminPage() {
       </div>
 
       <div className="mt-8 grid gap-4 md:grid-cols-2">
-        {(forms ?? []).map(
+        <form method="get" className="md:col-span-2">
+          <label className="sr-only" htmlFor="form-search">
+            Search forms
+          </label>
+          <input
+            id="form-search"
+            name="q"
+            defaultValue={formSearch}
+            placeholder="Search forms..."
+            className="min-h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-900 shadow-sm outline-none focus:border-neutral-500 focus:ring-1 focus:ring-neutral-500"
+          />
+        </form>
+        {visibleForms.map(
           (form: any) => {
             const formVersions =
               (versions ?? [])
@@ -200,9 +237,64 @@ export default async function FormsAdminPage() {
 
                         {version.status ===
                           "published" && (
-                          <CreateDraftButton
-                            formVersionId={version.id}
-                          />
+                          <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-semibold text-neutral-500">
+                              Active {(
+                                (assignments ?? []).filter(
+                                  (row: any) =>
+                                    row.form_id === form.id &&
+                                    row.form_version_id === version.id,
+                                ).length
+                              )} / {(outlets ?? []).filter(
+                                (outlet: any) =>
+                                  outlet.operational_scope ===
+                                  form.operational_scope,
+                              ).length} outlets
+                            </span>
+                            <CreateDraftButton
+                              formVersionId={version.id}
+                            />
+                            <ActivateVersionButton
+                              formName={form.name}
+                              formVersionId={version.id}
+                              versionNumber={version.version_number}
+                              outlets={(outlets ?? [])
+                                .filter(
+                                  (outlet: any) =>
+                                    outlet.operational_scope ===
+                                    form.operational_scope,
+                                )
+                                .map((outlet: any) => {
+                                const assignment = (assignments ?? []).find(
+                                  (row: any) =>
+                                    row.outlet_id === outlet.id &&
+                                    row.form_id === form.id,
+                                );
+
+                                const activeVersion = (versions ?? []).find(
+                                  (candidate: any) =>
+                                    candidate.id === assignment?.form_version_id,
+                                );
+
+                                return {
+                                  id: outlet.id,
+                                  code: outlet.code,
+                                  name: outlet.name,
+                                  currentVersionNumber:
+                                    activeVersion?.version_number ?? null,
+                                  isSelectedVersionActive:
+                                    assignment?.form_version_id === version.id,
+                                };
+                                })}
+                              activeOutletCount={
+                                (assignments ?? []).filter(
+                                  (row: any) =>
+                                    row.form_id === form.id &&
+                                    row.form_version_id === version.id,
+                                ).length
+                              }
+                            />
+                          </div>
                         )}
 
                         {version.status ===
