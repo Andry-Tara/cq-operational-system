@@ -387,6 +387,54 @@ export default function OperationClient({
   const [sessionData, setSessionData] =
     useState<any>(null);
 
+  const [applicabilityReason, setApplicabilityReason] = useState("");
+  const [applicabilitySaving, setApplicabilitySaving] = useState(false);
+
+  const isCkProductionSection =
+    operation.formCode === "CLOSING_CK" &&
+    [
+      "BEVERAGE",
+      "BUTCHER",
+      "STEWARD",
+      "PREMIX",
+      "COLD_KITCHEN",
+      "HOT_KITCHEN",
+      "HDS",
+    ].includes(operation.sectionCode.toUpperCase());
+
+  async function setApplicability(status: "active" | "no_production", requestedReason?: string) {
+    if (!sessionData?.reportId || !sessionData?.versionSectionId) return;
+    const reason = requestedReason ?? applicabilityReason;
+    if (status === "no_production" && !reason.trim()) {
+      setErrorMessage("A reason is required for No Production Today.");
+      return;
+    }
+    setApplicabilitySaving(true);
+    try {
+      const response = await fetch("/api/closing/kitchen/applicability", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reportId: sessionData.reportId,
+          versionSectionId: sessionData.versionSectionId,
+          status,
+          reason: status === "no_production" ? reason : null,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Unable to update applicability.");
+      setSessionData((current: any) => ({
+        ...current,
+        applicabilityStatus: status,
+        noProductionReason: status === "no_production" ? reason.trim() : null,
+      }));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to update applicability.");
+    } finally {
+      setApplicabilitySaving(false);
+    }
+  }
+
   // ==========================================================
   // PIC QUESTION APPLICABILITY
   //
@@ -4452,6 +4500,36 @@ export default function OperationClient({
 
   return (
     <>
+      {isCkProductionSection && sessionData?.reportBusinessDate && (
+        <section className="mt-6 rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-sm text-sky-900">
+          <p className="font-bold">Previous Closing Still Open</p>
+          <p className="mt-1">Business Date: {sessionData.reportBusinessDate}</p>
+        </section>
+      )}
+
+      {isCkProductionSection && sessionData?.reportSectionId && (
+        <section className="mt-6 rounded-2xl border border-neutral-200 bg-white px-5 py-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">Production today?</p>
+              {sessionData.applicabilityStatus === "no_production" && <p className="mt-2 text-sm font-semibold text-amber-800">NO PRODUCTION TODAY</p>}
+              {sessionData.noProductionReason && <p className="mt-1 text-sm text-neutral-700">Reason: {sessionData.noProductionReason}</p>}
+            </div>
+            <div className="flex gap-2">
+              <button type="button" disabled={applicabilitySaving} onClick={() => setApplicability("active")} className="rounded-lg border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-700">Operating Today</button>
+              <button type="button" disabled={applicabilitySaving} onClick={() => { const reason = window.prompt("Reason for No Production Today"); if (reason !== null) void setApplicability("no_production", reason); }} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">No Production Today</button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {isCkProductionSection && sessionData?.applicabilityStatus === "no_production" && (
+        <section className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+          Normal question entry is disabled for this section while it is marked no production. Existing answers and evidence are preserved.
+          <div className="mt-3"><button type="button" onClick={() => setApplicability("active")} disabled={applicabilitySaving} className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-800">Restore Operating Today</button></div>
+        </section>
+      )}
+
       <div className="mt-6 flex justify-end">
         <div className="inline-flex rounded-xl border border-neutral-200 bg-white p-1 shadow-sm">
           {([
@@ -4627,7 +4705,7 @@ export default function OperationClient({
         </div>
       )}
 
-      <div className="mt-4 space-y-6 sm:mt-8 sm:space-y-8">
+      <div className={`mt-4 space-y-6 sm:mt-8 sm:space-y-8 ${isCkProductionSection && sessionData?.applicabilityStatus === "no_production" ? "pointer-events-none select-none opacity-45" : ""}`}>
         {groups.map(
           (
             group,

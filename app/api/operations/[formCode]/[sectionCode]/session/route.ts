@@ -431,23 +431,6 @@ export async function POST(
     }
 
     if (
-      historicalReviewRequested &&
-      !exactAreaLeader
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Historical section review hanya dapat dibuka oleh Area Leader yang ditugaskan.",
-          code:
-            "HISTORICAL_REVIEW_FORBIDDEN",
-        },
-        {
-          status: 403,
-        }
-      );
-    }
-
-    if (
       canStartOperationalReport !== true &&
       !exactAreaLeader
     ) {
@@ -642,31 +625,6 @@ export async function POST(
       historicalReviewRequested &&
       todaysReport
     ) {
-      if (
-        String(
-          todaysReport
-            .form_version_id ||
-          ""
-        ) !==
-        String(
-          assignment
-            .form_version_id ||
-          ""
-        )
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "Versi historical report berbeda dengan versi form aktif. Review diblokir untuk mencegah mismatch pertanyaan.",
-            code:
-              "HISTORICAL_VERSION_MISMATCH",
-          },
-          {
-            status: 409,
-          }
-        );
-      }
-
       businessDate =
         String(
           todaysReport
@@ -1306,6 +1264,7 @@ export async function POST(
         "draft",
         "in_progress",
         "reopened",
+        "needs_correction",
       ].includes(
         reportStatus
       )
@@ -1343,7 +1302,11 @@ export async function POST(
         correction_requested_at,
         correction_reason,
         correction_question_ids,
-        correction_round`)
+        correction_round,
+        applicability_status,
+        no_production_reason,
+        no_production_marked_by,
+        no_production_marked_at`)
       .eq(
         "report_id",
         report.id
@@ -1367,56 +1330,6 @@ export async function POST(
       Boolean(
         existingSection
       );
-
-    if (
-      historicalReviewRequested
-    ) {
-      if (!reportSection) {
-        return NextResponse.json(
-          {
-            error:
-              "Section tidak ditemukan pada historical report ini.",
-            code:
-              "HISTORICAL_SECTION_NOT_FOUND",
-          },
-          {
-            status: 404,
-          }
-        );
-      }
-
-      const historicalSectionStatus =
-        String(
-          reportSection.status ||
-          ""
-        )
-          .trim()
-          .toLowerCase();
-
-      if (
-        ![
-          "submitted",
-          "reviewed",
-        ].includes(
-          historicalSectionStatus
-        )
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "Historical section belum berada pada status yang dapat direview.",
-            code:
-              "HISTORICAL_SECTION_NOT_REVIEWABLE",
-            sectionStatus:
-              historicalSectionStatus,
-          },
-          {
-            status: 409,
-          }
-        );
-      }
-    }
-
 
     // ========================================================
     // CK AREA LEADER REVIEW MODE
@@ -1558,6 +1471,31 @@ export async function POST(
       );
     }
 
+    if (
+      historicalReviewRequested &&
+      config.formCode === "CLOSING_CK" &&
+      ["PRODUCTION", "STORE"].includes(sectionAreaCode)
+    ) {
+      const finalizedAreaCode =
+        sectionAreaCode === "STORE" ? "WAREHOUSE" : "PRODUCTION";
+      const { data: finalizedArea } = await supabase
+        .from("report_area_finalizations")
+        .select("id")
+        .eq("report_id", report.id)
+        .eq("area_code", finalizedAreaCode)
+        .maybeSingle();
+
+      if (finalizedArea) {
+        return NextResponse.json(
+          {
+            error: "This Closing area is already finalized.",
+            code: "AREA_ALREADY_FINALIZED",
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     if (!reportSection) {
       if (
         !applicabilityPreflight
@@ -1610,6 +1548,10 @@ export async function POST(
           correction_reason,
           correction_question_ids,
           correction_round
+          ,applicability_status
+          ,no_production_reason
+          ,no_production_marked_by
+          ,no_production_marked_at
         `)
         .single();
 
@@ -2361,6 +2303,19 @@ export async function POST(
       reportSectionStatus:
         reportSection.status,
 
+      versionSectionId:
+        versionSection.id,
+      reportBusinessDate:
+        report.business_date,
+      applicabilityStatus:
+        reportSection.applicability_status ?? "active",
+      noProductionReason:
+        reportSection.no_production_reason ?? null,
+      noProductionMarkedBy:
+        reportSection.no_production_marked_by ?? null,
+      noProductionMarkedAt:
+        reportSection.no_production_marked_at ?? null,
+
       applicability: {
         enabled:
           applicabilityEnabled,
@@ -2461,7 +2416,7 @@ export async function POST(
       },
 
 
-      businessDate,
+      businessDate: report.business_date,
       timezone,
 
       isReopened:

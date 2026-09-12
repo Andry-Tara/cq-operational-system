@@ -128,7 +128,11 @@ const PRODUCTION_SECTION_CODES =
   ]);
 
 
-export default async function CentralKitchenPage() {
+export default async function CentralKitchenPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ reportId?: string }>;
+}) {
   const {
     user,
     profile,
@@ -218,6 +222,25 @@ export default async function CentralKitchenPage() {
     );
   }
 
+  const requestedReportId = (await searchParams)?.reportId?.trim() || null;
+  const { data: historicalReport } = requestedReportId
+    ? await supabase
+        .from("reports")
+        .select("id, form_id, form_version_id, business_date, status")
+        .eq("id", requestedReportId)
+        .eq("outlet_id", outlet.id)
+        .maybeSingle()
+    : { data: null };
+
+  if (requestedReportId && (!historicalReport || historicalReport.form_id !== activeForms.find((form: any) => form.code === "CLOSING_CK")?.id)) {
+    return (
+      <EmptyState
+        title="Central Kitchen"
+        message="Historical Closing report is not available for this outlet."
+      />
+    );
+  }
+
 
   const formIds =
     activeForms.map(
@@ -264,8 +287,19 @@ export default async function CentralKitchenPage() {
   }
 
 
-  const activeAssignments =
+  let activeAssignments =
     assignments ?? [];
+
+  if (historicalReport) {
+    activeAssignments = [
+      {
+        id: `historical-${historicalReport.id}`,
+        form_id: historicalReport.form_id,
+        form_version_id: historicalReport.form_version_id,
+        is_active: true,
+      },
+    ];
+  }
 
   if (!activeAssignments.length) {
     return (
@@ -596,8 +630,8 @@ export default async function CentralKitchenPage() {
       )
     )
     .eq(
-      "business_date",
-      today
+      historicalReport ? "id" : "business_date",
+      historicalReport ? historicalReport.id : today,
     );
 
 
@@ -698,6 +732,10 @@ export default async function CentralKitchenPage() {
           started_at,
           submitted_at,
           submitted_by,
+          applicability_status,
+          no_production_reason,
+          no_production_marked_by,
+          no_production_marked_at,
           created_by_email
         `)
         .in(
@@ -1054,6 +1092,15 @@ export default async function CentralKitchenPage() {
         normalizeStatus(
           reportSection?.status
         ),
+
+      applicabilityStatus:
+        reportSection?.applicability_status ?? "active",
+      noProductionReason:
+        reportSection?.no_production_reason ?? null,
+      noProductionMarkedBy:
+        reportSection?.no_production_marked_by ?? null,
+      noProductionMarkedAt:
+        reportSection?.no_production_marked_at ?? null,
     });
   }
 
@@ -1334,6 +1381,7 @@ export default async function CentralKitchenPage() {
           title="Opening CK"
           subtitle="Warehouse opening readiness"
           formCode="OPENING_CK"
+          reportId={requestedReportId}
           items={
             openingCards
           }
@@ -1354,6 +1402,7 @@ export default async function CentralKitchenPage() {
             items={
               warehouseLeaderCards
             }
+            reportId={requestedReportId}
             leaderName={
               profile.full_name ||
               "Warehouse Leader"
@@ -1366,6 +1415,7 @@ export default async function CentralKitchenPage() {
             items={
               productionLeaderCards
             }
+            reportId={requestedReportId}
             leaderName={
               profile.full_name ||
               "Production Leader"
@@ -1379,6 +1429,7 @@ export default async function CentralKitchenPage() {
             title="Closing CK"
             subtitle={closingSubtitle}
             formCode="CLOSING_CK"
+            reportId={requestedReportId}
             items={
               closingCards
             }
@@ -1406,9 +1457,11 @@ export default async function CentralKitchenPage() {
 
 function WarehouseLeaderPanel({
   items,
+  reportId,
   leaderName,
 }: {
   items: any[];
+  reportId?: string | null;
   leaderName: string;
 }) {
   if (!items.length) {
@@ -1520,7 +1573,7 @@ function WarehouseLeaderPanel({
                 "REVIEWED";
 
             const href =
-              `/protected/operations/CLOSING_CK/${item.section.code}`;
+              `/protected/operations/CLOSING_CK/${item.section.code}${reportId ? `?reportId=${encodeURIComponent(reportId)}` : ""}`;
 
             const assignedPic =
               (
@@ -1592,7 +1645,9 @@ function WarehouseLeaderPanel({
                         item.status
                       )}`}
                     >
-                      {item.status}
+                      {item.applicabilityStatus === "no_production"
+                        ? "NO PRODUCTION"
+                        : item.status}
                     </span>
                   </div>
 
@@ -1683,9 +1738,11 @@ function WarehouseLeaderPanel({
 
 function ProductionLeaderPanel({
   items,
+  reportId,
   leaderName,
 }: {
   items: any[];
+  reportId?: string | null;
   leaderName: string;
 }) {
   if (!items.length) {
@@ -1797,7 +1854,7 @@ function ProductionLeaderPanel({
                 "REVIEWED";
 
             const href =
-              `/protected/operations/CLOSING_CK/${item.section.code}`;
+              `/protected/operations/CLOSING_CK/${item.section.code}${reportId ? `?reportId=${encodeURIComponent(reportId)}` : ""}`;
 
             const assignedPic =
               (
@@ -1949,6 +2006,22 @@ function ProductionLeaderPanel({
           requiredCount={
             items.length
           }
+          resolvedCount={
+            items.filter(
+              (item: any) =>
+                item.status === "SUBMITTED" ||
+                item.status === "REVIEWED" ||
+                (item.applicabilityStatus === "no_production" &&
+                  item.noProductionReason &&
+                  item.noProductionMarkedBy &&
+                  item.noProductionMarkedAt),
+            ).length
+          }
+          noProductionCount={
+            items.filter(
+              (item: any) => item.applicabilityStatus === "no_production",
+            ).length
+          }
         />
       </div>
     </section>
@@ -1964,6 +2037,7 @@ function OperationGroup({
   title,
   subtitle,
   formCode,
+  reportId,
   items,
   picExport,
   isProductionLeader =
@@ -1972,6 +2046,7 @@ function OperationGroup({
   title: string;
   subtitle: string;
   formCode: string;
+  reportId?: string | null;
   items: any[];
   picExport: any | null;
   isProductionLeader?:
@@ -2164,7 +2239,7 @@ function OperationGroup({
                 "REVIEWED";
 
             const href =
-              `/protected/operations/${formCode}/${item.section.code}`;
+              `/protected/operations/${formCode}/${item.section.code}${reportId ? `?reportId=${encodeURIComponent(reportId)}` : ""}`;
 
             return (
               <div

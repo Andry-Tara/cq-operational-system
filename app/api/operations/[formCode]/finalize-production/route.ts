@@ -118,6 +118,10 @@ async function loadProductionContext({
       form_version_id,
       business_date,
       status,
+      applicability_status,
+      no_production_reason,
+      no_production_marked_by,
+      no_production_marked_at,
       completed_at
     `)
     .eq(
@@ -456,6 +460,10 @@ async function loadProductionContext({
       submitted_at,
       reviewed_by,
       reviewed_at,
+      applicability_status,
+      no_production_reason,
+      no_production_marked_by,
+      no_production_marked_at,
       created_by_email
     `)
     .eq(
@@ -1216,6 +1224,15 @@ async function loadProductionContext({
               ?.reviewed_at ??
             null,
 
+          applicabilityStatus:
+            reportSection?.applicability_status ?? "active",
+          noProductionReason:
+            reportSection?.no_production_reason ?? null,
+          noProductionMarkedBy:
+            reportSection?.no_production_marked_by ?? null,
+          noProductionMarkedAt:
+            reportSection?.no_production_marked_at ?? null,
+
           reviewedBy:
             reportSection
               ?.reviewed_by ??
@@ -1279,11 +1296,31 @@ async function loadProductionContext({
         !item.reviewed
     );
 
+  const noProductionSections = sections.filter(
+    (item: any) =>
+      normalizeStatus(item.applicability_status) === "no_production" &&
+      Boolean(item.no_production_reason?.trim()) &&
+      Boolean(item.no_production_marked_by) &&
+      Boolean(item.no_production_marked_at),
+  );
+  const unresolvedNoProductionSections = sections.filter(
+    (item: any) =>
+      normalizeStatus(item.applicability_status) === "no_production" &&
+      !(
+        item.no_production_reason?.trim() &&
+        item.no_production_marked_by &&
+        item.no_production_marked_at
+      ),
+  );
+  const resolvedSections = sections.filter(
+    (item: any) => item.reviewed || noProductionSections.includes(item),
+  );
+
   const readyForFinalize =
     sections.length ===
       PRODUCTION_SECTION_CODES.length &&
-    reviewedSections.length ===
-      PRODUCTION_SECTION_CODES.length;
+    resolvedSections.length === PRODUCTION_SECTION_CODES.length &&
+    unresolvedNoProductionSections.length === 0;
 
 
   // ==========================================================
@@ -1339,6 +1376,12 @@ async function loadProductionContext({
 
     reviewedCount:
       reviewedSections.length,
+
+    noProductionCount:
+      noProductionSections.length,
+
+    resolvedCount:
+      resolvedSections.length,
 
     requiredCount:
       PRODUCTION_SECTION_CODES.length,

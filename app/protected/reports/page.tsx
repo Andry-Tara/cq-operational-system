@@ -977,6 +977,10 @@ export default async function ReportsPage() {
           section_id,
           version_section_id,
           status,
+          applicability_status,
+          no_production_reason,
+          no_production_marked_by,
+          no_production_marked_at,
           created_by_email
         `)
         .in(
@@ -1723,9 +1727,11 @@ export default async function ReportsPage() {
         null,
 
       question_count:
-        questionCountByVersionSection.get(
-          reportSection.version_section_id
-        ) ?? 0,
+        reportSection.applicability_status === "no_production"
+          ? 0
+          : questionCountByVersionSection.get(
+              reportSection.version_section_id
+            ) ?? 0,
 
       answer_count:
         answerCountBySection.get(
@@ -1738,10 +1744,19 @@ export default async function ReportsPage() {
         ) ?? 0,
 
       required_photo_count:
-        requiredPhotoCount,
+        reportSection.applicability_status === "no_production"
+          ? 0
+          : requiredPhotoCount,
 
       required_photo_complete_count:
-        requiredPhotoCompleteCount,
+        reportSection.applicability_status === "no_production"
+          ? 0
+          : requiredPhotoCompleteCount,
+
+      applicability_status:
+        reportSection.applicability_status ?? "active",
+      no_production_reason:
+        reportSection.no_production_reason ?? null,
     };
 
     const current =
@@ -1894,6 +1909,8 @@ export default async function ReportsPage() {
             (
               section: any
             ) =>
+              (section.applicability_status === "no_production" &&
+                Boolean(section.no_production_reason?.trim())) ||
               completedSectionStatuses.has(
                 String(
                   section.status ||

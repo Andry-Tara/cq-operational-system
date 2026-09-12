@@ -1794,6 +1794,7 @@ export async function buildClosingPdf({
   groups,
   questions,
   answers,
+  noProductionSections = [],
 }: {
   reportNumber: string;
   outletName: string;
@@ -1804,6 +1805,11 @@ export async function buildClosingPdf({
   groups: Group[];
   questions: Question[];
   answers: Record<string, Answer>;
+  noProductionSections?: {
+    name: string;
+    reason: string;
+    markedAt?: string | null;
+  }[];
 }) {
   const pdf = await PDFDocument.create();
 
@@ -1894,6 +1900,52 @@ export async function buildClosingPdf({
   });
 
   let cursorY = PAGE.height - 122;
+
+  for (const section of noProductionSections) {
+    if (cursorY < PAGE.bottom + 100) {
+      page = createDetailPage(pdf, fonts, logos, {
+        reportNumber,
+        outletName,
+        reportDate,
+      });
+      cursorY = PAGE.height - 122;
+    }
+
+    page.drawText(section.name, {
+      x: PAGE.marginX,
+      y: cursorY,
+      size: 15,
+      font: fonts.bold,
+      color: COLORS.text,
+    });
+    cursorY -= 24;
+    page.drawText("NO PRODUCTION TODAY", {
+      x: PAGE.marginX,
+      y: cursorY,
+      size: 11,
+      font: fonts.bold,
+      color: COLORS.red,
+    });
+    cursorY -= 18;
+    page.drawText(`Reason: ${section.reason}`, {
+      x: PAGE.marginX,
+      y: cursorY,
+      size: 9,
+      font: fonts.normal,
+      color: COLORS.muted,
+    });
+    cursorY -= 18;
+    if (section.markedAt) {
+      page.drawText(`Marked at: ${formatDateID(new Date(section.markedAt))}`, {
+        x: PAGE.marginX,
+        y: cursorY,
+        size: 8,
+        font: fonts.normal,
+        color: COLORS.muted,
+      });
+      cursorY -= 24;
+    }
+  }
 
   for (let i = 0; i < orderedQuestions.length; i++) {
     const question = orderedQuestions[i];

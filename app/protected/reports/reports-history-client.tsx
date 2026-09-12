@@ -53,6 +53,8 @@ type ReportSection = {
   photo_count: number;
   required_photo_count: number;
   required_photo_complete_count: number;
+  applicability_status?: string;
+  no_production_reason?: string | null;
 };
 
 
@@ -1874,6 +1876,13 @@ function ReportCard({
               status
             }
           />
+          {report?.sections.some(
+            (section) => section.applicability_status === "no_production",
+          ) && (
+            <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-black uppercase text-amber-800">
+              NO PRODUCTION
+            </span>
+          )}
         </div>
 
 
@@ -1886,6 +1895,22 @@ function ReportCard({
               <p className="break-all text-[11px] font-black text-neutral-750">
                 {report.report_number}
               </p>
+
+              {report.form_code === "CLOSING_CK" &&
+                ["in_progress", "draft", "reopened", "needs_correction"].includes(
+                  String(report.status).toLowerCase(),
+                ) && (
+                <a
+                  href={
+                    form.code === "CLOSING_CK"
+                      ? `/protected/central-kitchen?reportId=${encodeURIComponent(report.id)}`
+                      : `/protected/closing/kitchen?reportId=${encodeURIComponent(report.id)}`
+                  }
+                  className="mt-2 inline-block text-xs font-semibold text-red-700 underline"
+                >
+                  Resume Closing
+                </a>
+              )}
 
               <div className="mt-2 flex items-start gap-2">
                 <span className="mt-0.5 text-[9px] text-neutral-400">

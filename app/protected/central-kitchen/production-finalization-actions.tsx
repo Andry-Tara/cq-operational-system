@@ -75,6 +75,9 @@ type Props = {
 
   requiredCount:
     number;
+
+  resolvedCount?: number;
+  noProductionCount?: number;
 };
 
 
@@ -112,6 +115,8 @@ export default function ProductionFinalizationActions({
   submittedCount,
   reviewedCount,
   requiredCount,
+  resolvedCount = reviewedCount,
+  noProductionCount = 0,
 }: Props) {
   const router =
     useRouter();
@@ -151,7 +156,7 @@ export default function ProductionFinalizationActions({
     ) &&
     requiredCount ===
       7 &&
-    reviewedCount ===
+    resolvedCount ===
       requiredCount;
 
 
@@ -300,6 +305,12 @@ export default function ProductionFinalizationActions({
         string,
         AnswerState
       > = {};
+
+    const noProductionSections: {
+      name: string;
+      reason: string;
+      markedAt?: string | null;
+    }[] = [];
 
 
     const photoItems =
@@ -502,6 +513,18 @@ export default function ProductionFinalizationActions({
         )
           ? section.questions
           : [];
+
+      if (
+        section.applicabilityStatus === "no_production" &&
+        section.noProductionReason
+      ) {
+        noProductionSections.push({
+          name: section.displayName || section.name || section.code,
+          reason: section.noProductionReason,
+          markedAt: section.noProductionMarkedAt,
+        });
+        continue;
+      }
 
       const sectionAnswers:
         any[] =
@@ -773,6 +796,8 @@ export default function ProductionFinalizationActions({
 
         answers:
           pdfAnswers,
+
+        noProductionSections,
       });
 
 
@@ -2000,9 +2025,13 @@ export default function ProductionFinalizationActions({
           : "Finalize Production"}
       </button>
 
+      <div className="mt-2 text-center text-[11px] font-semibold text-neutral-500">
+        <p>Resolved {resolvedCount}/{requiredCount}</p>
+        <p className="mt-1">Reviewed: {reviewedCount} · No Production: {noProductionCount}</p>
+      </div>
       <p className="mt-2 text-center text-[11px] font-semibold text-neutral-400">
         {ready
-          ? "7/7 sections reviewed. Production is ready to finalize."
+          ? "All production sections are resolved. Production is ready to finalize."
           : submittedCount < requiredCount
             ? `${Math.max(
                 0,
