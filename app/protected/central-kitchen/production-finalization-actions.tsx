@@ -261,7 +261,7 @@ export default function ProductionFinalizationActions({
         ?.readyForFinalize
     ) {
       throw new Error(
-        `Production belum siap. Submitted ${data?.submittedCount ?? 0}/${data?.requiredCount ?? 7}, Reviewed ${data?.reviewedCount ?? 0}/${data?.requiredCount ?? 7}.`
+        `Production belum siap. Resolved ${data?.resolvedCount ?? 0}/${data?.requiredCount ?? 7} · Reviewed ${data?.reviewedCount ?? 0} · No Production ${data?.noProductionCount ?? 0}.`
       );
     }
 

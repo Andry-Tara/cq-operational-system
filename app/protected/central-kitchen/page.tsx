@@ -1167,6 +1167,18 @@ export default async function CentralKitchenPage({
     productionLeaderCards.length >
     0;
 
+  const genericClosingCards =
+    closingCards.filter((item: any) => {
+      const areaCode = String(item.section?.area_code || "")
+        .trim()
+        .toUpperCase();
+
+      return !(
+        (isProductionLeader && areaCode === "PRODUCTION") ||
+        (isWarehouseLeader && areaCode === "STORE")
+      );
+    });
+
 
   const canOperate =
     cards.some(
@@ -1423,24 +1435,21 @@ export default async function CentralKitchenPage({
           />
         )}
 
-        {(!isWarehouseLeader ||
-          isProductionLeader) && (
+        {genericClosingCards.length > 0 && (
           <OperationGroup
             title="Closing CK"
             subtitle={closingSubtitle}
             formCode="CLOSING_CK"
             reportId={requestedReportId}
-            items={
-              closingCards
-            }
+            items={genericClosingCards}
             isProductionLeader={
               isProductionLeader
             }
-            picExport={
-              closingCards[0]
+              picExport={
+              genericClosingCards[0]
                 ?.report?.id
                 ? picExportByReportId.get(
-                    closingCards[0]
+                    genericClosingCards[0]
                       .report.id
                   ) ??
                   null
@@ -1926,7 +1935,9 @@ function ProductionLeaderPanel({
                         item.status
                       )}`}
                     >
-                      {item.status}
+                      {item.applicabilityStatus === "no_production"
+                        ? "NO PRODUCTION"
+                        : item.status}
                     </span>
                   </div>
 

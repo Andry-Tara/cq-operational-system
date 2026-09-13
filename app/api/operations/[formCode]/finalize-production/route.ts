@@ -1279,37 +1279,38 @@ async function loadProductionContext({
         item.reviewed
     );
 
+  const isValidNoProduction = (item: any) =>
+    normalizeStatus(item.applicabilityStatus) === "no_production" &&
+    Boolean(item.noProductionReason?.trim()) &&
+    Boolean(item.noProductionMarkedBy) &&
+    Boolean(item.noProductionMarkedAt);
+
+  const noProductionSections =
+    sections.filter(isValidNoProduction);
+
+  const unresolvedNoProductionSections = sections.filter(
+    (item: any) =>
+      normalizeStatus(item.applicabilityStatus) === "no_production" &&
+      !isValidNoProduction(item),
+  );
+
   const missingSections =
     sections.filter(
-      item =>
-        !item.submitted
-    );
+      (item: any) =>
+        !item.submitted &&
+        !isValidNoProduction(item),
+  );
 
   const pendingReviewSections =
     sections.filter(
-      item =>
+      (item: any) =>
         item.submitted &&
-        !item.reviewed
-    );
+        !item.reviewed &&
+        !isValidNoProduction(item),
+  );
 
-  const noProductionSections = sections.filter(
-    (item: any) =>
-      normalizeStatus(item.applicability_status) === "no_production" &&
-      Boolean(item.no_production_reason?.trim()) &&
-      Boolean(item.no_production_marked_by) &&
-      Boolean(item.no_production_marked_at),
-  );
-  const unresolvedNoProductionSections = sections.filter(
-    (item: any) =>
-      normalizeStatus(item.applicability_status) === "no_production" &&
-      !(
-        item.no_production_reason?.trim() &&
-        item.no_production_marked_by &&
-        item.no_production_marked_at
-      ),
-  );
   const resolvedSections = sections.filter(
-    (item: any) => item.reviewed || noProductionSections.includes(item),
+    (item: any) => item.reviewed || isValidNoProduction(item),
   );
 
   const readyForFinalize =
