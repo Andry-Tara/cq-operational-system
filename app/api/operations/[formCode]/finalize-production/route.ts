@@ -118,10 +118,6 @@ async function loadProductionContext({
       form_version_id,
       business_date,
       status,
-      applicability_status,
-      no_production_reason,
-      no_production_marked_by,
-      no_production_marked_at,
       completed_at
     `)
     .eq(
