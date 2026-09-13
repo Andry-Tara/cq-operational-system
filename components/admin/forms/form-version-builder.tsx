@@ -9,8 +9,6 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 
-import { Button } from "@/components/ui/button";
-
 export type Translation = {
   locale: string;
   display_name?: string;
@@ -99,6 +97,12 @@ const initialSave: SaveResult = {
   error: "",
 };
 
+const primaryButtonClass =
+  "inline-flex min-h-10 items-center justify-center rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:opacity-60";
+
+const secondaryButtonClass =
+  "inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400/20 disabled:cursor-not-allowed disabled:opacity-60";
+
 function useSave(url: string) {
   const router = useRouter();
   const [state, setState] = useState(initialSave);
@@ -106,18 +110,12 @@ function useSave(url: string) {
   async function save(body: Record<string, unknown>) {
     if (state.saving) return;
 
-    setState({
-      saving: true,
-      message: "",
-      error: "",
-    });
+    setState({ saving: true, message: "", error: "" });
 
     try {
       const response = await fetch(url, {
         method: "PATCH",
-        headers: {
-          "content-type": "application/json",
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
 
@@ -127,21 +125,13 @@ function useSave(url: string) {
         throw new Error(result.error || "Unable to save.");
       }
 
-      setState({
-        saving: false,
-        message: "Saved",
-        error: "",
-      });
-
+      setState({ saving: false, message: "Saved", error: "" });
       router.refresh();
     } catch (error) {
       setState({
         saving: false,
         message: "",
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to save.",
+        error: error instanceof Error ? error.message : "Unable to save.",
       });
     }
   }
@@ -155,15 +145,23 @@ function useSave(url: string) {
 
 function Field({
   label,
+  hint,
+  required,
   children,
 }: {
   label: string;
+  hint?: string;
+  required?: boolean;
   children: ReactNode;
 }) {
   return (
-    <label className="grid gap-1 text-sm font-medium text-slate-700">
-      {label}
+    <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+      <span>
+        {label}
+        {required ? <span className="ml-1 text-red-600">*</span> : null}
+      </span>
       {children}
+      {hint ? <span className="text-xs font-normal text-slate-400">{hint}</span> : null}
     </label>
   );
 }
@@ -172,30 +170,59 @@ function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className="min-h-9 rounded border border-slate-300 bg-white px-2 text-sm font-normal text-slate-900 shadow-sm outline-none focus:border-slate-600 focus:ring-1 focus:ring-slate-600"
+      className={`min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-red-300 focus:ring-4 focus:ring-red-50 ${props.className ?? ""}`}
     />
   );
 }
 
-function Textarea(
-  props: TextareaHTMLAttributes<HTMLTextAreaElement>,
-) {
+function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
       {...props}
-      className="min-h-20 rounded border border-slate-300 bg-white px-2 py-1 text-sm font-normal text-slate-900 shadow-sm outline-none focus:border-slate-600 focus:ring-1 focus:ring-slate-600"
+      className={`min-h-24 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-red-300 focus:ring-4 focus:ring-red-50 ${props.className ?? ""}`}
     />
   );
 }
 
-function Select(
-  props: SelectHTMLAttributes<HTMLSelectElement>,
-) {
+function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
       {...props}
-      className="min-h-9 rounded border border-slate-300 bg-white px-2 text-sm font-normal text-slate-900 shadow-sm outline-none focus:border-slate-600 focus:ring-1 focus:ring-slate-600"
+      className={`min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal text-slate-900 shadow-sm outline-none transition focus:border-red-300 focus:ring-4 focus:ring-red-50 ${props.className ?? ""}`}
     />
+  );
+}
+
+function Toggle({
+  checked,
+  onChange,
+  label,
+  description,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  description?: string;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3">
+      <span className="relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(event) => onChange(event.target.checked)}
+          className="peer sr-only"
+        />
+        <span className="absolute inset-0 rounded-full bg-slate-200 transition peer-checked:bg-red-600" />
+        <span className="absolute left-1 h-4 w-4 rounded-full bg-white shadow transition peer-checked:translate-x-5" />
+      </span>
+      <span>
+        <span className="block text-sm font-semibold text-slate-800">{label}</span>
+        {description ? (
+          <span className="mt-0.5 block text-xs leading-5 text-slate-400">{description}</span>
+        ) : null}
+      </span>
+    </label>
   );
 }
 
@@ -203,43 +230,82 @@ function SaveBar({
   state,
   onSave,
   onRestore,
+  label = "Save changes",
 }: {
   state: SaveResult;
   onSave: () => void;
   onRestore: () => void;
+  label?: string;
 }) {
   return (
-    <div className="flex items-center gap-3">
-      <Button
+    <div className="flex flex-wrap items-center gap-3">
+      <button
         type="button"
+        className={primaryButtonClass}
         onClick={onSave}
         disabled={state.saving}
       >
-        {state.saving ? "Saving..." : "Save"}
-      </Button>
+        {state.saving ? "Saving..." : label}
+      </button>
 
-      {state.message && (
-        <span className="text-sm text-emerald-700">
-          {state.message}
-        </span>
-      )}
+      {state.message ? (
+        <span className="text-sm font-medium text-emerald-600">{state.message}</span>
+      ) : null}
 
-      {state.error && (
+      {state.error ? (
         <>
-          <span className="text-sm text-red-700">
-            {state.error}
-          </span>
-
+          <span className="text-sm font-medium text-red-600">{state.error}</span>
           <button
             type="button"
-            className="text-sm underline"
+            className="text-sm font-semibold text-slate-600 underline underline-offset-4"
             onClick={onRestore}
           >
-            Restore
+            Reset status
           </button>
         </>
-      )}
+      ) : null}
     </div>
+  );
+}
+
+function StatusPill({ active }: { active: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+        active
+          ? "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200"
+          : "bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-200"
+      }`}
+    >
+      {active ? "Active" : "Inactive"}
+    </span>
+  );
+}
+
+function questionTypeLabel(type: string) {
+  switch (type) {
+    case "yes_no":
+      return "Yes / No";
+    case "temperature":
+      return "Temperature";
+    default:
+      return type.replaceAll("_", " ");
+  }
+}
+
+function QuestionTypePill({ type }: { type: string }) {
+  const temperature = type === "temperature";
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${
+        temperature
+          ? "bg-sky-50 text-sky-700 ring-sky-200"
+          : "bg-indigo-50 text-indigo-700 ring-indigo-200"
+      }`}
+    >
+      {questionTypeLabel(type)}
+    </span>
   );
 }
 
@@ -250,34 +316,17 @@ function TranslationEditor({
   translations,
 }: {
   versionId: string;
-  resourceType:
-    | "section"
-    | "group"
-    | "question"
-    | "option";
+  resourceType: "section" | "group" | "question" | "option";
   resourceId: string;
   translations: Translation[];
 }) {
-  const [locale, setLocale] =
-    useState<"en" | "id-ID">("en");
-
-  const current = translations.find(
-    (item) => item.locale === locale,
-  );
-
-  const [values, setValues] = useState<Translation>(
-    current ?? { locale },
-  );
-
-  const save = useSave(
-    `/api/admin/form-versions/${versionId}/translations`,
-  );
+  const [locale, setLocale] = useState<"en" | "id-ID">("en");
+  const current = translations.find((item) => item.locale === locale);
+  const [values, setValues] = useState<Translation>(current ?? { locale });
+  const save = useSave(`/api/admin/form-versions/${versionId}/translations`);
 
   const set = (key: string, value: string) =>
-    setValues((old) => ({
-      ...old,
-      [key]: value,
-    }));
+    setValues((old) => ({ ...old, [key]: value }));
 
   const payload =
     resourceType === "question"
@@ -286,37 +335,35 @@ function TranslationEditor({
           helpText: values.help_text ?? null,
         }
       : resourceType === "option"
-        ? {
-            label: values.label ?? "",
-          }
+        ? { label: values.label ?? "" }
         : {
             displayName: values.display_name ?? "",
             description: values.description ?? null,
           };
 
   return (
-    <div className="mt-3 border-l-2 border-slate-200 pl-3">
-      <div className="mb-2 flex gap-1">
+    <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+      <div className="mb-4 inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
         {(
           [
-            ["en", "English (EN)"],
-            ["id-ID", "Indonesian (ID)"],
+            ["en", "EN · English"],
+            ["id-ID", "ID · Bahasa Indonesia"],
           ] as const
         ).map(([value, label]) => (
           <button
             type="button"
             key={value}
-            className={`border-b-2 px-2 py-1 text-xs font-semibold ${
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
               locale === value
-                ? "border-slate-800 text-slate-900"
-                : "border-transparent text-slate-500"
+                ? "bg-red-50 text-red-700"
+                : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
             }`}
             onClick={() => {
               setLocale(value);
               setValues(
-                translations.find(
-                  (item) => item.locale === value,
-                ) ?? { locale: value },
+                translations.find((item) => item.locale === value) ?? {
+                  locale: value,
+                },
               );
             }}
           >
@@ -326,23 +373,15 @@ function TranslationEditor({
       </div>
 
       {resourceType === "option" ? (
-        <Field label="Label">
+        <Field label="Localized label">
           <Input
             value={values.label ?? ""}
-            onChange={(event) =>
-              set("label", event.target.value)
-            }
+            onChange={(event) => set("label", event.target.value)}
           />
         </Field>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2">
-          <Field
-            label={
-              resourceType === "question"
-                ? "Question text"
-                : "Display name"
-            }
-          >
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Field label={resourceType === "question" ? "Question text" : "Display name"}>
             <Input
               value={
                 resourceType === "question"
@@ -351,22 +390,14 @@ function TranslationEditor({
               }
               onChange={(event) =>
                 set(
-                  resourceType === "question"
-                    ? "question_text"
-                    : "display_name",
+                  resourceType === "question" ? "question_text" : "display_name",
                   event.target.value,
                 )
               }
             />
           </Field>
 
-          <Field
-            label={
-              resourceType === "question"
-                ? "Help text"
-                : "Description"
-            }
-          >
+          <Field label={resourceType === "question" ? "Help text" : "Description"}>
             <Textarea
               value={
                 resourceType === "question"
@@ -375,10 +406,8 @@ function TranslationEditor({
               }
               onChange={(event) =>
                 set(
-                  resourceType === "question"
-                    ? "help_text"
-                    : "description",
-                  event.target.value || "",
+                  resourceType === "question" ? "help_text" : "description",
+                  event.target.value,
                 )
               }
             />
@@ -386,7 +415,7 @@ function TranslationEditor({
         </div>
       )}
 
-      <div className="mt-2">
+      <div className="mt-4">
         <SaveBar
           state={save.state}
           onSave={() =>
@@ -398,6 +427,7 @@ function TranslationEditor({
             })
           }
           onRestore={save.restore}
+          label="Save translation"
         />
       </div>
     </div>
@@ -438,93 +468,63 @@ function AddQuestionEditor({
   section: Section;
 }) {
   const router = useRouter();
-
   const [open, setOpen] = useState(false);
-  const [values, setValues] =
-    useState<NewQuestionValues>(createEmptyQuestion());
-
-  const [state, setState] =
-    useState<SaveResult>(initialSave);
+  const [values, setValues] = useState<NewQuestionValues>(createEmptyQuestion());
+  const [state, setState] = useState<SaveResult>(initialSave);
 
   const update = (
     key: keyof NewQuestionValues,
     value: string | boolean,
   ) => {
-    setValues((old) => ({
-      ...old,
-      [key]: value,
-    }));
-
-    if (state.error || state.message) {
-      setState(initialSave);
-    }
+    setValues((old) => ({ ...old, [key]: value }));
+    if (state.error || state.message) setState(initialSave);
   };
 
   async function addQuestion() {
     if (state.saving) return;
 
-    if (
-      !values.code.trim() ||
-      !values.questionText.trim()
-    ) {
+    if (!values.code.trim() || !values.questionText.trim()) {
       setState({
         saving: false,
         message: "",
-        error:
-          "Question code and question text are required.",
+        error: "Question code and question text are required.",
       });
       return;
     }
 
     const minValue =
-      values.questionType === "temperature" &&
-      values.minValue !== ""
+      values.questionType === "temperature" && values.minValue !== ""
         ? Number(values.minValue)
         : null;
-
     const maxValue =
-      values.questionType === "temperature" &&
-      values.maxValue !== ""
+      values.questionType === "temperature" && values.maxValue !== ""
         ? Number(values.maxValue)
         : null;
 
-    if (
-      minValue !== null &&
-      maxValue !== null &&
-      minValue > maxValue
-    ) {
+    if (minValue !== null && maxValue !== null && minValue > maxValue) {
       setState({
         saving: false,
         message: "",
-        error:
-          "Minimum value cannot be greater than maximum value.",
+        error: "Minimum value cannot be greater than maximum value.",
       });
       return;
     }
 
-    setState({
-      saving: true,
-      message: "",
-      error: "",
-    });
+    setState({ saving: true, message: "", error: "" });
 
     try {
       const response = await fetch(
         `/api/admin/form-versions/${versionId}/sections/${section.id}/questions`,
         {
           method: "POST",
-          headers: {
-            "content-type": "application/json",
-          },
+          headers: { "content-type": "application/json" },
           body: JSON.stringify({
             code: values.code.trim(),
             questionText: values.questionText.trim(),
             questionType: values.questionType,
             isRequired: values.isRequired,
-            questionGroupId:
-              values.questionGroupId || null,
-            helpText:
-              values.helpText.trim() || null,
+            questionGroupId: values.questionGroupId || null,
+            helpText: values.helpText.trim() || null,
             unit:
               values.questionType === "temperature"
                 ? values.unit.trim() || null
@@ -535,22 +535,13 @@ function AddQuestionEditor({
         },
       );
 
-      const result = await response
-        .json()
-        .catch(() => ({}));
+      const result = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(
-          result.error || "Unable to add question.",
-        );
+        throw new Error(result.error || "Unable to add question.");
       }
 
-      setState({
-        saving: false,
-        message: "Question added.",
-        error: "",
-      });
-
+      setState({ saving: false, message: "Question added.", error: "" });
       setValues(createEmptyQuestion());
       router.refresh();
     } catch (error) {
@@ -558,45 +549,46 @@ function AddQuestionEditor({
         saving: false,
         message: "",
         error:
-          error instanceof Error
-            ? error.message
-            : "Unable to add question.",
+          error instanceof Error ? error.message : "Unable to add question.",
       });
     }
   }
 
   if (!open) {
     return (
-      <div className="border-t border-dashed border-slate-300 pt-4">
-        <Button
+      <div className="flex justify-end">
+        <button
           type="button"
+          className={primaryButtonClass}
           onClick={() => {
             setOpen(true);
             setState(initialSave);
           }}
         >
           + Add Question
-        </Button>
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="border border-dashed border-slate-400 bg-slate-50 p-4">
+    <div className="rounded-2xl border border-red-100 bg-gradient-to-b from-red-50/60 to-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            New Question
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-red-600">
+            New question
           </p>
-
-          <h3 className="mt-1 font-semibold text-slate-950">
+          <h4 className="mt-1 text-base font-semibold text-slate-950">
             Add question to {section.display_name}
-          </h3>
+          </h4>
+          <p className="mt-1 text-sm text-slate-500">
+            Choose the answer type and fill only the fields that are relevant.
+          </p>
         </div>
 
         <button
           type="button"
-          className="text-sm font-medium text-slate-600 underline"
+          className={secondaryButtonClass}
           onClick={() => {
             setOpen(false);
             setValues(createEmptyQuestion());
@@ -607,91 +599,64 @@ function AddQuestionEditor({
         </button>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <Field label="Question code">
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <Field label="Question code" required>
           <Input
             placeholder="CLS_EXT_002"
             value={values.code}
-            onChange={(event) =>
-              update("code", event.target.value)
-            }
+            onChange={(event) => update("code", event.target.value)}
           />
         </Field>
 
-        <Field label="Question type">
+        <Field label="Question type" required>
           <Select
             value={values.questionType}
             onChange={(event) =>
               update(
                 "questionType",
-                event.target.value as
-                  | "yes_no"
-                  | "temperature",
+                event.target.value as "yes_no" | "temperature",
               )
             }
           >
             <option value="yes_no">Yes / No</option>
-            <option value="temperature">
-              Temperature
-            </option>
+            <option value="temperature">Temperature</option>
           </Select>
         </Field>
 
-        {section.groups.length > 0 && (
+        {section.groups.length > 0 ? (
           <Field label="Question group">
             <Select
               value={values.questionGroupId}
               onChange={(event) =>
-                update(
-                  "questionGroupId",
-                  event.target.value,
-                )
+                update("questionGroupId", event.target.value)
               }
             >
-              <option value="">
-                No group / Section level
-              </option>
-
+              <option value="">No group / Section level</option>
               {section.groups.map((group) => (
-                <option
-                  key={group.id}
-                  value={group.id}
-                >
+                <option key={group.id} value={group.id}>
                   {group.name}
                 </option>
               ))}
             </Select>
           </Field>
-        )}
+        ) : null}
 
-        <div className="flex items-end">
-          <label className="flex min-h-9 items-center gap-2 text-sm font-medium text-slate-700">
-            <input
-              type="checkbox"
-              checked={values.isRequired}
-              onChange={(event) =>
-                update(
-                  "isRequired",
-                  event.target.checked,
-                )
-              }
-            />
-            Required
-          </label>
+        <div className="flex items-end rounded-xl border border-slate-100 bg-white px-4 py-3">
+          <Toggle
+            checked={values.isRequired}
+            onChange={(checked) => update("isRequired", checked)}
+            label="Required"
+            description="User must answer this question before submitting."
+          />
         </div>
       </div>
 
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <Field label="Question text">
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Field label="Question text" required>
           <Textarea
-            placeholder="Enter the question..."
+            placeholder="Enter the question shown to users..."
             value={values.questionText}
-            onChange={(event) =>
-              update(
-                "questionText",
-                event.target.value,
-              )
-            }
+            onChange={(event) => update("questionText", event.target.value)}
           />
         </Field>
 
@@ -699,22 +664,18 @@ function AddQuestionEditor({
           <Textarea
             placeholder="Optional instruction or guidance"
             value={values.helpText}
-            onChange={(event) =>
-              update("helpText", event.target.value)
-            }
+            onChange={(event) => update("helpText", event.target.value)}
           />
         </Field>
       </div>
 
-      {values.questionType === "temperature" && (
-        <div className="mt-3 grid gap-3 md:grid-cols-3">
+      {values.questionType === "temperature" ? (
+        <div className="mt-4 grid gap-4 rounded-2xl border border-sky-100 bg-sky-50/60 p-4 md:grid-cols-3">
           <Field label="Unit">
             <Input
               placeholder="°C"
               value={values.unit}
-              onChange={(event) =>
-                update("unit", event.target.value)
-              }
+              onChange={(event) => update("unit", event.target.value)}
             />
           </Field>
 
@@ -724,12 +685,7 @@ function AddQuestionEditor({
               step="any"
               placeholder="15"
               value={values.minValue}
-              onChange={(event) =>
-                update(
-                  "minValue",
-                  event.target.value,
-                )
-              }
+              onChange={(event) => update("minValue", event.target.value)}
             />
           </Field>
 
@@ -739,52 +695,31 @@ function AddQuestionEditor({
               step="any"
               placeholder="35"
               value={values.maxValue}
-              onChange={(event) =>
-                update(
-                  "maxValue",
-                  event.target.value,
-                )
-              }
+              onChange={(event) => update("maxValue", event.target.value)}
             />
           </Field>
         </div>
-      )}
+      ) : null}
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Button
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <button
           type="button"
+          className={primaryButtonClass}
           disabled={state.saving}
           onClick={addQuestion}
         >
-          {state.saving
-            ? "Adding..."
-            : "Add Question"}
-        </Button>
-
-        <button
-          type="button"
-          className="text-sm font-medium text-slate-600 underline"
-          disabled={state.saving}
-          onClick={() => {
-            setOpen(false);
-            setValues(createEmptyQuestion());
-            setState(initialSave);
-          }}
-        >
-          Cancel
+          {state.saving ? "Adding..." : "Add Question"}
         </button>
 
-        {state.message && (
-          <span className="text-sm font-medium text-emerald-700">
+        {state.message ? (
+          <span className="text-sm font-medium text-emerald-600">
             {state.message}
           </span>
-        )}
+        ) : null}
 
-        {state.error && (
-          <span className="text-sm font-medium text-red-700">
-            {state.error}
-          </span>
-        )}
+        {state.error ? (
+          <span className="text-sm font-medium text-red-600">{state.error}</span>
+        ) : null}
       </div>
     </div>
   );
@@ -802,162 +737,193 @@ function SectionEditor({
   const save = useSave(
     `/api/admin/form-versions/${versionId}/sections/${section.id}`,
   );
+  const [values, setValues] = useState(section);
+  const [open, setOpen] = useState(true);
 
-  const [values, setValues] =
-    useState(section);
+  const update = (key: keyof Section, value: unknown) =>
+    setValues((old) => ({ ...old, [key]: value }));
 
-  const update = (
-    key: keyof Section,
-    value: unknown,
-  ) =>
-    setValues((old) => ({
-      ...old,
-      [key]: value,
-    }));
+  const questionCount =
+    section.questions.length +
+    section.groups.reduce((total, group) => total + group.questions.length, 0);
 
   return (
-    <section className="border border-slate-300 bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Section{" "}
-            {String(sectionNumber).padStart(2, "0")}
-          </p>
+    <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 px-5 py-5 md:px-6">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="inline-flex rounded-lg bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700 ring-1 ring-inset ring-red-100">
+              Section {String(sectionNumber).padStart(2, "0")}
+            </span>
+            <StatusPill active={values.is_active} />
+            <span className="text-xs font-medium text-slate-400">
+              {questionCount} question{questionCount === 1 ? "" : "s"}
+            </span>
+          </div>
 
-          <h2 className="mt-1 text-lg font-semibold text-slate-950">
-            {values.display_name ||
-              `Section ${sectionNumber}`}
-          </h2>
+          <h3 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">
+            {values.display_name || `Section ${sectionNumber}`}
+          </h3>
+
+          {values.description ? (
+            <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-500">
+              {values.description}
+            </p>
+          ) : null}
         </div>
 
-        <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
-          {values.is_active
-            ? "Active"
-            : "Inactive"}
-        </span>
+        <button
+          type="button"
+          aria-expanded={open}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-lg font-semibold text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-800"
+          onClick={() => setOpen((value) => !value)}
+          title={open ? "Collapse section" : "Expand section"}
+        >
+          {open ? "⌃" : "⌄"}
+        </button>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <Field label="Display name">
-          <Input
-            value={values.display_name}
-            onChange={(event) =>
-              update(
-                "display_name",
-                event.target.value,
-              )
-            }
-          />
-        </Field>
+      {open ? (
+        <div className="space-y-6 p-5 md:p-6">
+          <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 md:p-5">
+            <div className="mb-4">
+              <p className="text-sm font-semibold text-slate-900">Section settings</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Edit the base section content, ordering, and visibility.
+              </p>
+            </div>
 
-        <Field label="Description">
-          <Textarea
-            value={values.description ?? ""}
-            onChange={(event) =>
-              update(
-                "description",
-                event.target.value || null,
-              )
-            }
-          />
-        </Field>
+            <div className="grid gap-4 lg:grid-cols-[1fr_1.6fr_160px]">
+              <Field label="Display name" required>
+                <Input
+                  value={values.display_name}
+                  onChange={(event) =>
+                    update("display_name", event.target.value)
+                  }
+                />
+              </Field>
 
-        <Field label="Sort order">
-          <Input
-            type="number"
-            min={0}
-            value={values.sort_order}
-            onChange={(event) =>
-              update(
-                "sort_order",
-                Number(event.target.value),
-              )
-            }
-          />
-        </Field>
-      </div>
+              <Field label="Description">
+                <Textarea
+                  className="min-h-10"
+                  value={values.description ?? ""}
+                  onChange={(event) =>
+                    update("description", event.target.value || null)
+                  }
+                />
+              </Field>
 
-      <div className="mt-3 flex gap-5 text-sm">
-        <label>
-          <input
-            type="checkbox"
-            checked={values.is_required}
-            onChange={(event) =>
-              update(
-                "is_required",
-                event.target.checked,
-              )
-            }
-          />{" "}
-          Required
-        </label>
+              <Field label="Sort order">
+                <Input
+                  type="number"
+                  min={0}
+                  value={values.sort_order}
+                  onChange={(event) =>
+                    update("sort_order", Number(event.target.value))
+                  }
+                />
+              </Field>
+            </div>
 
-        <label>
-          <input
-            type="checkbox"
-            checked={values.is_active}
-            onChange={(event) =>
-              update(
-                "is_active",
-                event.target.checked,
-              )
-            }
-          />{" "}
-          Active
-        </label>
-      </div>
+            <div className="mt-5 flex flex-wrap gap-x-8 gap-y-4 border-t border-slate-200 pt-5">
+              <Toggle
+                checked={values.is_required}
+                onChange={(checked) => update("is_required", checked)}
+                label="Required"
+                description="Questions in this section should be completed."
+              />
 
-      <div className="mt-3">
-        <SaveBar
-          state={save.state}
-          onSave={() =>
-            save.save({
-              displayName: values.display_name,
-              description: values.description,
-              sortOrder: values.sort_order,
-              isRequired: values.is_required,
-              isActive: values.is_active,
-            })
-          }
-          onRestore={save.restore}
-        />
-      </div>
+              <Toggle
+                checked={values.is_active}
+                onChange={(checked) => update("is_active", checked)}
+                label="Active"
+                description="This section is visible in the operational form."
+              />
+            </div>
 
-      <TranslationEditor
-        versionId={versionId}
-        resourceType="section"
-        resourceId={section.id}
-        translations={section.translations}
-      />
+            <div className="mt-5">
+              <SaveBar
+                state={save.state}
+                onSave={() =>
+                  save.save({
+                    displayName: values.display_name,
+                    description: values.description,
+                    sortOrder: values.sort_order,
+                    isRequired: values.is_required,
+                    isActive: values.is_active,
+                  })
+                }
+                onRestore={save.restore}
+              />
+            </div>
+          </div>
 
-      <div className="mt-5 grid gap-4 border-t border-slate-200 pt-4">
-        {section.groups.map((group) => (
-          <GroupEditor
-            key={group.id}
-            versionId={versionId}
-            group={group}
-          />
-        ))}
+          <div>
+            <div className="mb-3 flex items-center gap-2">
+              <span className="h-px flex-1 bg-slate-100" />
+              <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
+                Localized section content
+              </span>
+              <span className="h-px flex-1 bg-slate-100" />
+            </div>
 
-        {section.questions
-          .filter(
-            (question) =>
-              !question.question_group_id,
-          )
-          .map((question) => (
-            <QuestionEditor
-              key={question.id}
+            <TranslationEditor
               versionId={versionId}
-              question={question}
+              resourceType="section"
+              resourceId={section.id}
+              translations={section.translations}
             />
-          ))}
+          </div>
 
-        <AddQuestionEditor
-          versionId={versionId}
-          section={section}
-        />
-      </div>
-    </section>
+          <div className="border-t border-slate-100 pt-6">
+            <div className="mb-4">
+              <h4 className="text-base font-semibold text-slate-950">
+                Questions ({questionCount})
+              </h4>
+              <p className="mt-1 text-sm text-slate-500">
+                Expand a question only when you need to edit it.
+              </p>
+            </div>
+
+            <div className="mb-4">
+              <AddQuestionEditor versionId={versionId} section={section} />
+            </div>
+
+            <div className="grid gap-3">
+              {section.groups.map((group) => (
+                <GroupEditor
+                  key={group.id}
+                  versionId={versionId}
+                  group={group}
+                />
+              ))}
+
+              {section.questions
+                .filter((question) => !question.question_group_id)
+                .map((question, index) => (
+                  <QuestionEditor
+                    key={question.id}
+                    versionId={versionId}
+                    question={question}
+                    index={index}
+                  />
+                ))}
+
+              {questionCount === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-5 py-8 text-center">
+                  <p className="text-sm font-semibold text-slate-700">
+                    No questions in this section yet.
+                  </p>
+                  <p className="mt-1 text-sm text-slate-400">
+                    Use “Add Question” to create the first question.
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </article>
   );
 }
 
@@ -968,94 +934,100 @@ function GroupEditor({
   versionId: string;
   group: Group;
 }) {
-  const save = useSave(
-    `/api/admin/form-versions/${versionId}/groups/${group.id}`,
-  );
-
-  const [values, setValues] =
-    useState(group);
+  const save = useSave(`/api/admin/form-versions/${versionId}/groups/${group.id}`);
+  const [values, setValues] = useState(group);
+  const [open, setOpen] = useState(true);
 
   return (
-    <div className="border border-slate-200 p-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Group · {group.code}
-      </p>
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/40">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+              Group · {group.code}
+            </span>
+            <StatusPill active={values.is_active} />
+          </div>
+          <p className="mt-1 text-sm font-semibold text-slate-900">{values.name}</p>
+        </div>
 
-      <div className="mt-2 grid gap-3 md:grid-cols-3">
-        <Field label="Name">
-          <Input
-            value={values.name}
-            onChange={(event) =>
-              setValues({
-                ...values,
-                name: event.target.value,
-              })
-            }
-          />
-        </Field>
-
-        <Field label="Sort order">
-          <Input
-            type="number"
-            min={0}
-            value={values.sort_order}
-            onChange={(event) =>
-              setValues({
-                ...values,
-                sort_order: Number(
-                  event.target.value,
-                ),
-              })
-            }
-          />
-        </Field>
-
-        <label className="self-end text-sm">
-          <input
-            type="checkbox"
-            checked={values.is_active}
-            onChange={(event) =>
-              setValues({
-                ...values,
-                is_active:
-                  event.target.checked,
-              })
-            }
-          />{" "}
-          Active
-        </label>
+        <button
+          type="button"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500"
+          onClick={() => setOpen((value) => !value)}
+        >
+          {open ? "⌃" : "⌄"}
+        </button>
       </div>
 
-      <div className="mt-3">
-        <SaveBar
-          state={save.state}
-          onSave={() =>
-            save.save({
-              name: values.name,
-              sortOrder: values.sort_order,
-              isActive: values.is_active,
-            })
-          }
-          onRestore={save.restore}
-        />
-      </div>
+      {open ? (
+        <div className="space-y-4 border-t border-slate-200 bg-white p-4">
+          <div className="grid gap-4 md:grid-cols-[1fr_160px_auto]">
+            <Field label="Name">
+              <Input
+                value={values.name}
+                onChange={(event) =>
+                  setValues({ ...values, name: event.target.value })
+                }
+              />
+            </Field>
 
-      <TranslationEditor
-        versionId={versionId}
-        resourceType="group"
-        resourceId={group.id}
-        translations={group.translations}
-      />
+            <Field label="Sort order">
+              <Input
+                type="number"
+                min={0}
+                value={values.sort_order}
+                onChange={(event) =>
+                  setValues({
+                    ...values,
+                    sort_order: Number(event.target.value),
+                  })
+                }
+              />
+            </Field>
 
-      <div className="mt-4 grid gap-3 border-t border-slate-100 pt-3">
-        {group.questions.map((question) => (
-          <QuestionEditor
-            key={question.id}
+            <div className="flex items-end pb-1">
+              <Toggle
+                checked={values.is_active}
+                onChange={(checked) =>
+                  setValues({ ...values, is_active: checked })
+                }
+                label="Active"
+              />
+            </div>
+          </div>
+
+          <SaveBar
+            state={save.state}
+            onSave={() =>
+              save.save({
+                name: values.name,
+                sortOrder: values.sort_order,
+                isActive: values.is_active,
+              })
+            }
+            onRestore={save.restore}
+          />
+
+          <TranslationEditor
             versionId={versionId}
-            question={question}
+            resourceType="group"
+            resourceId={group.id}
+            translations={group.translations}
           />
-        ))}
-      </div>
+
+          <div className="grid gap-3 border-t border-slate-100 pt-4">
+            {group.questions.map((question, index) => (
+              <QuestionEditor
+                key={question.id}
+                versionId={versionId}
+                question={question}
+                index={index}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1063,203 +1035,212 @@ function GroupEditor({
 function QuestionEditor({
   versionId,
   question,
+  index,
 }: {
   versionId: string;
   question: Question;
+  index?: number;
 }) {
   const save = useSave(
     `/api/admin/form-versions/${versionId}/questions/${question.id}`,
   );
+  const [values, setValues] = useState(question);
+  const [open, setOpen] = useState(false);
 
-  const [values, setValues] =
-    useState(question);
+  const update = (key: keyof Question, value: unknown) =>
+    setValues((old) => ({ ...old, [key]: value }));
 
-  const update = (
-    key: keyof Question,
-    value: unknown,
-  ) =>
-    setValues((old) => ({
-      ...old,
-      [key]: value,
-    }));
+  const isTemperature = values.question_type === "temperature";
 
   return (
-    <div className="border border-slate-200 p-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Question · {question.code} ·{" "}
-        {question.question_type}
-      </p>
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:border-slate-300">
+      <button
+        type="button"
+        className="flex w-full items-center gap-3 px-4 py-4 text-left"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+      >
+        {typeof index === "number" ? (
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">
+            {index + 1}
+          </span>
+        ) : null}
 
-      <div className="mt-2 grid gap-3 md:grid-cols-2">
-        <Field label="Question text">
-          <Textarea
-            value={values.question_text}
-            onChange={(event) =>
-              update(
-                "question_text",
-                event.target.value,
-              )
-            }
-          />
-        </Field>
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-sm font-semibold text-slate-950">
+              {values.question_text || values.code}
+            </span>
+            <QuestionTypePill type={values.question_type} />
+            {values.is_required ? (
+              <span className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">
+                Required
+              </span>
+            ) : null}
+          </span>
 
-        <Field label="Help text">
-          <Textarea
-            value={values.help_text ?? ""}
-            onChange={(event) =>
-              update(
-                "help_text",
-                event.target.value || null,
-              )
-            }
-          />
-        </Field>
+          <span className="mt-1 block text-xs font-medium text-slate-400">
+            {values.code} · Sort {values.sort_order}
+          </span>
+        </span>
 
-        <Field label="Unit">
-          <Input
-            value={values.unit ?? ""}
-            onChange={(event) =>
-              update(
-                "unit",
-                event.target.value || null,
-              )
-            }
-          />
-        </Field>
+        <StatusPill active={values.is_active} />
+        <span className="ml-1 text-lg font-semibold text-slate-400">
+          {open ? "⌃" : "⌄"}
+        </span>
+      </button>
 
-        <Field label="Placeholder">
-          <Input
-            value={values.placeholder ?? ""}
-            onChange={(event) =>
-              update(
-                "placeholder",
-                event.target.value || null,
-              )
-            }
-          />
-        </Field>
+      {open ? (
+        <div className="space-y-5 border-t border-slate-100 bg-slate-50/30 p-4 md:p-5">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Field label="Question text" required>
+              <Textarea
+                value={values.question_text}
+                onChange={(event) =>
+                  update("question_text", event.target.value)
+                }
+              />
+            </Field>
 
-        <Field label="Minimum">
-          <Input
-            type="number"
-            value={values.min_value ?? ""}
-            onChange={(event) =>
-              update(
-                "min_value",
-                event.target.value === ""
-                  ? null
-                  : Number(event.target.value),
-              )
-            }
-          />
-        </Field>
+            <Field label="Help text">
+              <Textarea
+                value={values.help_text ?? ""}
+                onChange={(event) =>
+                  update("help_text", event.target.value || null)
+                }
+              />
+            </Field>
+          </div>
 
-        <Field label="Maximum">
-          <Input
-            type="number"
-            value={values.max_value ?? ""}
-            onChange={(event) =>
-              update(
-                "max_value",
-                event.target.value === ""
-                  ? null
-                  : Number(event.target.value),
-              )
-            }
-          />
-        </Field>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-[1fr_180px]">
+            <Field label="Placeholder">
+              <Input
+                value={values.placeholder ?? ""}
+                onChange={(event) =>
+                  update("placeholder", event.target.value || null)
+                }
+              />
+            </Field>
 
-        <Field label="Sort order">
-          <Input
-            type="number"
-            min={0}
-            value={values.sort_order}
-            onChange={(event) =>
-              update(
-                "sort_order",
-                Number(event.target.value),
-              )
-            }
-          />
-        </Field>
-      </div>
+            <Field label="Sort order">
+              <Input
+                type="number"
+                min={0}
+                value={values.sort_order}
+                onChange={(event) =>
+                  update("sort_order", Number(event.target.value))
+                }
+              />
+            </Field>
+          </div>
 
-      <div className="mt-3 flex flex-wrap gap-5 text-sm">
-        <label>
-          <input
-            type="checkbox"
-            checked={values.is_required}
-            onChange={(event) =>
-              update(
-                "is_required",
-                event.target.checked,
-              )
-            }
-          />{" "}
-          Required
-        </label>
+          {isTemperature ? (
+            <div className="grid gap-4 rounded-2xl border border-sky-100 bg-sky-50/70 p-4 md:grid-cols-3">
+              <Field label="Unit" hint="Example: °C">
+                <Input
+                  value={values.unit ?? ""}
+                  onChange={(event) =>
+                    update("unit", event.target.value || null)
+                  }
+                />
+              </Field>
 
-        <label>
-          <input
-            type="checkbox"
-            checked={values.is_active}
-            onChange={(event) =>
-              update(
-                "is_active",
-                event.target.checked,
-              )
-            }
-          />{" "}
-          Active
-        </label>
-      </div>
+              <Field label="Minimum">
+                <Input
+                  type="number"
+                  step="any"
+                  value={values.min_value ?? ""}
+                  onChange={(event) =>
+                    update(
+                      "min_value",
+                      event.target.value === ""
+                        ? null
+                        : Number(event.target.value),
+                    )
+                  }
+                />
+              </Field>
 
-      <div className="mt-3">
-        <SaveBar
-          state={save.state}
-          onSave={() =>
-            save.save({
-              questionText:
-                values.question_text,
-              helpText: values.help_text,
-              isRequired:
-                values.is_required,
-              unit: values.unit,
-              minValue: values.min_value,
-              maxValue: values.max_value,
-              placeholder:
-                values.placeholder,
-              sortOrder:
-                values.sort_order,
-              isActive: values.is_active,
-            })
-          }
-          onRestore={save.restore}
-        />
-      </div>
+              <Field label="Maximum">
+                <Input
+                  type="number"
+                  step="any"
+                  value={values.max_value ?? ""}
+                  onChange={(event) =>
+                    update(
+                      "max_value",
+                      event.target.value === ""
+                        ? null
+                        : Number(event.target.value),
+                    )
+                  }
+                />
+              </Field>
+            </div>
+          ) : null}
 
-      <TranslationEditor
-        versionId={versionId}
-        resourceType="question"
-        resourceId={question.id}
-        translations={question.translations}
-      />
-
-      <div className="mt-4 grid gap-2 border-t border-slate-100 pt-3">
-        {question.options.length ? (
-          question.options.map((option) => (
-            <OptionEditor
-              key={option.id}
-              versionId={versionId}
-              option={option}
+          <div className="flex flex-wrap gap-x-8 gap-y-4 rounded-2xl border border-slate-100 bg-white p-4">
+            <Toggle
+              checked={values.is_required}
+              onChange={(checked) => update("is_required", checked)}
+              label="Required"
+              description="Answer is mandatory before submit."
             />
-          ))
-        ) : (
-          <p className="text-sm text-slate-500">
-            No options
-          </p>
-        )}
-      </div>
+
+            <Toggle
+              checked={values.is_active}
+              onChange={(checked) => update("is_active", checked)}
+              label="Active"
+              description="Question is visible to operational users."
+            />
+          </div>
+
+          <SaveBar
+            state={save.state}
+            onSave={() =>
+              save.save({
+                questionText: values.question_text,
+                helpText: values.help_text,
+                isRequired: values.is_required,
+                unit: isTemperature ? values.unit : null,
+                minValue: isTemperature ? values.min_value : null,
+                maxValue: isTemperature ? values.max_value : null,
+                placeholder: values.placeholder,
+                sortOrder: values.sort_order,
+                isActive: values.is_active,
+              })
+            }
+            onRestore={save.restore}
+          />
+
+          <div className="border-t border-slate-100 pt-5">
+            <p className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
+              Localized question content
+            </p>
+            <TranslationEditor
+              versionId={versionId}
+              resourceType="question"
+              resourceId={question.id}
+              translations={question.translations}
+            />
+          </div>
+
+          {question.options.length > 0 ? (
+            <div className="grid gap-2 border-t border-slate-100 pt-5">
+              <p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
+                Options
+              </p>
+              {question.options.map((option) => (
+                <OptionEditor
+                  key={option.id}
+                  versionId={versionId}
+                  option={option}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1274,25 +1255,27 @@ function OptionEditor({
   const save = useSave(
     `/api/admin/form-versions/${versionId}/options/${option.id}`,
   );
-
-  const [values, setValues] =
-    useState(option);
+  const [values, setValues] = useState(option);
 
   return (
-    <div className="border border-slate-200 p-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Option · value: {option.value}
-      </p>
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+          Option · {option.value}
+        </p>
+        {values.is_failure ? (
+          <span className="rounded-full bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700">
+            Failure option
+          </span>
+        ) : null}
+      </div>
 
-      <div className="mt-2 grid gap-3 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-[1fr_160px_auto]">
         <Field label="Label">
           <Input
             value={values.label}
             onChange={(event) =>
-              setValues({
-                ...values,
-                label: event.target.value,
-              })
+              setValues({ ...values, label: event.target.value })
             }
           />
         </Field>
@@ -1305,148 +1288,147 @@ function OptionEditor({
             onChange={(event) =>
               setValues({
                 ...values,
-                sort_order: Number(
-                  event.target.value,
-                ),
+                sort_order: Number(event.target.value),
               })
             }
           />
         </Field>
 
-        <label className="self-end text-sm">
-          <input
-            type="checkbox"
+        <div className="flex items-end pb-1">
+          <Toggle
             checked={values.is_failure}
-            onChange={(event) =>
-              setValues({
-                ...values,
-                is_failure:
-                  event.target.checked,
-              })
+            onChange={(checked) =>
+              setValues({ ...values, is_failure: checked })
             }
-          />{" "}
-          Failure
-        </label>
+            label="Failure"
+          />
+        </div>
       </div>
 
-      <div className="mt-3">
+      <div className="mt-4">
         <SaveBar
           state={save.state}
           onSave={() =>
             save.save({
               label: values.label,
               sortOrder: values.sort_order,
-              isFailure:
-                values.is_failure,
+              isFailure: values.is_failure,
             })
           }
           onRestore={save.restore}
         />
       </div>
 
-      <TranslationEditor
-        versionId={versionId}
-        resourceType="option"
-        resourceId={option.id}
-        translations={option.translations}
-      />
+      <div className="mt-4">
+        <TranslationEditor
+          versionId={versionId}
+          resourceType="option"
+          resourceId={option.id}
+          translations={option.translations}
+        />
+      </div>
     </div>
   );
 }
 
-export function FormVersionBuilder({
-  data,
-}: {
-  data: BuilderData;
-}) {
-  const save = useSave(
-    `/api/admin/form-versions/${data.version.id}`,
-  );
-
-  const [notes, setNotes] = useState(
-    data.version.notes ?? "",
-  );
+export function FormVersionBuilder({ data }: { data: BuilderData }) {
+  const save = useSave(`/api/admin/form-versions/${data.version.id}`);
+  const [notes, setNotes] = useState(data.version.notes ?? "");
 
   return (
-    <main className="mx-auto max-w-6xl space-y-6 p-6 text-slate-900">
-      <header className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-5">
-        <div>
-          <p className="text-sm text-slate-500">
-            {data.form.code} · Version{" "}
-            {data.version.version_number}
-          </p>
+    <main className="min-h-screen bg-slate-50/70 px-4 py-6 text-slate-900 md:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <header className="flex flex-wrap items-start justify-between gap-5">
+          <div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-red-600">
+                {data.form.code}
+              </p>
+              <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700 ring-1 ring-inset ring-red-100">
+                DRAFT
+              </span>
+            </div>
 
-          <h1 className="text-2xl font-semibold text-slate-950">
-            {data.form.name}
-          </h1>
-        </div>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">
+              Edit Form — {data.form.name}
+            </h1>
 
-        <div className="flex items-center gap-3">
-          <span className="rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">
-            DRAFT
-          </span>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+              Build and organize this draft version. Sections and questions can be
+              expanded only when you need to edit them.
+            </p>
+          </div>
 
-          <a
-            className="text-sm font-medium text-slate-700 underline"
-            href="/protected/admin/forms"
-          >
-            Back to Forms
+          <a href="/protected/admin/forms" className={secondaryButtonClass}>
+            ← Back to Forms
           </a>
-        </div>
-      </header>
+        </header>
 
-      <section className="border border-slate-300 bg-white p-4">
-        <h2 className="font-semibold text-slate-950">
-          Version settings
-        </h2>
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-red-600">
+                Version settings
+              </p>
+              <h2 className="mt-1 text-lg font-semibold text-slate-950">
+                Draft configuration
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Version {data.version.version_number} · changes are saved to this draft.
+              </p>
+            </div>
 
-        <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto]">
-          <Field label="Notes">
-            <Textarea
-              value={notes}
-              onChange={(event) =>
-                setNotes(event.target.value)
-              }
-            />
-          </Field>
+            <span className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 ring-1 ring-inset ring-amber-200">
+              Version {data.version.version_number}
+            </span>
+          </div>
 
-          <div className="self-end">
+          <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+            <Field label="Notes">
+              <Textarea
+                value={notes}
+                placeholder="Add a note for this form version..."
+                onChange={(event) => setNotes(event.target.value)}
+              />
+            </Field>
+
             <SaveBar
               state={save.state}
-              onSave={() =>
-                save.save({
-                  notes: notes || null,
-                })
-              }
+              onSave={() => save.save({ notes: notes || null })}
               onRestore={save.restore}
+              label="Save notes"
             />
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-950">
-            Sections
-          </h2>
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3 px-1">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-red-600">
+                Form structure
+              </p>
+              <h2 className="mt-1 text-xl font-semibold text-slate-950">Sections</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {data.sections.length} section{data.sections.length === 1 ? "" : "s"} in this
+                draft.
+              </p>
+            </div>
 
-          <p className="text-sm text-slate-500">
-            Canonical fields and localized draft
-            content
-          </p>
-        </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500 shadow-sm">
+              Canonical + localized content
+            </div>
+          </div>
 
-        {data.sections.map(
-          (section, index) => (
+          {data.sections.map((section, index) => (
             <SectionEditor
               key={section.id}
               versionId={data.version.id}
               section={section}
               sectionNumber={index + 1}
             />
-          ),
-        )}
-      </section>
+          ))}
+        </section>
+      </div>
     </main>
   );
 }

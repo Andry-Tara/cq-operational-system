@@ -66,3 +66,30 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* BEGIN CQ SUBTLE SCROLLBAR */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.22) transparent;
+}
+
+html::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+html::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.16);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+html::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(100, 116, 139, 0.34);
+}
+/* END CQ SUBTLE SCROLLBAR */
