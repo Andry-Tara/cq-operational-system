@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useState,
-  type InputHTMLAttributes,
-  type ReactNode,
-  type SelectHTMLAttributes,
-  type TextareaHTMLAttributes,
-} from "react";
+import { useEffect, useState, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { useRouter } from "next/navigation";
 
 export type Translation = {
@@ -943,10 +937,14 @@ function SectionEditor({
   versionId,
   section,
   sectionNumber,
+  collapseSignal,
+  expandSignal,
 }: {
   versionId: string;
   section: Section;
   sectionNumber: number;
+  collapseSignal: number;
+  expandSignal: number;
 }) {
   const save = useSave(
     `/api/admin/form-versions/${versionId}/sections/${section.id}`,
@@ -954,6 +952,19 @@ function SectionEditor({
   const [values, setValues] = useState(section);
   const [open, setOpen] = useState(true);
   const [translationOpen, setTranslationOpen] = useState(false);
+
+  useEffect(() => {
+    if (collapseSignal > 0) {
+      setOpen(false);
+      setTranslationOpen(false);
+    }
+  }, [collapseSignal]);
+
+  useEffect(() => {
+    if (expandSignal > 0) {
+      setOpen(true);
+    }
+  }, [expandSignal]);
 
   const update = (key: keyof Section, value: unknown) =>
     setValues((old) => ({ ...old, [key]: value }));
@@ -1824,6 +1835,8 @@ function OptionEditor({
 export function FormVersionBuilder({ data }: { data: BuilderData }) {
   const save = useSave(`/api/admin/form-versions/${data.version.id}`);
   const [notes, setNotes] = useState(data.version.notes ?? "");
+  const [collapseSectionsSignal, setCollapseSectionsSignal] = useState(0);
+  const [expandSectionsSignal, setExpandSectionsSignal] = useState(0);
 
   return (
     <main className="min-h-screen bg-slate-50/70 px-4 py-6 text-slate-900 md:px-6 lg:px-8">
@@ -1904,8 +1917,30 @@ export function FormVersionBuilder({ data }: { data: BuilderData }) {
               </p>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500 shadow-sm">
-              Canonical + localized content
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
+                onClick={() =>
+                  setExpandSectionsSignal((value) => value + 1)
+                }
+              >
+                Expand all
+              </button>
+
+              <button
+                type="button"
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-red-100 bg-red-50 px-4 text-sm font-semibold text-red-700 shadow-sm transition hover:bg-red-100"
+                onClick={() =>
+                  setCollapseSectionsSignal((value) => value + 1)
+                }
+              >
+                Collapse all
+              </button>
+
+              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500 shadow-sm">
+                Canonical + localized content
+              </div>
             </div>
           </div>
 
@@ -1917,6 +1952,8 @@ export function FormVersionBuilder({ data }: { data: BuilderData }) {
               versionId={data.version.id}
               section={section}
               sectionNumber={index + 1}
+              collapseSignal={collapseSectionsSignal}
+              expandSignal={expandSectionsSignal}
             />
           ))}
         </section>
