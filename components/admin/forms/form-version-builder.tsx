@@ -1286,11 +1286,56 @@ function QuestionEditor({
   const [duplicating, setDuplicating] = useState(false);
   const [duplicateMessage, setDuplicateMessage] = useState("");
   const [duplicateError, setDuplicateError] = useState("");
+  const [moving, setMoving] = useState<"up" | "down" | null>(null);
+  const [moveMessage, setMoveMessage] = useState("");
+  const [moveError, setMoveError] = useState("");
 
   const update = (key: keyof Question, value: unknown) =>
     setValues((old) => ({ ...old, [key]: value }));
 
   const isTemperature = values.question_type === "temperature";
+
+  async function moveQuestion(direction: "up" | "down") {
+    if (moving) return;
+
+    setMoving(direction);
+    setMoveMessage("");
+    setMoveError("");
+
+    try {
+      const response = await fetch(
+        `/api/admin/form-versions/${versionId}/questions/${question.id}/move`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ direction }),
+        },
+      );
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(result.error || "Unable to move question.");
+      }
+
+      setMoveMessage(
+        direction === "up"
+          ? "Question moved up."
+          : "Question moved down.",
+      );
+      router.refresh();
+    } catch (error) {
+      setMoveError(
+        error instanceof Error
+          ? error.message
+          : "Unable to move question.",
+      );
+    } finally {
+      setMoving(null);
+    }
+  }
 
   async function duplicateQuestion() {
     if (duplicating) return;
@@ -1542,6 +1587,49 @@ function QuestionEditor({
               ))}
             </div>
           ) : null}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">
+                Question order
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Move this question within the same section and question group.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={moving !== null}
+                onClick={() => moveQuestion("up")}
+              >
+                {moving === "up" ? "Moving..." : "↑ Move up"}
+              </button>
+
+              <button
+                type="button"
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={moving !== null}
+                onClick={() => moveQuestion("down")}
+              >
+                {moving === "down" ? "Moving..." : "↓ Move down"}
+              </button>
+
+              {moveMessage ? (
+                <span className="text-sm font-medium text-emerald-600">
+                  {moveMessage}
+                </span>
+              ) : null}
+
+              {moveError ? (
+                <span className="text-sm font-medium text-red-600">
+                  {moveError}
+                </span>
+              ) : null}
+            </div>
+          </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5">
             <div>
