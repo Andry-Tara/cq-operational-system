@@ -1139,16 +1139,12 @@ function SectionEditor({
                 />
               ))}
 
-              {section.questions
-                .filter((question) => !question.question_group_id)
-                .map((question, index) => (
-                  <QuestionEditor
-                    key={question.id}
-                    versionId={versionId}
-                    question={question}
-                    index={index}
-                  />
-                ))}
+              <SortableQuestionList
+                versionId={versionId}
+                questions={section.questions.filter(
+                  (question) => !question.question_group_id,
+                )}
+              />
 
               {questionCount === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-5 py-8 text-center">
@@ -1165,6 +1161,134 @@ function SectionEditor({
         </div>
       ) : null}
     </article>
+  );
+}
+
+
+function SortableQuestionList({
+  versionId,
+  questions,
+}: {
+  versionId: string;
+  questions: Question[];
+}) {
+  const router = useRouter();
+  const [items, setItems] = useState(questions);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [savingOrder, setSavingOrder] = useState(false);
+  const [orderError, setOrderError] = useState("");
+
+  useEffect(() => {
+    setItems(questions);
+  }, [questions]);
+
+  async function saveOrder(nextItems: Question[]) {
+    if (savingOrder) return;
+
+    setSavingOrder(true);
+    setOrderError("");
+
+    try {
+      const response = await fetch(
+        `/api/admin/form-versions/${versionId}/questions/reorder`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            questionIds: nextItems.map((question) => question.id),
+          }),
+        },
+      );
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(result.error || "Unable to reorder questions.");
+      }
+
+      router.refresh();
+    } catch (error) {
+      setItems(questions);
+      setOrderError(
+        error instanceof Error
+          ? error.message
+          : "Unable to reorder questions.",
+      );
+    } finally {
+      setSavingOrder(false);
+    }
+  }
+
+  function moveDraggedQuestion(targetId: string) {
+    if (!draggingId || draggingId === targetId || savingOrder) return;
+
+    const fromIndex = items.findIndex(
+      (question) => question.id === draggingId,
+    );
+    const targetIndex = items.findIndex(
+      (question) => question.id === targetId,
+    );
+
+    if (fromIndex < 0 || targetIndex < 0) return;
+
+    const nextItems = [...items];
+    const [movedQuestion] = nextItems.splice(fromIndex, 1);
+    nextItems.splice(targetIndex, 0, movedQuestion);
+
+    const normalizedItems = nextItems.map((question, index) => ({
+      ...question,
+      sort_order: index,
+    }));
+
+    setItems(normalizedItems);
+    setDraggingId(null);
+    void saveOrder(normalizedItems);
+  }
+
+  return (
+    <div className="grid gap-3">
+      {items.map((question, index) => (
+        <QuestionEditor
+          key={question.id}
+          versionId={versionId}
+          question={question}
+          index={index}
+          drag={{
+            draggable: !savingOrder,
+            isDragging: draggingId === question.id,
+            onDragStart: (event) => {
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/plain", question.id);
+              setDraggingId(question.id);
+              setOrderError("");
+            },
+            onDragEnd: () => setDraggingId(null),
+            onDragOver: (event) => {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+            },
+            onDrop: (event) => {
+              event.preventDefault();
+              moveDraggedQuestion(question.id);
+            },
+          }}
+        />
+      ))}
+
+      {savingOrder ? (
+        <p className="px-1 text-xs font-medium text-slate-400">
+          Saving question order...
+        </p>
+      ) : null}
+
+      {orderError ? (
+        <p className="px-1 text-sm font-medium text-red-600">
+          {orderError}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -1261,14 +1385,10 @@ function GroupEditor({
           />
 
           <div className="grid gap-3 border-t border-slate-100 pt-4">
-            {group.questions.map((question, index) => (
-              <QuestionEditor
-                key={question.id}
-                versionId={versionId}
-                question={question}
-                index={index}
-              />
-            ))}
+            <SortableQuestionList
+              versionId={versionId}
+              questions={group.questions}
+            />
           </div>
         </div>
       ) : null}
@@ -1280,16 +1400,29 @@ function QuestionEditor({
   versionId,
   question,
   index,
+  drag,
 }: {
   versionId: string;
   question: Question;
   index?: number;
+  drag?: {
+    draggable: boolean;
+    isDragging: boolean;
+    onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
+    onDragEnd: () => void;
+    onDragOver: (event: React.DragEvent<HTMLDivElement>) => void;
+    onDrop: (event: React.DragEvent<HTMLDivElement>) => void;
+  };
 }) {
   const save = useSave(
     `/api/admin/form-versions/${versionId}/questions/${question.id}`,
   );
   const router = useRouter();
   const [values, setValues] = useState(question);
+
+  useEffect(() => {
+    setValues(question);
+  }, [question]);
   const [open, setOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1412,42 +1545,66 @@ function QuestionEditor({
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:border-slate-300">
-      <button
-        type="button"
-        className="flex w-full items-center gap-3 px-4 py-4 text-left"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-      >
-        {typeof index === "number" ? (
-          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">
-            {index + 1}
-          </span>
+    <div
+      className={`overflow-hidden rounded-2xl border bg-white shadow-sm transition ${
+        drag?.isDragging
+          ? "border-red-300 opacity-60 ring-2 ring-red-100"
+          : "border-slate-200 hover:border-slate-300"
+      }`}
+      onDragOver={drag?.onDragOver}
+      onDrop={drag?.onDrop}
+    >
+      <div className="flex items-stretch">
+        {drag ? (
+          <button
+            type="button"
+            draggable={drag.draggable}
+            onDragStart={drag.onDragStart}
+            onDragEnd={drag.onDragEnd}
+            className="flex w-11 shrink-0 cursor-grab items-center justify-center border-r border-slate-100 text-lg font-bold tracking-[-0.2em] text-slate-300 transition hover:bg-slate-50 hover:text-slate-500 active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label={`Drag ${values.question_text || values.code}`}
+            title="Drag to reorder"
+          >
+            ⋮⋮
+          </button>
         ) : null}
 
-        <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="truncate text-sm font-semibold text-slate-950">
-              {values.question_text || values.code}
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4 text-left"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+        >
+          {typeof index === "number" ? (
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">
+              {index + 1}
             </span>
-            <QuestionTypePill type={values.question_type} />
-            {values.is_required ? (
-              <span className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">
-                Required
+          ) : null}
+
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="truncate text-sm font-semibold text-slate-950">
+                {values.question_text || values.code}
               </span>
-            ) : null}
+              <QuestionTypePill type={values.question_type} />
+              {values.is_required ? (
+                <span className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">
+                  Required
+                </span>
+              ) : null}
+            </span>
+
+            <span className="mt-1 block text-xs font-medium text-slate-400">
+              {values.code} · Sort {values.sort_order}
+            </span>
           </span>
 
-          <span className="mt-1 block text-xs font-medium text-slate-400">
-            {values.code} · Sort {values.sort_order}
+          <StatusPill active={values.is_active} />
+          <span className="ml-1 text-lg font-semibold text-slate-400">
+            {open ? "⌃" : "⌄"}
           </span>
-        </span>
-
-        <StatusPill active={values.is_active} />
-        <span className="ml-1 text-lg font-semibold text-slate-400">
-          {open ? "⌃" : "⌄"}
-        </span>
-      </button>
+        </button>
+      </div>
 
       {open ? (
         <div className="space-y-5 border-t border-slate-100 bg-slate-50/30 p-4 md:p-5">
