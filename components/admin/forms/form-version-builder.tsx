@@ -933,23 +933,187 @@ function AddQuestionEditor({
   );
 }
 
+
+function SortableSectionList({
+  versionId,
+  sections,
+  collapseSignal,
+  expandSignal,
+}: {
+  versionId: string;
+  sections: Section[];
+  collapseSignal: number;
+  expandSignal: number;
+}) {
+  const router = useRouter();
+  const [items, setItems] = useState(sections);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [savingOrder, setSavingOrder] = useState(false);
+  const [orderError, setOrderError] = useState("");
+
+  useEffect(() => {
+    setItems(sections);
+  }, [sections]);
+
+  async function saveOrder(nextItems: Section[]) {
+    if (savingOrder) return;
+
+    setSavingOrder(true);
+    setOrderError("");
+
+    try {
+      const response = await fetch(
+        `/api/admin/form-versions/${versionId}/sections/reorder`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            sectionIds: nextItems.map((section) => section.id),
+          }),
+        },
+      );
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(result.error || "Unable to reorder sections.");
+      }
+
+      router.refresh();
+    } catch (error) {
+      setItems(sections);
+      setOrderError(
+        error instanceof Error
+          ? error.message
+          : "Unable to reorder sections.",
+      );
+    } finally {
+      setSavingOrder(false);
+    }
+  }
+
+  function moveDraggedSection(targetId: string) {
+    if (!draggingId || draggingId === targetId || savingOrder) return;
+
+    const fromIndex = items.findIndex(
+      (section) => section.id === draggingId,
+    );
+    const targetIndex = items.findIndex(
+      (section) => section.id === targetId,
+    );
+
+    if (fromIndex < 0 || targetIndex < 0) return;
+
+    const nextItems = [...items];
+    const [movedSection] = nextItems.splice(fromIndex, 1);
+    nextItems.splice(targetIndex, 0, movedSection);
+
+    const normalizedItems = nextItems.map((section, index) => ({
+      ...section,
+      sort_order: index,
+    }));
+
+    setItems(normalizedItems);
+    setDraggingId(null);
+    void saveOrder(normalizedItems);
+  }
+
+  return (
+    <div className="grid gap-4">
+      {items.map((section, index) => (
+        <SectionEditor
+          key={section.id}
+          versionId={versionId}
+          section={section}
+          sectionNumber={index + 1}
+          collapseSignal={collapseSignal}
+          expandSignal={expandSignal}
+          drag={{
+            draggable: !savingOrder,
+            isDragging: draggingId === section.id,
+            onDragStart: (event) => {
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData(
+                "application/x-form-section-id",
+                section.id,
+              );
+              setDraggingId(section.id);
+              setOrderError("");
+            },
+            onDragEnd: () => setDraggingId(null),
+            onDragOver: (event) => {
+              if (
+                Array.from(event.dataTransfer.types).includes(
+                  "application/x-form-section-id",
+                )
+              ) {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+              }
+            },
+            onDrop: (event) => {
+              if (
+                !Array.from(event.dataTransfer.types).includes(
+                  "application/x-form-section-id",
+                )
+              ) {
+                return;
+              }
+
+              event.preventDefault();
+              moveDraggedSection(section.id);
+            },
+          }}
+        />
+      ))}
+
+      {savingOrder ? (
+        <p className="px-1 text-xs font-medium text-slate-400">
+          Saving section order...
+        </p>
+      ) : null}
+
+      {orderError ? (
+        <p className="px-1 text-sm font-medium text-red-600">
+          {orderError}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function SectionEditor({
   versionId,
   section,
   sectionNumber,
   collapseSignal,
   expandSignal,
+  drag,
 }: {
   versionId: string;
   section: Section;
   sectionNumber: number;
   collapseSignal: number;
   expandSignal: number;
+  drag?: {
+    draggable: boolean;
+    isDragging: boolean;
+    onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
+    onDragEnd: () => void;
+    onDragOver: (event: React.DragEvent<HTMLElement>) => void;
+    onDrop: (event: React.DragEvent<HTMLElement>) => void;
+  };
 }) {
   const save = useSave(
     `/api/admin/form-versions/${versionId}/sections/${section.id}`,
   );
   const [values, setValues] = useState(section);
+
+  useEffect(() => {
+    setValues(section);
+  }, [section]);
   const [open, setOpen] = useState(true);
   const [translationOpen, setTranslationOpen] = useState(false);
 
@@ -974,7 +1138,15 @@ function SectionEditor({
     section.groups.reduce((total, group) => total + group.questions.length, 0);
 
   return (
-    <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+    <article
+      className={`overflow-hidden rounded-3xl border bg-white shadow-sm transition ${
+        drag?.isDragging
+          ? "border-red-300 opacity-60 ring-2 ring-red-100"
+          : "border-slate-200"
+      }`}
+      onDragOver={drag?.onDragOver}
+      onDrop={drag?.onDrop}
+    >
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 px-5 py-5 md:px-6">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2.5">
@@ -998,15 +1170,31 @@ function SectionEditor({
           ) : null}
         </div>
 
-        <button
-          type="button"
-          aria-expanded={open}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-lg font-semibold text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-800"
-          onClick={() => setOpen((value) => !value)}
-          title={open ? "Collapse section" : "Expand section"}
-        >
-          {open ? "⌃" : "⌄"}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {drag ? (
+            <button
+              type="button"
+              draggable={drag.draggable}
+              onDragStart={drag.onDragStart}
+              onDragEnd={drag.onDragEnd}
+              className="inline-flex h-10 w-10 cursor-grab items-center justify-center rounded-xl border border-slate-200 bg-white text-lg font-bold tracking-[-0.2em] text-slate-300 shadow-sm transition hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label={`Drag section ${sectionNumber}`}
+              title="Drag to reorder section"
+            >
+              ⋮⋮
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            aria-expanded={open}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-lg font-semibold text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-800"
+            onClick={() => setOpen((value) => !value)}
+            title={open ? "Collapse section" : "Expand section"}
+          >
+            {open ? "⌃" : "⌄"}
+          </button>
+        </div>
       </div>
 
       {open ? (
@@ -2103,16 +2291,12 @@ export function FormVersionBuilder({ data }: { data: BuilderData }) {
 
           <AddSectionEditor versionId={data.version.id} />
 
-          {data.sections.map((section, index) => (
-            <SectionEditor
-              key={section.id}
-              versionId={data.version.id}
-              section={section}
-              sectionNumber={index + 1}
-              collapseSignal={collapseSectionsSignal}
-              expandSignal={expandSectionsSignal}
-            />
-          ))}
+          <SortableSectionList
+            versionId={data.version.id}
+            sections={data.sections}
+            collapseSignal={collapseSectionsSignal}
+            expandSignal={expandSectionsSignal}
+          />
         </section>
       </div>
     </main>
