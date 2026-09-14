@@ -1283,11 +1283,46 @@ function QuestionEditor({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [duplicating, setDuplicating] = useState(false);
+  const [duplicateMessage, setDuplicateMessage] = useState("");
+  const [duplicateError, setDuplicateError] = useState("");
 
   const update = (key: keyof Question, value: unknown) =>
     setValues((old) => ({ ...old, [key]: value }));
 
   const isTemperature = values.question_type === "temperature";
+
+  async function duplicateQuestion() {
+    if (duplicating) return;
+
+    setDuplicating(true);
+    setDuplicateMessage("");
+    setDuplicateError("");
+
+    try {
+      const response = await fetch(
+        `/api/admin/form-versions/${versionId}/questions/${question.id}/duplicate`,
+        { method: "POST" },
+      );
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(result.error || "Unable to duplicate question.");
+      }
+
+      setDuplicateMessage("Question duplicated.");
+      router.refresh();
+    } catch (error) {
+      setDuplicateError(
+        error instanceof Error
+          ? error.message
+          : "Unable to duplicate question.",
+      );
+    } finally {
+      setDuplicating(false);
+    }
+  }
 
   async function deleteQuestion() {
     if (deleting) return;
@@ -1507,6 +1542,40 @@ function QuestionEditor({
               ))}
             </div>
           ) : null}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">
+                Duplicate question
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Create a full copy in the same section and question group.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={duplicating}
+                onClick={duplicateQuestion}
+              >
+                {duplicating ? "Duplicating..." : "Duplicate question"}
+              </button>
+
+              {duplicateMessage ? (
+                <span className="text-sm font-medium text-emerald-600">
+                  {duplicateMessage}
+                </span>
+              ) : null}
+
+              {duplicateError ? (
+                <span className="text-sm font-medium text-red-600">
+                  {duplicateError}
+                </span>
+              ) : null}
+            </div>
+          </div>
 
           <div className="border-t border-slate-100 pt-5">
             {!deleteOpen ? (
