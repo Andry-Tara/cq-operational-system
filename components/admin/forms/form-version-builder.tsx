@@ -1084,6 +1084,192 @@ function SortableSectionList({
   );
 }
 
+
+function AddGroupEditor({
+  versionId,
+  section,
+}: {
+  versionId: string;
+  section: Section;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [isActive, setIsActive] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function addGroup() {
+    if (saving) return;
+
+    const normalizedCode = code.trim();
+    const normalizedName = name.trim();
+
+    if (!normalizedCode || !normalizedName) {
+      setMessage("");
+      setError("Code and group name are required.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/admin/form-versions/${versionId}/sections/${section.id}/groups`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            code: normalizedCode,
+            name: normalizedName,
+            isActive,
+          }),
+        },
+      );
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(result.error || "Unable to add question group.");
+      }
+
+      setCode("");
+      setName("");
+      setIsActive(true);
+      setMessage("Question group added.");
+      setOpen(false);
+      router.refresh();
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unable to add question group.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3.5">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">
+            Question groups
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Create a group to organize related questions in this section.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          {message ? (
+            <span className="text-sm font-medium text-emerald-600">
+              {message}
+            </span>
+          ) : null}
+
+          <button
+            type="button"
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            onClick={() => {
+              setOpen(true);
+              setMessage("");
+              setError("");
+            }}
+          >
+            + Add Group
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-red-100 bg-gradient-to-b from-red-50/50 to-white p-4 shadow-sm md:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-red-600">
+            New question group
+          </p>
+          <h5 className="mt-1 text-base font-semibold text-slate-950">
+            Add Group
+          </h5>
+          <p className="mt-1 text-sm text-slate-500">
+            Questions can be assigned to this group when they are created.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-500 transition hover:bg-slate-50"
+          onClick={() => {
+            setOpen(false);
+            setError("");
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-[1fr_1.5fr_auto]">
+        <Field label="Group code" required>
+          <Input
+            placeholder="CLOSING_GENERAL"
+            value={code}
+            onChange={(event) =>
+              setCode(
+                event.target.value
+                  .toUpperCase()
+                  .replace(/\s+/g, "_"),
+              )
+            }
+          />
+        </Field>
+
+        <Field label="Group name" required>
+          <Input
+            placeholder="Closing General"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </Field>
+
+        <div className="flex items-end pb-1">
+          <Toggle
+            checked={isActive}
+            onChange={setIsActive}
+            label="Active"
+          />
+        </div>
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          className={primaryButtonClass}
+          disabled={saving}
+          onClick={addGroup}
+        >
+          {saving ? "Adding..." : "Add Group"}
+        </button>
+
+        {error ? (
+          <span className="text-sm font-medium text-red-600">
+            {error}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function SectionEditor({
   versionId,
   section,
@@ -1314,7 +1500,8 @@ function SectionEditor({
               </p>
             </div>
 
-            <div className="mb-4">
+            <div className="mb-4 grid gap-3">
+              <AddGroupEditor versionId={versionId} section={section} />
               <AddQuestionEditor versionId={versionId} section={section} />
             </div>
 
