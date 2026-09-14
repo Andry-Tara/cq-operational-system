@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CkAccessEditor } from "./ck-access-editor";
+import { OutletOperationsAccessEditor } from "./outlet-operations-access-editor";
 
 type Role = {
   id: string;
@@ -750,6 +751,16 @@ export function UsersClient({
                   </div>
                 )}
               </div>
+
+              {!selectedIsCk &&
+                !selectedRole?.is_admin && (
+                  <OutletOperationsAccessEditor
+                    key={`outlet-ops-${form.id ?? "new"}`}
+                    userId={form.id}
+                    outletIds={form.outletIds}
+                    disabled={saving}
+                  />
+                )}
 
               {selectedIsCk && (
 
