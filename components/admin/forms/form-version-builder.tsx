@@ -36,6 +36,7 @@ export type Question = {
   placeholder: string | null;
   sort_order: number;
   is_active: boolean;
+  config: Record<string, unknown> | null;
   translations: Translation[];
   options: Option[];
 };
@@ -1771,6 +1772,300 @@ function GroupEditor({
   );
 }
 
+
+type EvidenceMode = "always" | "on_issue" | "none";
+type ApplicabilityType = "global" | "facility";
+
+type FacilityOption = {
+  code: string;
+  name: string;
+  description: string | null;
+};
+
+function getQuestionSettings(question: Question) {
+  const config =
+    question.config &&
+    typeof question.config === "object" &&
+    !Array.isArray(question.config)
+      ? question.config
+      : {};
+
+  const rawEvidence = config.evidence_mode;
+  const evidenceMode: EvidenceMode =
+    rawEvidence === "on_issue" || rawEvidence === "none"
+      ? rawEvidence
+      : "always";
+
+  const rawApplicability = config.applicability;
+  const applicability =
+    rawApplicability &&
+    typeof rawApplicability === "object" &&
+    !Array.isArray(rawApplicability)
+      ? (rawApplicability as Record<string, unknown>)
+      : {};
+
+  const applicabilityType: ApplicabilityType =
+    applicability.type === "facility" ? "facility" : "global";
+
+  const facilityKey =
+    applicabilityType === "facility" &&
+    typeof applicability.facility_key === "string" &&
+    applicability.facility_key.trim()
+      ? applicability.facility_key.trim()
+      : null;
+
+  return {
+    evidenceMode,
+    applicabilityType,
+    facilityKey,
+  };
+}
+
+function QuestionSettingsEditor({
+  versionId,
+  question,
+}: {
+  versionId: string;
+  question: Question;
+}) {
+  const save = useSave(
+    `/api/admin/form-versions/${versionId}/questions/${question.id}/settings`,
+  );
+
+  const initial = getQuestionSettings(question);
+
+  const [open, setOpen] = useState(false);
+  const [isRequired, setIsRequired] = useState(question.is_required);
+  const [isActive, setIsActive] = useState(question.is_active);
+  const [evidenceMode, setEvidenceMode] = useState<EvidenceMode>(
+    initial.evidenceMode,
+  );
+  const [applicabilityType, setApplicabilityType] =
+    useState<ApplicabilityType>(initial.applicabilityType);
+  const [facilityKey, setFacilityKey] = useState<string | null>(
+    initial.facilityKey,
+  );
+
+  const [facilities, setFacilities] = useState<FacilityOption[]>([]);
+  const [facilitiesLoaded, setFacilitiesLoaded] = useState(false);
+  const [facilityError, setFacilityError] = useState("");
+
+  useEffect(() => {
+    const next = getQuestionSettings(question);
+    setIsRequired(question.is_required);
+    setIsActive(question.is_active);
+    setEvidenceMode(next.evidenceMode);
+    setApplicabilityType(next.applicabilityType);
+    setFacilityKey(next.facilityKey);
+  }, [question]);
+
+  useEffect(() => {
+    if (!open || facilitiesLoaded) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      setFacilityError("");
+
+      try {
+        const response = await fetch(
+          `/api/admin/form-versions/${versionId}/facilities`,
+          { method: "GET" },
+        );
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(
+            result.error || "Unable to load facility master.",
+          );
+        }
+
+        if (!cancelled) {
+          setFacilities(
+            Array.isArray(result.facilities)
+              ? (result.facilities as FacilityOption[])
+              : [],
+          );
+          setFacilitiesLoaded(true);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setFacilityError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load facility master.",
+          );
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, facilitiesLoaded, versionId]);
+
+  const evidenceLabel =
+    evidenceMode === "always"
+      ? "Photo always"
+      : evidenceMode === "on_issue"
+        ? "Photo on issue"
+        : "No photo";
+
+  const applicabilityLabel =
+    applicabilityType === "facility"
+      ? `Facility: ${facilityKey || "not selected"}`
+      : "All sites / Global";
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <button
+        type="button"
+        className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3.5 text-left transition hover:bg-slate-50"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+      >
+        <span>
+          <span className="block text-sm font-bold text-slate-900">
+            ⚙ Question Settings
+          </span>
+          <span className="mt-1 block text-xs leading-5 text-slate-500">
+            Universal behavior for Restaurant Outlet and Central Kitchen forms.
+          </span>
+        </span>
+
+        <span className="flex flex-wrap items-center justify-end gap-2">
+          <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 ring-1 ring-inset ring-sky-200">
+            {evidenceLabel}
+          </span>
+          <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-200">
+            {applicabilityLabel}
+          </span>
+          <span className="text-sm font-bold text-slate-400">
+            {open ? "⌃" : "⌄"}
+          </span>
+        </span>
+      </button>
+
+      {open ? (
+        <div className="space-y-5 border-t border-slate-100 bg-slate-50/60 p-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <Toggle
+                checked={isRequired}
+                onChange={setIsRequired}
+                label="Required answer"
+                description="The question must be answered before submission."
+              />
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <Toggle
+                checked={isActive}
+                onChange={setIsActive}
+                label="Active question"
+                description="Inactive questions are kept in the draft but not used operationally."
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Field
+              label="Photo Evidence"
+              hint="Controls when operational photo evidence is required."
+            >
+              <Select
+                value={evidenceMode}
+                onChange={(event) =>
+                  setEvidenceMode(event.target.value as EvidenceMode)
+                }
+              >
+                <option value="always">Required always</option>
+                <option value="on_issue">Required only on issue / NO</option>
+                <option value="none">No photo required</option>
+              </Select>
+            </Field>
+
+            <Field
+              label="Applicability"
+              hint="Use Global for every assigned site, or Facility for conditional questions."
+            >
+              <Select
+                value={applicabilityType}
+                onChange={(event) => {
+                  const next =
+                    event.target.value as ApplicabilityType;
+                  setApplicabilityType(next);
+                  if (next === "global") {
+                    setFacilityKey(null);
+                  }
+                }}
+              >
+                <option value="global">All sites / Global</option>
+                <option value="facility">Based on Facility</option>
+              </Select>
+            </Field>
+          </div>
+
+          {applicabilityType === "facility" ? (
+            <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
+              <Field
+                label="Facility"
+                hint="Facility definitions are shared by the organization and can be used by both Outlet and CK forms."
+              >
+                <Select
+                  value={facilityKey ?? ""}
+                  onChange={(event) =>
+                    setFacilityKey(event.target.value || null)
+                  }
+                >
+                  <option value="">Select facility...</option>
+                  {facilities.map((facility) => (
+                    <option key={facility.code} value={facility.code}>
+                      {facility.name} ({facility.code})
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              {facilityError ? (
+                <p className="mt-3 text-xs font-semibold text-red-600">
+                  {facilityError}
+                </p>
+              ) : null}
+
+              {!facilityError &&
+              facilitiesLoaded &&
+              facilities.length === 0 ? (
+                <p className="mt-3 text-xs font-semibold text-amber-700">
+                  No active facility definitions are available for this organization.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <SaveBar
+            state={save.state}
+            label="Save question settings"
+            onSave={() =>
+              save.save({
+                isRequired,
+                isActive,
+                evidenceMode,
+                applicabilityType,
+                facilityKey:
+                  applicabilityType === "facility"
+                    ? facilityKey
+                    : null,
+              })
+            }
+            onRestore={save.restore}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function QuestionEditor({
   versionId,
   question,
@@ -1983,6 +2278,11 @@ function QuestionEditor({
 
       {open ? (
         <div className="space-y-5 border-t border-slate-100 bg-slate-50/30 p-4 md:p-5">
+          <QuestionSettingsEditor
+            versionId={versionId}
+            question={question}
+          />
+
           <div className="grid gap-4 lg:grid-cols-2">
             <Field label="Question text" required>
               <Textarea

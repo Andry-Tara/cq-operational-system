@@ -18,7 +18,7 @@ export default async function BuilderPage({ params }: { params: Promise<{ formVe
   if (sectionsError) notFound();
   const sectionIds = (sections ?? []).map((item) => item.id);
   const { data: groups } = sectionIds.length ? await admin.from("question_groups").select("id, version_section_id, code, name, sort_order, is_active").in("version_section_id", sectionIds).order("sort_order", { ascending: true }) : { data: [] };
-  const { data: questions } = sectionIds.length ? await admin.from("questions").select("id, version_section_id, question_group_id, code, question_text, help_text, question_type, is_required, unit, min_value, max_value, placeholder, sort_order, is_active").in("version_section_id", sectionIds).order("sort_order", { ascending: true }) : { data: [] };
+  const { data: questions } = sectionIds.length ? await admin.from("questions").select("id, version_section_id, question_group_id, code, question_text, help_text, question_type, is_required, unit, min_value, max_value, placeholder, sort_order, is_active, config").in("version_section_id", sectionIds).order("sort_order", { ascending: true }) : { data: [] };
   const questionIds = (questions ?? []).map((item) => item.id);
   const { data: options } = questionIds.length ? await admin.from("question_options").select("id, question_id, value, label, sort_order, is_failure").in("question_id", questionIds).order("sort_order", { ascending: true }) : { data: [] };
   const groupIds = (groups ?? []).map((item) => item.id);
