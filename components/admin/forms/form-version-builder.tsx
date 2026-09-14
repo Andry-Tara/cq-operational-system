@@ -1166,7 +1166,7 @@ function GroupEditor({
 }) {
   const save = useSave(`/api/admin/form-versions/${versionId}/groups/${group.id}`);
   const [values, setValues] = useState(group);
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/40">
@@ -1177,6 +1177,9 @@ function GroupEditor({
               Group · {group.code}
             </span>
             <StatusPill active={values.is_active} />
+            <span className="text-xs font-medium text-slate-400">
+              {group.questions.length} question{group.questions.length === 1 ? "" : "s"}
+            </span>
           </div>
           <p className="mt-1 text-sm font-semibold text-slate-900">{values.name}</p>
         </div>
@@ -1274,13 +1277,48 @@ function QuestionEditor({
   const save = useSave(
     `/api/admin/form-versions/${versionId}/questions/${question.id}`,
   );
+  const router = useRouter();
   const [values, setValues] = useState(question);
   const [open, setOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const update = (key: keyof Question, value: unknown) =>
     setValues((old) => ({ ...old, [key]: value }));
 
   const isTemperature = values.question_type === "temperature";
+
+  async function deleteQuestion() {
+    if (deleting) return;
+
+    setDeleting(true);
+    setDeleteError("");
+
+    try {
+      const response = await fetch(
+        `/api/admin/form-versions/${versionId}/questions/${question.id}/delete`,
+        { method: "DELETE" },
+      );
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(result.error || "Unable to delete question.");
+      }
+
+      setDeleteOpen(false);
+      router.refresh();
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete question.",
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:border-slate-300">
@@ -1469,6 +1507,71 @@ function QuestionEditor({
               ))}
             </div>
           ) : null}
+
+          <div className="border-t border-slate-100 pt-5">
+            {!deleteOpen ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">
+                    Delete question
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Permanently remove this question from the current draft.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  className="inline-flex min-h-10 items-center justify-center rounded-xl border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 transition hover:bg-red-50"
+                  onClick={() => {
+                    setDeleteOpen(true);
+                    setDeleteError("");
+                  }}
+                >
+                  Delete question
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-red-200 bg-red-50/70 p-4">
+                <p className="text-sm font-semibold text-red-900">
+                  Delete this question?
+                </p>
+                <p className="mt-1 text-sm leading-6 text-red-700">
+                  “{values.question_text || values.code}” will be permanently removed
+                  from this draft version.
+                </p>
+
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    className="inline-flex min-h-10 items-center justify-center rounded-xl bg-red-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={deleting}
+                    onClick={deleteQuestion}
+                  >
+                    {deleting ? "Deleting..." : "Delete Question"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className={secondaryButtonClass}
+                    disabled={deleting}
+                    onClick={() => {
+                      setDeleteOpen(false);
+                      setDeleteError("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+
+                  {deleteError ? (
+                    <span className="text-sm font-medium text-red-700">
+                      {deleteError}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       ) : null}
     </div>
