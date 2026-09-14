@@ -434,6 +434,220 @@ function TranslationEditor({
   );
 }
 
+type NewSectionValues = {
+  code: string;
+  displayName: string;
+  description: string;
+  areaCode: "" | "STORE" | "PRODUCTION";
+  isRequired: boolean;
+  isActive: boolean;
+};
+
+function createEmptySection(): NewSectionValues {
+  return {
+    code: "",
+    displayName: "",
+    description: "",
+    areaCode: "",
+    isRequired: true,
+    isActive: true,
+  };
+}
+
+function AddSectionEditor({ versionId }: { versionId: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [values, setValues] = useState<NewSectionValues>(createEmptySection());
+  const [state, setState] = useState<SaveResult>(initialSave);
+
+  const update = (
+    key: keyof NewSectionValues,
+    value: string | boolean,
+  ) => {
+    setValues((old) => ({ ...old, [key]: value }));
+    if (state.error || state.message) setState(initialSave);
+  };
+
+  async function addSection() {
+    if (state.saving) return;
+
+    if (!values.code.trim() || !values.displayName.trim()) {
+      setState({
+        saving: false,
+        message: "",
+        error: "Section code and display name are required.",
+      });
+      return;
+    }
+
+    setState({ saving: true, message: "", error: "" });
+
+    try {
+      const response = await fetch(
+        `/api/admin/form-versions/${versionId}/sections`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            code: values.code.trim().toUpperCase(),
+            displayName: values.displayName.trim(),
+            description: values.description.trim() || null,
+            areaCode: values.areaCode || null,
+            isRequired: values.isRequired,
+            isActive: values.isActive,
+          }),
+        },
+      );
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(result.error || "Unable to add section.");
+      }
+
+      setValues(createEmptySection());
+      setState(initialSave);
+      setOpen(false);
+      router.refresh();
+    } catch (error) {
+      setState({
+        saving: false,
+        message: "",
+        error: error instanceof Error ? error.message : "Unable to add section.",
+      });
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="flex justify-end">
+        <button
+          type="button"
+          className={primaryButtonClass}
+          onClick={() => {
+            setOpen(true);
+            setState(initialSave);
+          }}
+        >
+          + Add Section
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-3xl border border-red-100 bg-gradient-to-b from-red-50/70 to-white p-5 shadow-sm md:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-red-600">
+            New section
+          </p>
+          <h3 className="mt-1 text-lg font-semibold text-slate-950">
+            Add a section to this draft
+          </h3>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
+            The section is created as a canonical form section and attached to this
+            draft version automatically.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          className={secondaryButtonClass}
+          disabled={state.saving}
+          onClick={() => {
+            setOpen(false);
+            setValues(createEmptySection());
+            setState(initialSave);
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <Field
+          label="Section code"
+          required
+          hint="Stable internal identifier, for example DINING_ROOM."
+        >
+          <Input
+            placeholder="DINING_ROOM"
+            value={values.code}
+            onChange={(event) => update("code", event.target.value.toUpperCase())}
+          />
+        </Field>
+
+        <Field label="Display name" required>
+          <Input
+            placeholder="Dining Room"
+            value={values.displayName}
+            onChange={(event) => update("displayName", event.target.value)}
+          />
+        </Field>
+
+        <Field label="Description">
+          <Textarea
+            placeholder="Describe what this section covers..."
+            value={values.description}
+            onChange={(event) => update("description", event.target.value)}
+          />
+        </Field>
+
+        <Field
+          label="Operational area"
+          hint="Optional. For Central Kitchen, assign Warehouse or Production when relevant."
+        >
+          <Select
+            value={values.areaCode}
+            onChange={(event) =>
+              update(
+                "areaCode",
+                event.target.value as "" | "STORE" | "PRODUCTION",
+              )
+            }
+          >
+            <option value="">Not assigned</option>
+            <option value="STORE">Warehouse</option>
+            <option value="PRODUCTION">Production</option>
+          </Select>
+        </Field>
+      </div>
+
+      <div className="mt-5 flex flex-wrap gap-x-8 gap-y-4 rounded-2xl border border-slate-100 bg-white p-4">
+        <Toggle
+          checked={values.isRequired}
+          onChange={(checked) => update("isRequired", checked)}
+          label="Required"
+          description="Questions in this section should be completed."
+        />
+
+        <Toggle
+          checked={values.isActive}
+          onChange={(checked) => update("isActive", checked)}
+          label="Active"
+          description="Section is available in the operational form."
+        />
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          className={primaryButtonClass}
+          disabled={state.saving}
+          onClick={addSection}
+        >
+          {state.saving ? "Adding..." : "Add Section"}
+        </button>
+
+        {state.error ? (
+          <span className="text-sm font-medium text-red-600">{state.error}</span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 type NewQuestionValues = {
   code: string;
   questionText: string;
@@ -739,6 +953,7 @@ function SectionEditor({
   );
   const [values, setValues] = useState(section);
   const [open, setOpen] = useState(true);
+  const [translationOpen, setTranslationOpen] = useState(false);
 
   const update = (key: keyof Section, value: unknown) =>
     setValues((old) => ({ ...old, [key]: value }));
@@ -858,21 +1073,36 @@ function SectionEditor({
             </div>
           </div>
 
-          <div>
-            <div className="mb-3 flex items-center gap-2">
-              <span className="h-px flex-1 bg-slate-100" />
-              <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
-                Localized section content
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left transition hover:bg-slate-50"
+              aria-expanded={translationOpen}
+              onClick={() => setTranslationOpen((value) => !value)}
+            >
+              <span>
+                <span className="block text-sm font-semibold text-slate-900">
+                  Localized content
+                </span>
+                <span className="mt-0.5 block text-xs text-slate-500">
+                  English and Indonesian section labels · EN · ID
+                </span>
               </span>
-              <span className="h-px flex-1 bg-slate-100" />
-            </div>
+              <span className="text-lg font-semibold text-slate-400">
+                {translationOpen ? "⌃" : "⌄"}
+              </span>
+            </button>
 
-            <TranslationEditor
-              versionId={versionId}
-              resourceType="section"
-              resourceId={section.id}
-              translations={section.translations}
-            />
+            {translationOpen ? (
+              <div className="border-t border-slate-100 p-4">
+                <TranslationEditor
+                  versionId={versionId}
+                  resourceType="section"
+                  resourceId={section.id}
+                  translations={section.translations}
+                />
+              </div>
+            ) : null}
           </div>
 
           <div className="border-t border-slate-100 pt-6">
@@ -1418,6 +1648,8 @@ export function FormVersionBuilder({ data }: { data: BuilderData }) {
               Canonical + localized content
             </div>
           </div>
+
+          <AddSectionEditor versionId={data.version.id} />
 
           {data.sections.map((section, index) => (
             <SectionEditor
