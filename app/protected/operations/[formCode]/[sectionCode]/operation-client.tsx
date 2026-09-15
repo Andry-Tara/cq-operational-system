@@ -2492,19 +2492,41 @@ export default function OperationClient({
           };
         }
 
+        const reportArea =
+          operation.sectionCode === "FOH"
+            ? "FOH / FRONT OF HOUSE"
+            : "BOH / KITCHEN";
+
         const pdfBytes =
-          await buildOpeningPdf({
-            reportNumber:
-              session.reportNumber,
-            outletName:
-              outlet.name,
-            submittedBy:
-              pic.name,
-            groups,
-            questions,
-            answers:
-              pdfAnswers,
-          });
+          operation.formCode.startsWith(
+            "CLOSING"
+          )
+            ? await buildClosingPdf({
+                reportNumber:
+                  session.reportNumber,
+                outletName:
+                  outlet.name,
+                submittedBy:
+                  pic.name,
+                reportArea,
+                groups,
+                questions,
+                answers:
+                  pdfAnswers,
+              })
+            : await buildOpeningPdf({
+                reportNumber:
+                  session.reportNumber,
+                outletName:
+                  outlet.name,
+                submittedBy:
+                  pic.name,
+                reportArea,
+                groups,
+                questions,
+                answers:
+                  pdfAnswers,
+              });
 
         const pdfBlob =
           new Blob(
