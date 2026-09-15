@@ -12,6 +12,15 @@ export type OperationConfig = {
    * Existing OPENING / CLOSING remain false/undefined.
    */
   sectionScoped?: boolean;
+
+  /**
+   * Split Restaurant Outlet operations use form-level access
+   * from user_form_permissions.
+   *
+   * Legacy OPENING / CLOSING stay on app permissions.
+   * Central Kitchen stays sectionScoped.
+   */
+  formScoped?: boolean;
 };
 
 const OPERATION_CONFIGS: Record<
@@ -30,6 +39,44 @@ const OPERATION_CONFIGS: Record<
     permissionCode: "opening.submit",
     reportPrefix: "OPN",
     displayName: "Opening Outlet",
+  },
+
+  /**
+   * Split Restaurant Outlet operations.
+   *
+   * permissionCode is compatibility metadata only.
+   * Runtime fill / submit authority is form-scoped.
+   */
+  OPENING_FOH: {
+    formCode: "OPENING_FOH",
+    permissionCode: "opening.submit",
+    reportPrefix: "OPNFOH",
+    displayName: "Opening FOH",
+    formScoped: true,
+  },
+
+  OPENING_BOH: {
+    formCode: "OPENING_BOH",
+    permissionCode: "opening.submit",
+    reportPrefix: "OPNBOH",
+    displayName: "Opening BOH",
+    formScoped: true,
+  },
+
+  CLOSING_FOH: {
+    formCode: "CLOSING_FOH",
+    permissionCode: "closing.submit",
+    reportPrefix: "CLSFOH",
+    displayName: "Closing FOH",
+    formScoped: true,
+  },
+
+  CLOSING_BOH: {
+    formCode: "CLOSING_BOH",
+    permissionCode: "closing.submit",
+    reportPrefix: "CLSBOH",
+    displayName: "Closing BOH",
+    formScoped: true,
   },
 
   /**

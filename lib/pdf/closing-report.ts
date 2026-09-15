@@ -1788,7 +1788,10 @@ export async function buildClosingPdf({
   reportNumber,
   outletName,
   submittedBy,
-  reportArea = "BOH / KITCHEN",
+  reportArea =
+    reportNumber.startsWith("CLSFOH-")
+      ? "FOH / FRONT OF HOUSE"
+      : "BOH / KITCHEN",
   reportTimestamp,
   reportBusinessDate,
   groups,

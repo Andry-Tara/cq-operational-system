@@ -1283,7 +1283,10 @@ export async function buildOpeningPdf({
   reportNumber,
   outletName,
   submittedBy,
-  reportArea = "BOH / KITCHEN",
+  reportArea =
+    reportNumber.startsWith("OPNFOH-")
+      ? "FOH / FRONT OF HOUSE"
+      : "BOH / KITCHEN",
   groups,
   questions,
   answers,

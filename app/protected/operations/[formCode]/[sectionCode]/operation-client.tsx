@@ -2499,7 +2499,7 @@ export default function OperationClient({
             outletName:
               outlet.name,
             submittedBy:
-              "CQ Operational User",
+              pic.name,
             groups,
             questions,
             answers:
@@ -2733,6 +2733,7 @@ export default function OperationClient({
       "*CHONG QING HOT POT*",
       "",
       `📍 Outlet: ${outlet.name}`,
+      `👤 PIC: ${pic.name}`,
       `📅 Date: ${date}`,
       `⏰ Submitted: ${time} WIB`,
       `🏷 Section: ${sectionLabel}`,
@@ -2805,6 +2806,7 @@ export default function OperationClient({
     lines.push(
       "*REPORT INFO*",
       `- Report ID: ${result.reportNumber}`,
+      `- PIC: ${pic.name}`,
       `- Photo Evidence: ${result.photoCount}`,
       `- Issues: ${result.issueCount}`,
       "",

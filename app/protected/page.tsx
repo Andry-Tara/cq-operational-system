@@ -18,6 +18,10 @@ import {
 } from "@/components/auto-refresh";
 
 import ReopenReportButton from "./reports/reopen-report-button";
+import SplitOutletOperationsPanel from "@/components/split-outlet-operations-panel";
+import {
+  loadSplitOutletOperationCards,
+} from "@/lib/operations/load-split-outlet-dashboard";
 
 
 function one(value: any) {
@@ -542,6 +546,25 @@ export default async function ProtectedPage({
 
 
   // ==========================================================
+
+  const splitOutletOperations =
+    activeOutlet?.id &&
+    activeOutlet.code !== "CNT"
+      ? await loadSplitOutletOperationCards({
+          supabase,
+          organizationId:
+            profile.organization_id,
+          outletId:
+            activeOutlet.id,
+          outletTimezone:
+            activeOutlet.timezone ||
+            "Asia/Jakarta",
+          userId:
+            user.id,
+          isAdmin,
+        })
+      : [];
+
 
   const {
     data:
@@ -2157,11 +2180,22 @@ export default async function ProtectedPage({
         )}
 
 
+        <SplitOutletOperationsPanel
+          cards={
+            splitOutletOperations
+          }
+          outletName={
+            activeOutlet?.name ??
+            "Outlet"
+          }
+        />
+
         {/* ====================================================
             OPENING OUTLET
         ==================================================== */}
 
-        {activeOutlet?.code !== "CNT" && (
+        {activeOutlet?.code !== "CNT" &&
+        splitOutletOperations.length === 0 && (
           <section className="mt-4 overflow-hidden rounded-[18px] border border-neutral-200 bg-white shadow-sm md:mt-6 md:rounded-[22px]">
 
             <div className="p-4 sm:p-5 md:p-6">

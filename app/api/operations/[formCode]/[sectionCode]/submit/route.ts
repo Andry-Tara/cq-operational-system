@@ -71,7 +71,10 @@ export async function POST(
     //
     // Central Kitchen is section-scoped and is authorized below
     // with has_section_permission() against the exact section.
-    if (!config.sectionScoped) {
+    if (
+      !config.sectionScoped &&
+      !config.formScoped
+    ) {
       const permissionAccess =
         await checkPermissionApi(
           config.permissionCode
@@ -359,6 +362,46 @@ export async function POST(
         }
       );
     }
+
+    // ========================================================
+    // FORM-SCOPED SUBMIT AUTHORIZATION
+    //
+    // Split Restaurant Outlet forms use user_form_permissions.
+    // ========================================================
+
+    if (config.formScoped) {
+      const {
+        data: canSubmitForm,
+        error: canSubmitFormError,
+      } = await supabase.rpc(
+        "can_submit_outlet_form",
+        {
+          p_outlet_id:
+            report.outlet_id,
+          p_form_id:
+            report.form_id,
+        }
+      );
+
+      if (canSubmitFormError) {
+        throw canSubmitFormError;
+      }
+
+      if (canSubmitForm !== true) {
+        return NextResponse.json(
+          {
+            error:
+              "Anda tidak memiliki Submit access untuk form ini.",
+            code:
+              "FORM_SUBMIT_PERMISSION_DENIED",
+          },
+          {
+            status: 403,
+          }
+        );
+      }
+    }
+
 
     // ========================================================
     // SECTION-SCOPED SUBMIT AUTHORIZATION

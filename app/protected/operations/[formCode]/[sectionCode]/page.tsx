@@ -100,6 +100,9 @@ export default async function OperationPage({
       "OPENING" ||
     Boolean(
       config.sectionScoped
+    ) ||
+    Boolean(
+      config.formScoped
     );
 
   if (!genericUiEnabled) {
@@ -129,7 +132,10 @@ export default async function OperationPage({
 
   // Legacy Opening keeps the existing app permission gate.
   // CK is authorized by exact section permission below.
-  if (!config.sectionScoped) {
+  if (
+    !config.sectionScoped &&
+    !config.formScoped
+  ) {
     await requirePermission(
       config.permissionCode
     );
@@ -265,6 +271,39 @@ export default async function OperationPage({
           normalizedSectionCode,
         historicalReportId,
       });
+
+    if (config.formScoped) {
+      const {
+        data: canFillForm,
+        error: canFillFormError,
+      } = await supabase.rpc(
+        "can_start_operational_report",
+        {
+          p_organization_id:
+            profile.organization_id,
+          p_outlet_id:
+            outlet.id,
+          p_form_id:
+            operation.form.id,
+          p_started_by:
+            user.id,
+        }
+      );
+
+      if (canFillFormError) {
+        throw canFillFormError;
+      }
+
+      if (canFillForm !== true) {
+        return (
+          <ErrorState
+            title="Access Denied"
+            message={`Anda tidak memiliki Fill access untuk ${config.displayName} di outlet ini.`}
+          />
+        );
+      }
+    }
+
 
 
     if (config.sectionScoped) {
@@ -404,7 +443,8 @@ export default async function OperationPage({
 
 
     const sectionDisplayName =
-      config.sectionScoped
+      config.sectionScoped ||
+      config.formScoped
         ? (
             operation.versionSection
               .display_name ||
@@ -566,10 +606,42 @@ export default async function OperationPage({
                 ),
             }}
             groups={
-              operation.groups
+              operation.questions.some(
+                (question: any) =>
+                  !question.question_group_id
+              )
+                ? [
+                    ...operation.groups,
+                    {
+                      id: `__runtime-general-${operation.versionSection.id}`,
+                      code: "GENERAL",
+                      name:
+                        operation.groups.length === 0
+                          ? sectionDisplayName
+                          : "General",
+                      description: null,
+                      sort_order:
+                        Number.MAX_SAFE_INTEGER,
+                    },
+                  ]
+                : operation.groups
             }
             questions={
-              operation.questions
+              operation.questions.some(
+                (question: any) =>
+                  !question.question_group_id
+              )
+                ? operation.questions.map(
+                    (question: any) =>
+                      question.question_group_id
+                        ? question
+                        : {
+                            ...question,
+                            question_group_id:
+                              `__runtime-general-${operation.versionSection.id}`,
+                          }
+                  )
+                : operation.questions
             }
           />
 
