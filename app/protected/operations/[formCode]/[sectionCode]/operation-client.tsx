@@ -270,7 +270,8 @@ export default function OperationClient({
     );
 
   function questionText(
-    question: Question
+    question: Question,
+    locale: AppLocale = displayLocale
   ) {
     return resolveLocalizedText(
       question.question_text,
@@ -284,12 +285,13 @@ export default function OperationClient({
           ]
         )
       ) as Partial<Record<AppLocale, string | null>>,
-      displayLocale
+      locale
     );
   }
 
   function questionHelpText(
-    question: Question
+    question: Question,
+    locale: AppLocale = displayLocale
   ) {
     return resolveLocalizedText(
       question.help_text,
@@ -303,12 +305,13 @@ export default function OperationClient({
           ]
         )
       ) as Partial<Record<AppLocale, string | null>>,
-      displayLocale
+      locale
     );
   }
 
   function groupName(
-    group: Group
+    group: Group,
+    locale: AppLocale = displayLocale
   ) {
     return resolveLocalizedText(
       group.name,
@@ -322,12 +325,13 @@ export default function OperationClient({
           ]
         )
       ) as Partial<Record<AppLocale, string | null>>,
-      displayLocale
+      locale
     );
   }
 
   function groupDescription(
-    group: Group
+    group: Group,
+    locale: AppLocale = displayLocale
   ) {
     return resolveLocalizedText(
       group.description,
@@ -341,7 +345,7 @@ export default function OperationClient({
           ]
         )
       ) as Partial<Record<AppLocale, string | null>>,
-      displayLocale
+      locale
     );
   }
 
@@ -2344,7 +2348,7 @@ export default function OperationClient({
           )
         ) {
           throw new Error(
-            `Photo evidence wajib belum ada: ${question.question_text}`
+            `Photo evidence wajib belum ada: ${questionText(question)}`
           );
         }
 
@@ -2419,7 +2423,7 @@ export default function OperationClient({
 
           if (uploadError) {
             throw new Error(
-              `Upload gagal untuk "${question.question_text}": ${uploadError.message}`
+              `Upload gagal untuk "${questionText(question)}": ${uploadError.message}`
             );
           }
 
@@ -2497,6 +2501,42 @@ export default function OperationClient({
             ? "FOH / FRONT OF HOUSE"
             : "BOH / KITCHEN";
 
+        const pdfLocale: AppLocale =
+          isSupportedLocale(session.locale)
+            ? session.locale
+            : displayLocale;
+
+        const localizedPdfGroups =
+          groups.map((group) => ({
+            ...group,
+            name:
+              groupName(group, pdfLocale) ??
+              group.name,
+            description:
+              groupDescription(
+                group,
+                pdfLocale
+              ) ??
+              group.description,
+          }));
+
+        const localizedPdfQuestions =
+          questions.map((question) => ({
+            ...question,
+            question_text:
+              questionText(
+                question,
+                pdfLocale
+              ) ??
+              question.question_text,
+            help_text:
+              questionHelpText(
+                question,
+                pdfLocale
+              ) ??
+              question.help_text,
+          }));
+
         const pdfBytes =
           operation.formCode.startsWith(
             "CLOSING"
@@ -2509,8 +2549,10 @@ export default function OperationClient({
                 submittedBy:
                   pic.name,
                 reportArea,
-                groups,
-                questions,
+                groups:
+                  localizedPdfGroups,
+                questions:
+                  localizedPdfQuestions,
                 answers:
                   pdfAnswers,
               })
@@ -2522,8 +2564,10 @@ export default function OperationClient({
                 submittedBy:
                   pic.name,
                 reportArea,
-                groups,
-                questions,
+                groups:
+                  localizedPdfGroups,
+                questions:
+                  localizedPdfQuestions,
                 answers:
                   pdfAnswers,
               });
@@ -2780,7 +2824,7 @@ export default function OperationClient({
       }
 
       lines.push(
-        `*${group.name.toUpperCase()}*`
+        `*${String(groupName(group) || group.name).toUpperCase()}*`
       );
 
       for (const question of groupQuestions) {
@@ -2800,7 +2844,7 @@ export default function OperationClient({
         }
 
         lines.push(
-          `- ${question.question_text}${valueText} ${exception ? "❌" : "✅"}`
+          `- ${questionText(question)}${valueText} ${exception ? "❌" : "✅"}`
         );
 
         if (
