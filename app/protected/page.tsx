@@ -674,15 +674,265 @@ export default async function ProtectedPage({
 
 
   // ==========================================================
+  // SPLIT OUTLET REPORTS FOR DASHBOARD PERIOD
+  //
+  // The legacy reports[] array above remains the fallback for
+  // outlets that still use legacy OPENING / CLOSING.
+  //
+  // Once an outlet has retired both legacy assignments, its
+  // KPI + trend are derived from the split forms assigned for
+  // each business date.
+  // ==========================================================
+
+  const splitDashboardFormCodes = [
+    "OPENING_FOH",
+    "OPENING_BOH",
+    "CLOSING_FOH",
+    "CLOSING_BOH",
+  ];
+
+  const {
+    data: splitDashboardFormsData,
+    error: splitDashboardFormsError,
+  } =
+    await supabase
+      .from("forms")
+      .select(`
+        id,
+        code
+      `)
+      .eq(
+        "organization_id",
+        profile.organization_id
+      )
+      .eq(
+        "is_active",
+        true
+      )
+      .in(
+        "code",
+        splitDashboardFormCodes
+      );
+
+  if (splitDashboardFormsError) {
+    return (
+      <ErrorState
+        message={
+          splitDashboardFormsError.message
+        }
+      />
+    );
+  }
+
+  const splitDashboardForms =
+    splitDashboardFormsData ?? [];
+
+  const splitDashboardFormIds =
+    splitDashboardForms.map(
+      (form: any) =>
+        form.id
+    );
+
+  let splitDashboardAssignments:
+    any[] = [];
+
+  if (
+    outletIds.length &&
+    splitDashboardFormIds.length
+  ) {
+    const {
+      data,
+      error,
+    } =
+      await supabase
+        .from(
+          "outlet_form_assignments"
+        )
+        .select(`
+          outlet_id,
+          form_id,
+          form_version_id,
+          effective_from,
+          effective_until,
+          is_active
+        `)
+        .in(
+          "outlet_id",
+          outletIds
+        )
+        .in(
+          "form_id",
+          splitDashboardFormIds
+        );
+
+    if (error) {
+      return (
+        <ErrorState
+          message={
+            error.message
+          }
+        />
+      );
+    }
+
+    splitDashboardAssignments =
+      data ?? [];
+  }
+
+  let splitDashboardReports:
+    any[] = [];
+
+  if (
+    outletIds.length &&
+    splitDashboardFormIds.length
+  ) {
+    const {
+      data,
+      error,
+    } =
+      await supabase
+        .from("reports")
+        .select(`
+          id,
+          outlet_id,
+          form_id,
+          report_number,
+          status,
+          business_date,
+          created_at,
+          completed_at,
+          pdf_storage_path
+        `)
+        .in(
+          "form_id",
+          splitDashboardFormIds
+        )
+        .in(
+          "outlet_id",
+          outletIds
+        )
+        .gte(
+          "business_date",
+          firstDate
+        )
+        .lte(
+          "business_date",
+          today
+        )
+        .order(
+          "business_date",
+          {
+            ascending:
+              false,
+          }
+        )
+        .order(
+          "created_at",
+          {
+            ascending:
+              false,
+          }
+        );
+
+    if (error) {
+      return (
+        <ErrorState
+          message={
+            error.message
+          }
+        />
+      );
+    }
+
+    splitDashboardReports =
+      data ?? [];
+  }
+
+  // If a legacy assignment is still active for an outlet,
+  // that outlet remains on legacy KPI/trend semantics.
+  // This prevents partial split pilots at other outlets from
+  // being treated as a completed rollout.
+
+  const legacyDashboardFormIds =
+    [
+      openingForm?.id,
+      closingForm?.id,
+    ].filter(
+      Boolean
+    ) as string[];
+
+  let activeLegacyDashboardAssignments:
+    any[] = [];
+
+  if (
+    outletIds.length &&
+    legacyDashboardFormIds.length
+  ) {
+    const {
+      data,
+      error,
+    } =
+      await supabase
+        .from(
+          "outlet_form_assignments"
+        )
+        .select(`
+          outlet_id,
+          form_id
+        `)
+        .in(
+          "outlet_id",
+          outletIds
+        )
+        .in(
+          "form_id",
+          legacyDashboardFormIds
+        )
+        .eq(
+          "is_active",
+          true
+        );
+
+    if (error) {
+      return (
+        <ErrorState
+          message={
+            error.message
+          }
+        />
+      );
+    }
+
+    activeLegacyDashboardAssignments =
+      data ?? [];
+  }
+
+  const activeLegacyOutletIds =
+    new Set(
+      activeLegacyDashboardAssignments.map(
+        (assignment: any) =>
+          assignment.outlet_id
+      )
+    );
+
+
+  // ==========================================================
   // ISSUES
   // ==========================================================
 
   const reportIds =
-    reports.map(
-      (
-        report: any
-      ) =>
-        report.id
+    Array.from(
+      new Set(
+        [
+          ...reports,
+          ...splitDashboardReports,
+        ].map(
+          (
+            report: any
+          ) =>
+            report.id
+        )
+      )
     );
 
   let issues: any[] =
@@ -736,6 +986,227 @@ export default async function ProtectedPage({
       ) + 1
     );
   }
+
+
+  // ==========================================================
+  // SPLIT OUTLET DAILY SUMMARY
+  // ==========================================================
+
+  const outletById =
+    new Map<string, any>(
+      outlets.map(
+        (outlet: any) => [
+          outlet.id,
+          outlet,
+        ]
+      )
+    );
+
+  const dateForTimestamp = (
+    value:
+      string | null | undefined,
+    outletTimezone: string
+  ) => {
+    if (!value) {
+      return null;
+    }
+
+    return new Intl.DateTimeFormat(
+      "en-CA",
+      {
+        timeZone:
+          outletTimezone ||
+          "Asia/Jakarta",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }
+    ).format(
+      new Date(value)
+    );
+  };
+
+  const splitReportByKey =
+    new Map<string, any>();
+
+  for (
+    const report
+    of splitDashboardReports
+  ) {
+    const key =
+      `${report.outlet_id}|${report.business_date}|${report.form_id}`;
+
+    if (
+      !splitReportByKey.has(
+        key
+      )
+    ) {
+      splitReportByKey.set(
+        key,
+        report
+      );
+    }
+  }
+
+  const splitExpectedFormIdsForDate =
+    (
+      outletId: string,
+      date: string
+    ) => {
+      if (
+        activeLegacyOutletIds.has(
+          outletId
+        )
+      ) {
+        return [];
+      }
+
+      const outlet =
+        outletById.get(
+          outletId
+        );
+
+      if (!outlet) {
+        return [];
+      }
+
+      const outletTimezone =
+        outlet.timezone ||
+        "Asia/Jakarta";
+
+      return Array.from(
+        new Set(
+          splitDashboardAssignments
+            .filter(
+              (
+                assignment:
+                  any
+              ) => {
+                if (
+                  assignment.outlet_id !==
+                  outletId
+                ) {
+                  return false;
+                }
+
+                const startDate =
+                  dateForTimestamp(
+                    assignment.effective_from,
+                    outletTimezone
+                  );
+
+                const endDate =
+                  dateForTimestamp(
+                    assignment.effective_until,
+                    outletTimezone
+                  );
+
+                if (
+                  startDate &&
+                  date <
+                    startDate
+                ) {
+                  return false;
+                }
+
+                if (
+                  endDate &&
+                  date >
+                    endDate
+                ) {
+                  return false;
+                }
+
+                return true;
+              }
+            )
+            .map(
+              (
+                assignment:
+                  any
+              ) =>
+                assignment.form_id
+            )
+        )
+      );
+    };
+
+  const splitSummaryForOutletDate =
+    (
+      outletId: string,
+      date: string
+    ) => {
+      const expectedFormIds =
+        splitExpectedFormIdsForDate(
+          outletId,
+          date
+        );
+
+      if (
+        !expectedFormIds.length
+      ) {
+        return null;
+      }
+
+      const dateReports =
+        expectedFormIds
+          .map(
+            (
+              formId
+            ) =>
+              splitReportByKey.get(
+                `${outletId}|${date}|${formId}`
+              ) ??
+              null
+          )
+          .filter(
+            Boolean
+          );
+
+      const completedCount =
+        dateReports.filter(
+          (
+            report: any
+          ) =>
+            normalizeStatus(
+              report.status
+            ) ===
+            "completed"
+        ).length;
+
+      const status =
+        completedCount ===
+        expectedFormIds.length
+          ? "completed"
+          : dateReports.length >
+              0
+            ? "in_progress"
+            : "not_submitted";
+
+      const issueCount =
+        dateReports.reduce(
+          (
+            total:
+              number,
+            report: any
+          ) =>
+            total +
+            (
+              issueCountByReport.get(
+                report.id
+              ) ?? 0
+            ),
+          0
+        );
+
+      return {
+        status,
+        issueCount,
+        completedCount,
+        expectedCount:
+          expectedFormIds.length,
+      };
+    };
 
 
   // ==========================================================
@@ -1445,6 +1916,23 @@ export default async function ProtectedPage({
       (
         outlet: any
       ) => {
+        const splitSummary =
+          splitSummaryForOutletDate(
+            outlet.id,
+            today
+          );
+
+        if (splitSummary) {
+          return {
+            outlet,
+            report: null,
+            status:
+              splitSummary.status,
+            issueCount:
+              splitSummary.issueCount,
+          };
+        }
+
         const report =
           reports.find(
             (
@@ -1526,40 +2014,75 @@ export default async function ProtectedPage({
             index
           );
 
-        const dateReports =
-          reports.filter(
+        const dateRows =
+          outlets.map(
             (
-              report: any
-            ) =>
-              report
-                .business_date ===
-              date
+              outlet: any
+            ) => {
+              const splitSummary =
+                splitSummaryForOutletDate(
+                  outlet.id,
+                  date
+                );
+
+              if (
+                splitSummary
+              ) {
+                return {
+                  status:
+                    splitSummary.status,
+                  issueCount:
+                    splitSummary.issueCount,
+                };
+              }
+
+              const report =
+                reports.find(
+                  (
+                    item:
+                      any
+                  ) =>
+                    item.outlet_id ===
+                      outlet.id &&
+                    item.business_date ===
+                      date
+                ) ?? null;
+
+              return {
+                status:
+                  report
+                    ? normalizeStatus(
+                        report.status
+                      )
+                    : "not_submitted",
+                issueCount:
+                  report
+                    ? issueCountByReport.get(
+                        report.id
+                      ) ?? 0
+                    : 0,
+              };
+            }
           );
 
         const completedCount =
-          dateReports.filter(
+          dateRows.filter(
             (
-              report: any
+              row
             ) =>
-              normalizeStatus(
-                report.status
-              ) ===
+              row.status ===
               "completed"
           ).length;
 
         const issueCount =
-          dateReports.reduce(
+          dateRows.reduce(
             (
               total:
                 number,
-              report: any
+              row
             ) =>
               total +
-              (
-                issueCountByReport.get(
-                  report.id
-                ) ?? 0
-              ),
+              row.issueCount,
             0
           );
 
@@ -1603,44 +2126,86 @@ export default async function ProtectedPage({
         ) ?? null
       : null;
 
+  const useSplitOutletSummary =
+    !useCkPicSummary &&
+    activeOutlet?.code !== "CNT" &&
+    splitOutletOperations.length > 0;
+
+  const splitCompletedCount =
+    splitOutletOperations.filter(
+      (card) =>
+        card.status === "COMPLETED"
+    ).length;
+
+  const splitInProgressCard =
+    splitOutletOperations.find(
+      (card) =>
+        card.status === "IN PROGRESS"
+    ) ?? null;
+
+  const splitNotStartedCard =
+    splitOutletOperations.find(
+      (card) =>
+        card.status === "NOT STARTED"
+    ) ?? null;
+
   const activeStatus =
     useCkPicSummary
       ? (
-          ckAssignedCount >
-            0 &&
+          ckAssignedCount > 0 &&
           ckCompletedCount >=
             ckAssignedCount
             ? "completed"
-            : ckCompletedCount >
-                  0 ||
-                ckInProgressCount >
-                  0
+            : ckCompletedCount > 0 ||
+                ckInProgressCount > 0
               ? "in_progress"
               : "not_submitted"
         )
-      : activeReport
-        ? normalizeStatus(
-            activeReport.status
-          )
-        : "not_submitted";
+      : useSplitOutletSummary
+        ? splitCompletedCount ===
+            splitOutletOperations.length
+          ? "completed"
+          : splitInProgressCard ||
+              splitCompletedCount > 0
+            ? "in_progress"
+            : "not_submitted"
+        : activeReport
+          ? normalizeStatus(
+              activeReport.status
+            )
+          : "not_submitted";
 
   const activeAction =
-    activeStatus ===
-      "completed"
-      ? activeReport
-          ?.pdf_storage_path
-        ? `/api/reports/${activeReport.id}/pdf`
-        : "/protected/reports"
-      : "/protected/closing/kitchen";
+    useSplitOutletSummary
+      ? activeStatus === "completed"
+        ? "/protected/reports"
+        : (
+            splitInProgressCard ??
+            splitNotStartedCard
+          )?.href ??
+          "/protected"
+      : activeStatus === "completed"
+        ? activeReport
+            ?.pdf_storage_path
+          ? `/api/reports/${activeReport.id}/pdf`
+          : "/protected/reports"
+        : "/protected/closing/kitchen";
 
   const activeActionText =
-    activeStatus ===
-      "completed"
-      ? "View Report"
-      : activeStatus ===
-          "in_progress"
-        ? "Resume Closing"
-        : "Start Closing";
+    useSplitOutletSummary
+      ? activeStatus === "completed"
+        ? "View Reports"
+        : splitInProgressCard
+          ? `Resume ${splitInProgressCard.title}`
+          : splitNotStartedCard
+            ? `Start ${splitNotStartedCard.title}`
+            : "View Operations"
+      : activeStatus === "completed"
+        ? "View Report"
+        : activeStatus ===
+            "in_progress"
+          ? "Resume Closing"
+          : "Start Closing";
 
 
   const scopeLabel =
