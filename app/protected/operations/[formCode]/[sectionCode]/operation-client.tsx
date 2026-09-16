@@ -169,10 +169,12 @@ function ProgressSummaryItem({
   label,
   value,
   complete,
+  completeLabel = "COMPLETE",
 }: {
   label: string;
   value: string;
   complete: boolean;
+  completeLabel?: string;
 }) {
   return (
     <div className="text-neutral-900">
@@ -187,7 +189,7 @@ function ProgressSummaryItem({
 
         {complete && (
           <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
-            COMPLETE
+            {completeLabel}
           </span>
         )}
       </div>
@@ -252,6 +254,11 @@ export default function OperationClient({
 
   const copy =
     OPERATION_COPY[displayLocale];
+
+  const localizedOperationKind =
+    operation.formCode.startsWith("CLOSING")
+      ? copy.closing
+      : copy.opening;
 
   const sectionLabel =
     resolveLocalizedText(
@@ -4351,7 +4358,7 @@ export default function OperationClient({
             />
 
             <SummaryStat
-              label="Issues"
+              label={copy.issues}
               value={`${result.issueCount}`}
             />
           </div>
@@ -4699,7 +4706,8 @@ export default function OperationClient({
       <section className="mt-6 hidden rounded-[24px] border border-black/5 bg-white p-6 shadow-sm md:block">
         <div className="grid gap-6 md:grid-cols-3">
           <ProgressSummaryItem
-            label="Checklist"
+            completeLabel={copy.complete}
+            label={copy.checklist}
             value={`${answeredCount}/${totalQuestions}`}
             complete={
               answeredCount ===
@@ -4708,7 +4716,8 @@ export default function OperationClient({
           />
 
           <ProgressSummaryItem
-            label="Required Photos"
+            completeLabel={copy.complete}
+            label={copy.requiredPhotos}
             value={`${requiredPhotoCompleteCount}/${requiredPhotoCount}`}
             complete={
               requiredPhotoCompleteCount ===
@@ -4717,7 +4726,8 @@ export default function OperationClient({
           />
 
           <ProgressSummaryItem
-            label="Issues"
+            completeLabel={copy.complete}
+            label={copy.issues}
             value={`${issueCount}`}
             complete={
               issueCompleteCount ===
@@ -4729,7 +4739,7 @@ export default function OperationClient({
         <div className="mt-6">
           <div className="mb-2 flex items-center justify-between text-xs text-neutral-500">
             <span>
-              Overall Completion
+              {copy.overallCompletion}
             </span>
 
             <span>
@@ -4767,7 +4777,7 @@ export default function OperationClient({
                 }
                 className="mt-3 block rounded-xl border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-700"
               >
-                Retry Session
+                {copy.retrySession}
               </button>
             )}
         </div>
@@ -5068,13 +5078,13 @@ export default function OperationClient({
                                     <p className="mt-1 text-xs text-neutral-500">
                                       {evidenceMode ===
                                       "always"
-                                        ? "Wajib untuk pertanyaan ini"
+                                        ? copy.photoRequiredForQuestion
                                         : evidenceMode ===
                                             "on_issue"
                                           ? photoRequired
-                                            ? "Wajib karena ditemukan issue"
-                                            : "Wajib hanya jika ditemukan issue"
-                                          : "Tidak wajib"}
+                                            ? copy.photoRequiredForIssue
+                                            : copy.photoRequiredOnlyForIssue
+                                          : copy.photoNotRequired}
                                     </p>
                                   </div>
 
@@ -5101,16 +5111,16 @@ export default function OperationClient({
                                         }`}
                                       >
                                         {answer?.photoSaveStatus === "optimizing"
-                                          ? "Optimizing..."
+                                          ? copy.photoOptimizing
                                           : answer?.photoSaveStatus === "uploading"
-                                            ? "Uploading..."
+                                            ? copy.photoUploading
                                             : answer?.photoSaveStatus === "error"
-                                              ? "Upload Failed"
+                                              ? copy.photoUploadFailed
                                               : answer?.existingStoragePath ||
                                                   answer?.existingPhotoFile ||
                                                   answer?.photoSaveStatus === "saved"
-                                                ? "Photo Evidence ✓"
-                                                : "New Photo ✓"}
+                                                ? `${copy.photoEvidence} ✓`
+                                                : `${copy.newPhoto} ✓`}
                                       </span>
                                     )}
                                 </div>
@@ -5283,7 +5293,7 @@ export default function OperationClient({
                     {" · "}
                     {requiredPhotoCompleteCount}/{requiredPhotoCount} required photos
                     {issueCount > 0
-                      ? ` · ${issueCount} issue(s)`
+                      ? ` · ${issueCount} ${copy.issues}`
                       : ""}
                   </p>
 
@@ -5358,15 +5368,15 @@ export default function OperationClient({
                 >
                   {!sessionReady
                     ? loadingExisting
-                      ? "Starting operational session..."
-                      : "Operational session belum siap."
+                      ? copy.startingSession
+                      : copy.sessionNotReady
                     : draftStatus === "loading"
-                      ? "Loading draft..."
+                      ? copy.loadingDraft
                       : draftStatus === "saving"
-                        ? "Saving draft..."
+                        ? copy.savingDraft
                         : draftStatus === "error"
-                          ? "Draft belum tersimpan. Cek koneksi."
-                          : "✓ Draft saved"}
+                          ? copy.draftUnsaved
+                          : `✓ ${copy.draftSaved}`}
                 </div>
               )}
 
@@ -5412,8 +5422,8 @@ export default function OperationClient({
               <p className="font-semibold">
                 {operation.sectionScoped
                   ? sectionLabel
-                  : operationKind}{" "}
-                Checklist
+                  : localizedOperationKind}{" "}
+                {copy.checklist}
               </p>
 
               <p className="mt-1 text-xs text-neutral-500">
@@ -5424,7 +5434,7 @@ export default function OperationClient({
                 {
                   totalQuestions
                 }{" "}
-                answers ·{" "}
+                {copy.answers} ·{" "}
                 {
                   requiredPhotoCompleteCount
                 }
@@ -5432,7 +5442,7 @@ export default function OperationClient({
                 {
                   requiredPhotoCount
                 }{" "}
-                required photos
+                {copy.requiredPhotos}
                 {issueCount >
                 0
                   ? ` · ${issueCount} issue(s)`
@@ -5464,7 +5474,7 @@ export default function OperationClient({
                   ? copy.resubmitCorrection
                   : operation.sectionScoped
                     ? `${copy.submit} ${sectionLabel}`
-                    : `${copy.submit} ${operationKind}`}
+                    : `${copy.submit} ${localizedOperationKind}`}
             </button>
           </div>
 
@@ -5476,21 +5486,21 @@ export default function OperationClient({
                   `${
                     totalQuestions -
                     answeredCount
-                  } jawaban belum diisi. `}
+                  } ${copy.missingAnswers} `}
 
                 {requiredPhotoCompleteCount !==
                   requiredPhotoCount &&
                   `${
                     requiredPhotoCount -
                     requiredPhotoCompleteCount
-                  } required photo evidence belum diupload. `}
+                  } ${copy.missingRequiredPhotoEvidence} `}
 
                 {issueCompleteCount !==
                   issueCount &&
                   `${
                     issueCount -
                     issueCompleteCount
-                  } issue belum memiliki Notes & Corrective Action.`}
+                  } ${copy.incompleteIssueActions}`}
               </div>
             )}
         </div>

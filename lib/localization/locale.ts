@@ -42,6 +42,19 @@ export type OperationCopy = {
   photoRequiredForIssue: string;
   photoRequiredOnlyForIssue: string;
   photoNotRequired: string;
+  overallCompletion: string;
+  draftSaved: string;
+  loadingDraft: string;
+  savingDraft: string;
+  draftUnsaved: string;
+  sessionNotReady: string;
+  retrySession: string;
+  missingAnswers: string;
+  missingRequiredPhotoEvidence: string;
+  incompleteIssueActions: string;
+  opening: string;
+  closing: string;
+  complete: string;
 };
 
 export const OPERATION_COPY: Record<
@@ -84,6 +97,19 @@ export const OPERATION_COPY: Record<
     photoRequiredForIssue: "Required because an issue was found",
     photoRequiredOnlyForIssue: "Required only if an issue is found",
     photoNotRequired: "Not required",
+    overallCompletion: "Overall Completion",
+    draftSaved: "Draft saved",
+    loadingDraft: "Loading draft...",
+    savingDraft: "Saving draft...",
+    draftUnsaved: "Draft was not saved. Check your connection.",
+    sessionNotReady: "Operational session is not ready.",
+    retrySession: "Retry Session",
+    missingAnswers: "answers are still incomplete.",
+    missingRequiredPhotoEvidence: "required photo evidence still needs to be uploaded.",
+    incompleteIssueActions: "issues are missing Notes & Corrective Action.",
+    opening: "Opening",
+    closing: "Closing",
+    complete: "COMPLETE",
   },
   "id-ID": {
     yes: "YA",
@@ -121,6 +147,19 @@ export const OPERATION_COPY: Record<
     photoRequiredForIssue: "Wajib karena ditemukan masalah",
     photoRequiredOnlyForIssue: "Wajib hanya jika ditemukan masalah",
     photoNotRequired: "Tidak wajib",
+    overallCompletion: "Penyelesaian Keseluruhan",
+    draftSaved: "Draft tersimpan",
+    loadingDraft: "Memuat draft...",
+    savingDraft: "Menyimpan draft...",
+    draftUnsaved: "Draft belum tersimpan. Periksa koneksi.",
+    sessionNotReady: "Sesi operasional belum siap.",
+    retrySession: "Coba Lagi",
+    missingAnswers: "jawaban belum diisi.",
+    missingRequiredPhotoEvidence: "bukti foto wajib belum diunggah.",
+    incompleteIssueActions: "masalah belum memiliki Catatan & Tindakan Korektif.",
+    opening: "Pembukaan",
+    closing: "Penutupan",
+    complete: "SELESAI",
   },
 };
 
