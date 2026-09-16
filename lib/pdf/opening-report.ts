@@ -57,10 +57,14 @@ const OPERATIONAL_BRANDS = {
   cq: {
     key: "cq",
     systemName: "CHONG QING OPERATIONAL SYSTEM",
+    timeZone: "Asia/Jakarta",
+    timeZoneLabel: "WIB",
   },
   dd: {
     key: "dd",
     systemName: "DING DING OPERATIONAL SYSTEM",
+    timeZone: "Asia/Makassar",
+    timeZoneLabel: "WITA",
   },
 } as const;
 
@@ -80,20 +84,26 @@ function safeText(value: unknown) {
   return String(value);
 }
 
-function formatDateID(date = new Date()) {
+function formatDateID(
+  date = new Date(),
+  timeZone = "Asia/Jakarta"
+) {
   return new Intl.DateTimeFormat("id-ID", {
     day: "numeric",
     month: "long",
     year: "numeric",
-    timeZone: "Asia/Jakarta",
+    timeZone,
   }).format(date);
 }
 
-function formatTimeID(date = new Date()) {
+function formatTimeID(
+  date = new Date(),
+  timeZone = "Asia/Jakarta"
+) {
   return new Intl.DateTimeFormat("id-ID", {
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "Asia/Jakarta",
+    timeZone,
   }).format(date);
 }
 
@@ -652,8 +662,14 @@ async function drawCoverPage(
 
   const brand = resolveOperationalBrand(outletName);
   const now = new Date();
-  const reportDate = formatDateID(now);
-  const reportTime = formatTimeID(now);
+  const reportDate = formatDateID(
+    now,
+    brand.timeZone
+  );
+  const reportTime = formatTimeID(
+    now,
+    brand.timeZone
+  );
   const issues = issueSummaryRows(groups, questions, answers);
   const photoCount = Object.values(answers).filter((a) => a?.photo).length;
 
@@ -759,7 +775,7 @@ async function drawCoverPage(
     x: leftX,
     y: infoTop - 108,
     label: "Submitted",
-    value: `${reportTime} WIB`,
+    value: `${reportTime} ${brand.timeZoneLabel}`,
     width: 180,
     labelFont: fonts.bold,
     valueFont: fonts.bold,
@@ -1327,7 +1343,11 @@ export async function buildOpeningPdf({
   };
 
   const orderedQuestions = createOrderedQuestions(groups, questions);
-  const reportDate = formatDateID(new Date());
+  const brand = resolveOperationalBrand(outletName);
+  const reportDate = formatDateID(
+    new Date(),
+    brand.timeZone
+  );
 
   await drawCoverPage(pdf, fonts, logos, {
     reportNumber,
