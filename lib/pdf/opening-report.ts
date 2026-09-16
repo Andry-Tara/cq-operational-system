@@ -53,6 +53,28 @@ const BRAND = {
   dd: "/brand/dingding-hotpot.png",
 };
 
+const OPERATIONAL_BRANDS = {
+  cq: {
+    key: "cq",
+    systemName: "CHONG QING OPERATIONAL SYSTEM",
+  },
+  dd: {
+    key: "dd",
+    systemName: "DING DING OPERATIONAL SYSTEM",
+  },
+} as const;
+
+function resolveOperationalBrand(outletName: string) {
+  const normalized = outletName.trim().toUpperCase();
+
+  // DD Canggu / DD Seminyak use Ding Ding branding.
+  // Everything else intentionally keeps CQ branding so existing
+  // Chong Qing outlets and Central Kitchen remain unchanged.
+  return /^DD(?:\s|$)/.test(normalized)
+    ? OPERATIONAL_BRANDS.dd
+    : OPERATIONAL_BRANDS.cq;
+}
+
 function safeText(value: unknown) {
   if (value === null || value === undefined) return "-";
   return String(value);
@@ -530,52 +552,30 @@ async function drawBrandHeader(
     color: COLORS.red,
   });
 
-  if (!compact) {
-    if (logos.cq) {
-      const box = fitContain(logos.cq.width, logos.cq.height, 180, 54);
 
-      page.drawImage(logos.cq, {
-        x: PAGE.marginX,
-        y: PAGE.height - 76,
-        width: box.width,
-        height: box.height,
-      });
-    }
+  const brand = resolveOperationalBrand(outletName);
+  const logo =
+    brand.key === "dd"
+      ? logos.dd
+      : logos.cq;
 
-    if (logos.dd) {
-      const box = fitContain(logos.dd.width, logos.dd.height, 170, 58);
+  if (logo) {
+    const maxWidth = compact ? 120 : 180;
+    const maxHeight = compact ? 34 : 58;
+    const box = fitContain(
+      logo.width,
+      logo.height,
+      maxWidth,
+      maxHeight
+    );
 
-      page.drawImage(logos.dd, {
-        x: PAGE.width - PAGE.marginX - box.width,
-        y: PAGE.height - 78,
-        width: box.width,
-        height: box.height,
-      });
-    }
-  } else {
-    if (logos.cq) {
-      const box = fitContain(logos.cq.width, logos.cq.height, 120, 34);
-
-      page.drawImage(logos.cq, {
-        x: PAGE.marginX,
-        y: PAGE.height - 48,
-        width: box.width,
-        height: box.height,
-      });
-    }
-
-    if (logos.dd) {
-      const box = fitContain(logos.dd.width, logos.dd.height, 108, 34);
-
-      page.drawImage(logos.dd, {
-        x: PAGE.width - PAGE.marginX - box.width,
-        y: PAGE.height - 48,
-        width: box.width,
-        height: box.height,
-      });
-    }
+    page.drawImage(logo, {
+      x: PAGE.marginX,
+      y: PAGE.height - (compact ? 48 : 78),
+      width: box.width,
+      height: box.height,
+    });
   }
-
   page.drawLine({
     start: { x: PAGE.marginX, y: PAGE.height - (compact ? 58 : 92) },
     end: { x: PAGE.width - PAGE.marginX, y: PAGE.height - (compact ? 58 : 92) },
@@ -650,6 +650,7 @@ async function drawCoverPage(
     color: COLORS.page,
   });
 
+  const brand = resolveOperationalBrand(outletName);
   const now = new Date();
   const reportDate = formatDateID(now);
   const reportTime = formatTimeID(now);
@@ -662,7 +663,7 @@ async function drawCoverPage(
     reportDate,
   });
 
-  page.drawText("CQ OPERATIONAL SYSTEM", {
+  page.drawText(brand.systemName, {
     x: PAGE.marginX,
     y: PAGE.height - 115,
     size: 9,
@@ -920,8 +921,17 @@ async function drawCoverPage(
     });
   }
 
-  page.drawText("CQ OPERATIONAL SYSTEM", {
-    x: PAGE.width - PAGE.marginX - 128,
+  const footerBrandWidth =
+    fonts.bold.widthOfTextAtSize(
+      brand.systemName,
+      9
+    );
+
+  page.drawText(brand.systemName, {
+    x:
+      PAGE.width -
+      PAGE.marginX -
+      footerBrandWidth,
     y: 24,
     size: 9,
     font: fonts.bold,
