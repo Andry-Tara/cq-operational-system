@@ -4784,7 +4784,15 @@ export default function OperationClient({
       )}
 
       <div className={`mt-4 space-y-6 sm:mt-8 sm:space-y-8 ${isCkProductionSection && sessionData?.applicabilityStatus === "no_production" ? "pointer-events-none select-none opacity-45" : ""}`}>
-        {groups.map(
+        {groups
+          .filter((group) =>
+            questions.some(
+              (question) =>
+                question.question_group_id ===
+                group.id
+            )
+          )
+          .map(
           (
             group,
             groupIndex
