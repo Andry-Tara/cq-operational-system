@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import CompletedReportActions from "@/components/completed-report-actions";
+
 import type {
   SplitOutletOperationCard,
 } from "@/lib/operations/load-split-outlet-dashboard";
@@ -120,17 +122,24 @@ export default function SplitOutletOperationsPanel({
                   ) : null}
                 </div>
 
-                {canOpen ? (
+                {card.status ===
+                  "COMPLETED" &&
+                card.reportId ? (
+                  <CompletedReportActions
+                    reportId={
+                      card.reportId
+                    }
+                    title={
+                      card.title
+                    }
+                    hasPdf={
+                      card.hasPdf
+                    }
+                  />
+                ) : canOpen ? (
                   <Link
                     href={
                       card.href
-                    }
-                    target={
-                      card.status ===
-                        "COMPLETED" &&
-                      card.hasPdf
-                        ? "_blank"
-                        : undefined
                     }
                     className="flex items-center justify-between border-t border-red-100 bg-red-50 px-4 py-3.5 text-sm font-black text-red-700 transition hover:bg-red-100 sm:px-5"
                   >
