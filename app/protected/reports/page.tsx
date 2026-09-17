@@ -1,6 +1,10 @@
-import { redirect } from "next/navigation";
+import {
+  requirePermission,
+} from "@/lib/admin/require-admin";
 
-import { createClient } from "@/lib/supabase/server";
+import {
+  createAdminClient,
+} from "@/lib/supabase/admin";
 
 import {
   isOperationalPhotoRequired,
@@ -89,120 +93,47 @@ function reportAnswerScalarValue(
 
 
 export default async function ReportsPage() {
-  const supabase =
-    await createClient();
-
   // ==========================================================
-  // AUTH
+  // AUTHORIZATION
+  //
+  // Reports is a server-side read surface.
+  //
+  // User access is authorized first through explicit RBAC.
+  // Data is then read with the trusted server client and
+  // manually constrained to organization + permitted outlets.
+  //
+  // This allows read-only BOD / Management access without
+  // restoring is_admin=true.
   // ==========================================================
 
   const {
-    data: {
-      user,
-    },
+    user,
+    profile,
+    roles,
+    isAdmin,
+    permissionCodes,
   } =
-    await supabase.auth.getUser();
-
-  if (!user) {
-    redirect(
-      "/auth/login"
+    await requirePermission(
+      "reports.view"
     );
-  }
-
-
-  // ==========================================================
-  // PROFILE
-  // ==========================================================
-
-  const {
-    data: profile,
-  } =
-    await supabase
-      .from("profiles")
-      .select(`
-        id,
-        full_name,
-        job_title,
-        organization_id
-      `)
-      .eq(
-        "id",
-        user.id
-      )
-      .maybeSingle();
-
-  if (!profile) {
-    return (
-      <ErrorState
-        message="Profile user tidak ditemukan."
-      />
-    );
-  }
-
-
-  // ==========================================================
-  // ROLE
-  // ==========================================================
-
-  const {
-    data: roleRow,
-  } =
-    await supabase
-      .from("user_roles")
-      .select(`
-        roles (
-          id,
-          code,
-          name,
-          is_admin
-        )
-      `)
-      .eq(
-        "user_id",
-        user.id
-      )
-      .limit(1)
-      .maybeSingle();
 
   const role =
-    relationOne(
-      roleRow?.roles
+    roles[0] ?? null;
+
+  const hasAllAccess =
+    isAdmin ||
+    permissionCodes.includes(
+      "reports.all_outlets"
     );
 
-
-  // ==========================================================
-  // ACCESS
-  // ==========================================================
-
-  const {
-    data: hasAllAccess,
-  } =
-    await supabase.rpc(
-      "has_all_outlet_access"
+  const canReopenReport =
+    isAdmin ||
+    permissionCodes.includes(
+      "reports.reopen"
     );
 
-  const {
-    data: canReopenReport,
-    error:
-      reopenPermissionError,
-  } =
-    await supabase.rpc(
-      "has_permission",
-      {
-        p_permission_code:
-          "reports.reopen",
-      }
-    );
-
-  if (
-    reopenPermissionError
-  ) {
-    console.error(
-      "Unable to check reports.reopen permission:",
-      reopenPermissionError
-    );
-  }
-
+  const supabase =
+    createAdminClient();
 
   // ==========================================================
   // OUTLETS

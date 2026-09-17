@@ -30,6 +30,15 @@ export default async function ProtectedLayout({
   const role =
     roles[0];
 
+  const isBodRole =
+    !isAdmin &&
+    String(
+      role?.code ?? ""
+    )
+      .trim()
+      .toUpperCase() ===
+      "BOD";
+
   const displayName =
     profile?.full_name ||
     user.email ||
@@ -76,11 +85,14 @@ export default async function ProtectedLayout({
       "reports.view"
     );
 
-  const showAudit =
+  const showAuditInput =
     isAdmin ||
     permissionCodes.includes(
       "audit.submit"
-    ) ||
+    );
+
+  const showAuditManagement =
+    isAdmin ||
     permissionCodes.includes(
       "audit.view_management"
     );
@@ -98,8 +110,15 @@ export default async function ProtectedLayout({
           roleName
         }
         outletName={
-          outlet?.name ??
-          null
+          isBodRole
+            ? "All Outlets"
+            : outlet?.name ??
+              null
+        }
+        outletContextLabel={
+          isBodRole
+            ? "Executive Scope"
+            : "Active Outlet"
         }
         showAdministration={
           showAdministration
@@ -113,8 +132,11 @@ export default async function ProtectedLayout({
         showReports={
           showReports
         }
-        showAudit={
-          showAudit
+        showAuditInput={
+          showAuditInput
+        }
+        showAuditManagement={
+          showAuditManagement
         }
         appVersion={
           buildInfo.appVersion

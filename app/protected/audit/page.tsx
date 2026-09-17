@@ -34,23 +34,48 @@ export default async function OutletAuditPage() {
   } =
     await getAccessContext();
 
+  const canSubmitAudit =
+    isAdmin ||
+    permissionCodes.includes(
+      "audit.submit"
+    );
+
   const canViewManagement =
     isAdmin ||
     permissionCodes.includes(
       "audit.view_management"
     );
 
-  if (canViewManagement) {
+  // ========================================================
+  // AUDIT ENTRY ROUTING
+  //
+  // Auditor / ORG_ADMIN:
+  //   /protected/audit
+  //   -> operational Audit Outlet workspace
+  //
+  // Management / BOD:
+  //   /protected/audit
+  //   -> read-only Management Audit Dashboard
+  //
+  // Users with neither capability:
+  //   -> protected home
+  //
+  // A user may have BOTH audit.submit and
+  // audit.view_management. In that case Audit Outlet remains
+  // the primary /protected/audit destination. Management
+  // Dashboard is available through its separate navigation.
+  // ========================================================
+
+  if (
+    !canSubmitAudit &&
+    canViewManagement
+  ) {
     redirect(
       "/protected/audit/management"
     );
   }
 
-  if (
-    !permissionCodes.includes(
-      "audit.submit"
-    )
-  ) {
+  if (!canSubmitAudit) {
     redirect("/protected");
   }
 

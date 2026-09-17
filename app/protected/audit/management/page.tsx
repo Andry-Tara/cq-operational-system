@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import {
   requirePermission,
 } from "@/lib/admin/require-admin";
@@ -30,8 +32,9 @@ function businessDate(
   );
 }
 
-function nextMonthStart(
-  monthStart: string
+function shiftMonth(
+  monthStart: string,
+  amount: number
 ) {
   const [
     year,
@@ -42,16 +45,16 @@ function nextMonthStart(
       .split("-")
       .map(Number);
 
-  const next =
+  const value =
     new Date(
       Date.UTC(
         year,
-        month,
+        month - 1 + amount,
         1
       )
     );
 
-  return next
+  return value
     .toISOString()
     .slice(0, 10);
 }
@@ -84,6 +87,38 @@ function formatNumber(
   ).format(value);
 }
 
+function formatChange(
+  value: number | null
+) {
+  if (value === null) {
+    return "—";
+  }
+
+  if (value > 0) {
+    return `+${formatNumber(
+      value
+    )}`;
+  }
+
+  return formatNumber(value);
+}
+
+function requestedMonthStart(
+  value: unknown,
+  fallback: string
+) {
+  if (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}$/.test(
+      value
+    )
+  ) {
+    return `${value}-01`;
+  }
+
+  return fallback;
+}
+
 type SeverityCount = {
   minor: number;
   medium: number;
@@ -102,7 +137,13 @@ function emptySeverity():
 }
 
 export default async function
-ManagementAuditDashboardPage() {
+ManagementAuditDashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{
+    month?: string;
+  }>;
+}) {
   const context =
     await requirePermission(
       "audit.view_management"
@@ -115,16 +156,45 @@ ManagementAuditDashboardPage() {
   const admin =
     createAdminClient();
 
+  const params =
+    searchParams
+      ? await searchParams
+      : {};
+
   const today =
     businessDate();
 
-  const monthStart =
+  const currentMonthStart =
     `${today.slice(0, 7)}-01`;
 
-  const nextMonth =
-    nextMonthStart(
-      monthStart
+  const requestedMonth =
+    requestedMonthStart(
+      params?.month,
+      currentMonthStart
     );
+
+  // Do not allow navigation into future months.
+  const monthStart =
+    requestedMonth >
+    currentMonthStart
+      ? currentMonthStart
+      : requestedMonth;
+
+  const previousMonth =
+    shiftMonth(
+      monthStart,
+      -1
+    );
+
+  const nextMonth =
+    shiftMonth(
+      monthStart,
+      1
+    );
+
+  const canGoNext =
+    nextMonth <=
+    currentMonthStart;
 
   // ==========================================================
   // OUTLET_AUDIT FORM
@@ -169,10 +239,6 @@ ManagementAuditDashboardPage() {
 
   // ==========================================================
   // AUDIT-ENABLED OUTLETS
-  //
-  // Use active form assignments instead of every organization
-  // outlet. Central Kitchen therefore does not become an
-  // artificial N/A audit outlet.
   // ==========================================================
 
   const {
@@ -273,7 +339,7 @@ ManagementAuditDashboardPage() {
     );
 
   // ==========================================================
-  // MONTHLY SCORES
+  // CURRENT + PREVIOUS MONTH SCORE
   // ==========================================================
 
   let monthlyScores:
@@ -302,9 +368,12 @@ ManagementAuditDashboardPage() {
           "organization_id",
           organizationId
         )
-        .eq(
+        .in(
           "month_start",
-          monthStart
+          [
+            previousMonth,
+            monthStart,
+          ]
         )
         .in(
           "outlet_id",
@@ -319,23 +388,24 @@ ManagementAuditDashboardPage() {
       data ?? [];
   }
 
-  const monthlyByOutlet =
-    new Map(
-      monthlyScores.map(
-        (row: any) => [
-          String(
-            row.outlet_id
-          ),
-          row,
-        ]
-      )
+  const monthlyByKey =
+    new Map<
+      string,
+      any
+    >();
+
+  for (
+    const score
+    of monthlyScores
+  ) {
+    monthlyByKey.set(
+      `${score.outlet_id}|${score.month_start}`,
+      score
     );
+  }
 
   // ==========================================================
-  // SUBMITTED AUDITS THIS MONTH
-  //
-  // Draft audit sessions are intentionally excluded.
-  // Month follows audit_date, matching scoring logic.
+  // SUBMITTED AUDITS — SELECTED MONTH
   // ==========================================================
 
   let sessions:
@@ -563,19 +633,46 @@ ManagementAuditDashboardPage() {
   }
 
   // ==========================================================
-  // PRESENTATION ROWS
-  //
-  // No monthly score row = no scored audit yet.
-  // Display N/A rather than pretending the outlet was scored 100.
+  // PRESENTATION
   // ==========================================================
 
   const rows =
     outlets.map(
       (outlet) => {
-        const monthly =
-          monthlyByOutlet.get(
-            outlet.id
+        const current =
+          monthlyByKey.get(
+            `${outlet.id}|${monthStart}`
           );
+
+        const previous =
+          monthlyByKey.get(
+            `${outlet.id}|${previousMonth}`
+          );
+
+        const currentScore =
+          current
+            ? Number(
+                current
+                  .current_score
+              )
+            : null;
+
+        const previousScore =
+          previous
+            ? Number(
+                previous
+                  .current_score
+              )
+            : null;
+
+        const scoreChange =
+          currentScore !==
+            null &&
+          previousScore !==
+            null
+            ? currentScore -
+              previousScore
+            : null;
 
         const severity =
           severityByOutlet.get(
@@ -587,17 +684,16 @@ ManagementAuditDashboardPage() {
           ...outlet,
 
           score:
-            monthly
-              ? Number(
-                  monthly
-                    .current_score
-                )
-              : null,
+            currentScore,
+
+          previousScore,
+
+          scoreChange,
 
           penalty:
-            monthly
+            current
               ? Number(
-                  monthly
+                  current
                     .total_penalty
                 )
               : null,
@@ -640,6 +736,12 @@ ManagementAuditDashboardPage() {
         scoredRows.length
       : null;
 
+  const monthQuery =
+    monthStart.slice(
+      0,
+      7
+    );
+
   return (
     <main className="mx-auto w-full max-w-[1480px] px-4 py-6 sm:px-5 md:px-8 md:py-8">
       <section className="overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-sm">
@@ -648,23 +750,53 @@ ManagementAuditDashboardPage() {
             Outlet Audit
           </p>
 
-          <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div className="mt-2 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h1 className="text-2xl font-black tracking-tight text-neutral-950 md:text-4xl">
                 Management Audit Dashboard
               </h1>
 
               <p className="mt-2 text-sm font-medium text-neutral-500">
-                {monthLabel(
-                  monthStart
-                )}
-                {" · "}
                 Submitted audits only
+                {" · "}
+                Read Only
               </p>
             </div>
 
-            <div className="rounded-2xl bg-neutral-100 px-4 py-2 text-xs font-bold text-neutral-600">
-              Read Only
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/protected/audit/management?month=${previousMonth.slice(
+                  0,
+                  7
+                )}`}
+                className="inline-flex h-10 items-center justify-center rounded-xl border border-neutral-200 bg-white px-3 text-sm font-black text-neutral-600 transition hover:bg-neutral-50"
+              >
+                ←
+              </Link>
+
+              <div className="min-w-[170px] rounded-xl bg-neutral-100 px-4 py-2.5 text-center">
+                <p className="text-xs font-black text-neutral-800">
+                  {monthLabel(
+                    monthStart
+                  )}
+                </p>
+              </div>
+
+              {canGoNext ? (
+                <Link
+                  href={`/protected/audit/management?month=${nextMonth.slice(
+                    0,
+                    7
+                  )}`}
+                  className="inline-flex h-10 items-center justify-center rounded-xl border border-neutral-200 bg-white px-3 text-sm font-black text-neutral-600 transition hover:bg-neutral-50"
+                >
+                  →
+                </Link>
+              ) : (
+                <span className="inline-flex h-10 items-center justify-center rounded-xl border border-neutral-100 bg-neutral-50 px-3 text-sm font-black text-neutral-300">
+                  →
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -681,7 +813,7 @@ ManagementAuditDashboardPage() {
               label:
                 "Scored Outlets",
               value:
-                scoredRows.length,
+                `${scoredRows.length}/${outlets.length}`,
             },
             {
               label:
@@ -739,7 +871,8 @@ ManagementAuditDashboardPage() {
             </h2>
 
             <p className="mt-1 text-xs text-neutral-500">
-              N/A means the outlet has not produced a scored audit for this month.
+              Change compares the selected month with the previous scored month.
+              N/A means no scored audit exists for the selected month.
             </p>
           </div>
 
@@ -754,12 +887,13 @@ ManagementAuditDashboardPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-[980px] w-full border-collapse">
+          <table className="min-w-[1080px] w-full border-collapse">
             <thead>
               <tr className="border-b border-neutral-100 bg-neutral-50/70 text-left">
                 {[
                   "Outlet",
                   "Score",
+                  "Change",
                   "Audits",
                   "Penalty",
                   "Findings",
@@ -791,20 +925,27 @@ ManagementAuditDashboardPage() {
                     key={
                       row.id
                     }
-                    className="border-b border-neutral-100 last:border-b-0"
+                    className="border-b border-neutral-100 last:border-b-0 hover:bg-neutral-50/60"
                   >
                     <td className="px-5 py-4 pl-8">
-                      <p className="font-black text-neutral-900">
-                        {
-                          row.name
-                        }
-                      </p>
+                      <Link
+                        href={`/protected/audit/management/${row.id}?month=${monthQuery}`}
+                        className="group inline-block"
+                      >
+                        <p className="font-black text-neutral-900 group-hover:text-red-700">
+                          {
+                            row.name
+                          }
+                        </p>
 
-                      <p className="mt-0.5 text-[10px] font-bold text-neutral-400">
-                        {
-                          row.code
-                        }
-                      </p>
+                        <p className="mt-0.5 text-[10px] font-bold text-neutral-400">
+                          {
+                            row.code
+                          }
+                          {" · "}
+                          View trend →
+                        </p>
+                      </Link>
                     </td>
 
                     <td className="px-5 py-4">
@@ -820,6 +961,27 @@ ManagementAuditDashboardPage() {
                           )}
                         </span>
                       )}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <span
+                        className={
+                          row.scoreChange ===
+                          null
+                            ? "font-bold text-neutral-400"
+                            : row.scoreChange <
+                                0
+                              ? "font-black text-red-700"
+                              : row.scoreChange >
+                                  0
+                                ? "font-black text-emerald-700"
+                                : "font-black text-neutral-600"
+                        }
+                      >
+                        {formatChange(
+                          row.scoreChange
+                        )}
+                      </span>
                     </td>
 
                     <td className="px-5 py-4 font-bold text-neutral-700">
@@ -893,7 +1055,7 @@ ManagementAuditDashboardPage() {
                 <tr>
                   <td
                     colSpan={
-                      9
+                      10
                     }
                     className="px-8 py-14 text-center text-sm font-semibold text-neutral-400"
                   >

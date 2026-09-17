@@ -21,6 +21,10 @@ import ReopenReportButton from "./reports/reopen-report-button";
 import SplitOutletOperationsPanel from "@/components/split-outlet-operations-panel";
 import { AuditorDashboard } from "@/components/audit/auditor-dashboard";
 import { createAdminClient } from "@/lib/supabase/admin";
+
+import {
+  BodExecutiveDashboard,
+} from "@/components/dashboard/bod-executive-dashboard";
 import {
   loadSplitOutletOperationCards,
 } from "@/lib/operations/load-split-outlet-dashboard";
@@ -158,6 +162,7 @@ export default async function ProtectedPage({
   const {
     user,
     profile,
+    roles,
     isAdmin,
     permissionCodes,
   } =
@@ -343,6 +348,294 @@ export default async function ProtectedPage({
       -(period - 1)
     );
 
+
+  // ==========================================================
+  // BOD EXECUTIVE DASHBOARD
+  //
+  // BOD is intentionally separated from the operational
+  // Super User dashboard.
+  //
+  // BOD:
+  //   - organization-wide read only
+  //   - Reports Center
+  //   - Management Audit
+  //   - no operational submit controls
+  //
+  // ORG_ADMIN / Super User continues below into the existing
+  // operational dashboard without behavioral changes.
+  // ==========================================================
+
+  const isBodExperience =
+    !isAdmin &&
+    roles.some(
+      (role: any) =>
+        String(
+          role?.code ?? ""
+        )
+          .trim()
+          .toUpperCase() ===
+        "BOD"
+    );
+
+  if (isBodExperience) {
+    const executiveAdmin =
+      createAdminClient();
+
+    const currentMonthStart =
+      `${today.slice(0, 7)}-01`;
+
+    const nextMonthStart =
+      (() => {
+        const [
+          year,
+          month,
+        ] =
+          currentMonthStart
+            .slice(0, 7)
+            .split("-")
+            .map(Number);
+
+        return new Date(
+          Date.UTC(
+            year,
+            month,
+            1
+          )
+        )
+          .toISOString()
+          .slice(0, 10);
+      })();
+
+    const [
+      reportsResult,
+      monthlyScoresResult,
+      auditSessionsResult,
+    ] =
+      await Promise.all([
+        executiveAdmin
+          .from("reports")
+          .select(`
+            id,
+            status,
+            outlet_id
+          `)
+          .eq(
+            "organization_id",
+            profile.organization_id
+          )
+          .eq(
+            "business_date",
+            today
+          ),
+
+        executiveAdmin
+          .from(
+            "outlet_monthly_scores"
+          )
+          .select(`
+            outlet_id,
+            current_score
+          `)
+          .eq(
+            "organization_id",
+            profile.organization_id
+          )
+          .eq(
+            "month_start",
+            currentMonthStart
+          ),
+
+        executiveAdmin
+          .from(
+            "audit_sessions"
+          )
+          .select("id")
+          .eq(
+            "organization_id",
+            profile.organization_id
+          )
+          .eq(
+            "status",
+            "submitted"
+          )
+          .gte(
+            "audit_date",
+            currentMonthStart
+          )
+          .lt(
+            "audit_date",
+            nextMonthStart
+          ),
+      ]);
+
+    if (
+      reportsResult.error
+    ) {
+      throw reportsResult.error;
+    }
+
+    if (
+      monthlyScoresResult.error
+    ) {
+      throw monthlyScoresResult.error;
+    }
+
+    if (
+      auditSessionsResult.error
+    ) {
+      throw auditSessionsResult.error;
+    }
+
+    const todayReports =
+      reportsResult.data ??
+      [];
+
+    const completedReports =
+      todayReports.filter(
+        (report: any) =>
+          [
+            "completed",
+            "submitted",
+          ].includes(
+            String(
+              report.status ??
+                ""
+            )
+              .trim()
+              .toLowerCase()
+          )
+      ).length;
+
+    const inProgressReports =
+      todayReports.filter(
+        (report: any) =>
+          [
+            "draft",
+            "in_progress",
+            "reopened",
+          ].includes(
+            String(
+              report.status ??
+                ""
+            )
+              .trim()
+              .toLowerCase()
+          )
+      ).length;
+
+    const scoreRows =
+      monthlyScoresResult
+        .data ??
+      [];
+
+    const validScores =
+      scoreRows
+        .map(
+          (row: any) =>
+            Number(
+              row.current_score
+            )
+        )
+        .filter(
+          (value: number) =>
+            Number.isFinite(
+              value
+            )
+        );
+
+    const auditAverage =
+      validScores.length
+        ? validScores.reduce(
+            (
+              total: number,
+              score: number
+            ) =>
+              total + score,
+            0
+          ) /
+          validScores.length
+        : null;
+
+    const auditSessionIds =
+      (
+        auditSessionsResult
+          .data ?? []
+      ).map(
+        (session: any) =>
+          session.id
+      );
+
+    let criticalFindings =
+      0;
+
+    if (
+      auditSessionIds.length
+    ) {
+      const {
+        count,
+        error,
+      } =
+        await executiveAdmin
+          .from(
+            "audit_findings"
+          )
+          .select(
+            "id",
+            {
+              count:
+                "exact",
+              head:
+                true,
+            }
+          )
+          .in(
+            "audit_session_id",
+            auditSessionIds
+          )
+          .eq(
+            "risk_level",
+            "critical"
+          );
+
+      if (error) {
+        throw error;
+      }
+
+      criticalFindings =
+        count ?? 0;
+    }
+
+    return (
+      <BodExecutiveDashboard
+        executiveName={
+          profile.full_name ||
+          user.email ||
+          "BOD"
+        }
+        dateLabel={
+          fullDate(today)
+        }
+        outletCount={
+          outlets.length
+        }
+        completedReports={
+          completedReports
+        }
+        inProgressReports={
+          inProgressReports
+        }
+        auditAverage={
+          auditAverage
+        }
+        scoredOutlets={
+          validScores.length
+        }
+        criticalFindings={
+          criticalFindings
+        }
+      />
+    );
+  }
 
   // ==========================================================
   // OUTLET AUDITOR ACTION DASHBOARD

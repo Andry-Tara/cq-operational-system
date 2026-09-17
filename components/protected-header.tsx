@@ -10,11 +10,13 @@ type ProtectedHeaderProps = {
   displayName: string;
   roleName: string;
   outletName?: string | null;
+  outletContextLabel?: string;
   showAdministration: boolean;
   showOpening: boolean;
   showClosing: boolean;
   showReports: boolean;
-  showAudit: boolean;
+  showAuditInput: boolean;
+  showAuditManagement: boolean;
   appVersion: string;
   buildSha: string;
   environment: string;
@@ -174,11 +176,13 @@ export function ProtectedHeader({
   displayName,
   roleName,
   outletName,
+  outletContextLabel = "Active Outlet",
   showAdministration,
   showOpening,
   showClosing,
   showReports,
-  showAudit,
+  showAuditInput,
+  showAuditManagement,
   appVersion,
   buildSha,
   environment,
@@ -218,9 +222,21 @@ export function ProtectedHeader({
       "/protected/reports"
     );
 
-  const auditActive =
+  const auditInputActive =
+    pathname ===
+      "/protected/audit" ||
+    (
+      pathname.startsWith(
+        "/protected/audit/"
+      ) &&
+      !pathname.startsWith(
+        "/protected/audit/management"
+      )
+    );
+
+  const auditManagementActive =
     pathname.startsWith(
-      "/protected/audit"
+      "/protected/audit/management"
     );
 
   const moreActive =
@@ -314,7 +330,7 @@ export function ProtectedHeader({
             {outletName && (
               <div className="hidden text-right lg:block">
                 <p className="text-[8px] font-black uppercase tracking-wide text-neutral-400">
-                  Active Outlet
+                  {outletContextLabel}
                 </p>
                 <p className="mt-0.5 max-w-[150px] truncate text-xs font-bold text-neutral-800">
                   {outletName}
@@ -412,14 +428,29 @@ export function ProtectedHeader({
               />
             )}
 
-            {showAudit &&
+            {showAuditInput &&
               !showOpening &&
               !showClosing && (
                 <MobileNavItem
                   href="/protected/audit"
-                  label="Audit"
+                  label="Audit Outlet"
                   kind="audit"
-                  active={auditActive}
+                  active={
+                    auditInputActive
+                  }
+                />
+              )}
+
+            {showAuditManagement &&
+              !showOpening &&
+              !showClosing && (
+                <MobileNavItem
+                  href="/protected/audit/management"
+                  label="Audit Mgmt"
+                  kind="reports"
+                  active={
+                    auditManagementActive
+                  }
                 />
               )}
 
@@ -524,10 +555,20 @@ export function ProtectedHeader({
                 />
               )}
 
-              {showAudit && (
+              {showAuditInput && (
                 <MenuLink
                   href="/protected/audit"
-                  label="Outlet Audit"
+                  label="Audit Outlet"
+                  onClick={() =>
+                    setMenuOpen(false)
+                  }
+                />
+              )}
+
+              {showAuditManagement && (
+                <MenuLink
+                  href="/protected/audit/management"
+                  label="Management Audit Dashboard"
                   onClick={() =>
                     setMenuOpen(false)
                   }
