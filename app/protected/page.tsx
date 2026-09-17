@@ -393,7 +393,9 @@ export default async function ProtectedPage({
             status,
             outlet_id,
             started_at,
-            submitted_at
+            submitted_at,
+            score,
+            scoring_snapshot
           `)
           .eq(
             "organization_id",
@@ -426,6 +428,58 @@ export default async function ProtectedPage({
       auditSessions =
         data ?? [];
     }
+
+    const currentMonthStart =
+      `${today.slice(0, 7)}-01`;
+
+    let monthlyScoreRows: any[] = [];
+
+    if (outletIds.length) {
+      const {
+        data,
+        error,
+      } =
+        await auditAdmin
+          .from(
+            "outlet_monthly_scores"
+          )
+          .select(`
+            outlet_id,
+            base_score,
+            total_penalty,
+            current_score,
+            submitted_audit_count
+          `)
+          .eq(
+            "organization_id",
+            profile.organization_id
+          )
+          .eq(
+            "month_start",
+            currentMonthStart
+          )
+          .in(
+            "outlet_id",
+            outletIds
+          );
+
+      if (error) {
+        throw error;
+      }
+
+      monthlyScoreRows =
+        data ?? [];
+    }
+
+    const monthlyScoreByOutlet =
+      new Map(
+        monthlyScoreRows.map(
+          (row: any) => [
+            row.outlet_id,
+            row,
+          ]
+        )
+      );
 
     const auditSessionIds =
       auditSessions.map(
@@ -526,34 +580,112 @@ export default async function ProtectedPage({
                 "draft"
             ) ?? null;
 
-          const submitted =
-            outletSessions.find(
+          const submittedSessions =
+            outletSessions.filter(
               (session: any) =>
                 session.status ===
                 "submitted"
-            ) ?? null;
+            );
+
+          const latestSubmitted =
+            submittedSessions[0] ??
+            null;
 
           const current =
             draft ??
-            submitted ??
+            latestSubmitted ??
             null;
+
+          const draftFindingCount =
+            draft
+              ? findingCountBySession.get(
+                  draft.id
+                ) ?? 0
+              : 0;
+
+          const submittedFindingsToday =
+            submittedSessions.reduce(
+              (
+                total: number,
+                session: any
+              ) =>
+                total +
+                (
+                  findingCountBySession.get(
+                    session.id
+                  ) ?? 0
+                ),
+              0
+            );
+
+          const todayFindingCount =
+            outletSessions.reduce(
+              (
+                total: number,
+                session: any
+              ) =>
+                total +
+                (
+                  findingCountBySession.get(
+                    session.id
+                  ) ?? 0
+                ),
+              0
+            );
+
+          const todayPenalty =
+            submittedSessions.reduce(
+              (
+                total: number,
+                session: any
+              ) => {
+                const snapshot =
+                  session.scoring_snapshot &&
+                  typeof session.scoring_snapshot ===
+                    "object"
+                    ? session.scoring_snapshot
+                    : {};
+
+                return (
+                  total +
+                  Number(
+                    snapshot.audit_penalty ??
+                    0
+                  )
+                );
+              },
+              0
+            );
+
+          const monthly =
+            monthlyScoreByOutlet.get(
+              outlet.id
+            );
 
           return {
             id: outlet.id,
             code: outlet.code,
             name: outlet.name,
+
             status: draft
               ? "draft"
-              : submitted
+              : latestSubmitted
                 ? "submitted"
                 : "not_started",
+
             sessionId:
               current?.id ??
               null,
+
+            latestSubmittedSessionId:
+              latestSubmitted?.id ??
+              null,
+
             auditNumber:
               current
                 ?.audit_number ??
               null,
+
             findingCount:
               current
                 ? findingCountBySession
@@ -561,17 +693,37 @@ export default async function ProtectedPage({
                       current.id
                     ) ?? 0
                 : 0,
+
+            draftFindingCount,
+
+            todayFindingCount,
+
+            submittedToday:
+              submittedSessions.length,
+
+            submittedFindingsToday,
+
+            todayPenalty,
+
+            monthlyScore:
+              Number(
+                monthly?.current_score ??
+                100
+              ),
+
             startedAt:
               current
                 ?.started_at ??
               null,
+
             submittedAt:
-              current
+              latestSubmitted
                 ?.submitted_at ??
               null,
           } as const;
         }
       );
+
 
     const outletById =
       new Map(
