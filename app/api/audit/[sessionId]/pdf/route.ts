@@ -74,20 +74,37 @@ export async function GET(
       );
     }
 
-    const access =
+    const submitAccess =
       await checkPermissionApi(
         "audit.submit",
       );
 
-    if (!access.ok) {
+    const managementAccess =
+      await checkPermissionApi(
+        "audit.view_management",
+      );
+
+    const access =
+      submitAccess.ok
+        ? submitAccess
+        : managementAccess.ok
+          ? managementAccess
+          : null;
+
+    if (!access) {
+      const denied =
+        submitAccess.status === 401
+          ? submitAccess
+          : managementAccess;
+
       return NextResponse.json(
         {
           error:
-            access.error,
+            denied.error,
         },
         {
           status:
-            access.status,
+            denied.status,
         },
       );
     }
@@ -162,13 +179,39 @@ export async function GET(
     }
 
     if (
-      session.auditor_user_id !==
-      user.id
+      session.organization_id !==
+      access.profile.organization_id
     ) {
       return NextResponse.json(
         {
           error:
-            "Audit session bukan milik user ini.",
+            "Audit session tidak ditemukan.",
+        },
+        {
+          status: 404,
+        },
+      );
+    }
+
+    const isOwner =
+      session.auditor_user_id ===
+      user.id;
+
+    const managementRead =
+      managementAccess.ok &&
+      session.status ===
+        "submitted";
+
+    const canRead =
+      access.isAdmin ||
+      isOwner ||
+      managementRead;
+
+    if (!canRead) {
+      return NextResponse.json(
+        {
+          error:
+            "Anda tidak memiliki akses ke audit PDF ini.",
         },
         {
           status: 403,

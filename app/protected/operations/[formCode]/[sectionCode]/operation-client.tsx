@@ -4417,9 +4417,11 @@ export default function OperationClient({
                 </div>
 
                 <span className="shrink-0 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-[11px] font-bold tracking-wide text-neutral-700">
-                  {result.pdfStoragePath
-                    ? "PDF READY"
-                    : result.picReadyForPdf
+                  {operation.sectionScoped
+                    ? "DONE"
+                    : result.pdfStoragePath
+                      ? "PDF READY"
+                      : result.picReadyForPdf
                       ? result.pdfError
                         ? "PDF FAILED"
                         : "PDF PENDING"
@@ -4542,7 +4544,7 @@ export default function OperationClient({
               className="rounded-xl border border-neutral-200 px-6 py-4 font-semibold text-neutral-700 transition hover:bg-neutral-50"
             >
               {operation.sectionScoped
-                ? "Back to CK Sections"
+                ? "Done"
                 : "Back to Dashboard"}
             </Link>
           </div>
@@ -4559,8 +4561,8 @@ export default function OperationClient({
                   : result.picReadyForPdf
                   ? result.pdfError
                     ? "Checklist PIC sudah lengkap, tetapi PDF belum berhasil dibuat. Gunakan Retry Generate PDF di atas."
-                    : "Checklist PIC sudah lengkap. PDF PIC sedang dipersiapkan."
-                  : "Section berhasil disimpan. PDF PIC akan dibuat otomatis setelah seluruh required section yang ditugaskan kepada Anda selesai."
+                    : "Section berhasil disimpan. Tekan Done untuk kembali ke CK Sections."
+                  : "Section berhasil disimpan. Tekan Done untuk kembali ke CK Sections."
                 : "Report berhasil disimpan."}
             </p>
           )}

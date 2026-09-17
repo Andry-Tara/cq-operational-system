@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { requirePermission } from "@/lib/admin/require-admin";
+import {
+  getAccessContext,
+} from "@/lib/admin/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 function one<T>(
@@ -94,10 +96,28 @@ export default async function AuditReportPage({
     user,
     profile,
     isAdmin,
+    permissionCodes,
   } =
-    await requirePermission(
-      "audit.submit",
+    await getAccessContext();
+
+  const canSubmitAudit =
+    isAdmin ||
+    permissionCodes.includes(
+      "audit.submit"
     );
+
+  const canViewManagement =
+    isAdmin ||
+    permissionCodes.includes(
+      "audit.view_management"
+    );
+
+  if (
+    !canSubmitAudit &&
+    !canViewManagement
+  ) {
+    redirect("/protected");
+  }
 
   const admin =
     createAdminClient();
@@ -146,11 +166,23 @@ export default async function AuditReportPage({
     );
   }
 
-  if (
+  const isOwner =
+    session.auditor_user_id ===
+    user.id;
+
+  const managementReadOnly =
     !isAdmin &&
-    session.auditor_user_id !==
-      user.id
-  ) {
+    !isOwner &&
+    canViewManagement &&
+    session.status ===
+      "submitted";
+
+  const canReadSession =
+    isAdmin ||
+    isOwner ||
+    managementReadOnly;
+
+  if (!canReadSession) {
     return (
       <main className="min-h-screen bg-[#f5f5f3] px-5 py-12">
         <div className="mx-auto max-w-xl rounded-[24px] border border-neutral-200 bg-white p-8 text-center shadow-sm">
@@ -159,7 +191,7 @@ export default async function AuditReportPage({
           </h1>
 
           <p className="mt-3 text-sm text-neutral-500">
-            Audit report ini bukan milik user tersebut.
+            Anda tidak memiliki akses ke audit report ini.
           </p>
 
           <Link

@@ -43,9 +43,15 @@ export async function GET(
         "reports.view",
       );
 
+    const managementAccess =
+      await checkPermissionApi(
+        "audit.view_management",
+      );
+
     if (
       !auditAccess.ok &&
-      !reportAccess.ok
+      !reportAccess.ok &&
+      !managementAccess.ok
     ) {
       return NextResponse.json(
         {
@@ -160,8 +166,10 @@ export async function GET(
         )
         .select(`
           id,
+          organization_id,
           outlet_id,
-          auditor_user_id
+          auditor_user_id,
+          status
         `)
         .eq(
           "id",
@@ -184,9 +192,33 @@ export async function GET(
       );
     }
 
+    const isAdmin =
+      (
+        auditAccess.ok &&
+        auditAccess.isAdmin
+      ) ||
+      (
+        reportAccess.ok &&
+        reportAccess.isAdmin
+      ) ||
+      (
+        managementAccess.ok &&
+        managementAccess.isAdmin
+      );
+
+    const managementRead =
+      managementAccess.ok &&
+      session.organization_id ===
+        managementAccess.profile
+          .organization_id &&
+      session.status ===
+        "submitted";
+
     let allowed =
+      isAdmin ||
       session.auditor_user_id ===
-      user.id;
+        user.id ||
+      managementRead;
 
     if (
       !allowed &&

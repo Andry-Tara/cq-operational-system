@@ -862,7 +862,7 @@ ManagementOutletAuditPage({
                   key={
                     session.id
                   }
-                  className="grid gap-4 px-5 py-5 md:grid-cols-[1fr_auto_auto_auto] md:items-center md:px-8"
+                  className="grid gap-4 px-5 py-5 md:grid-cols-[1fr_auto_auto_auto_auto] md:items-center md:px-8"
                 >
                   <div>
                     <p className="font-black text-neutral-900">
@@ -929,6 +929,13 @@ ManagementOutletAuditPage({
                           )}
                     </p>
                   </div>
+
+                  <Link
+                    href={`/protected/audit/${session.id}`}
+                    className="inline-flex h-10 items-center justify-center rounded-xl border border-neutral-200 bg-white px-4 text-xs font-black text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50"
+                  >
+                    View Detail →
+                  </Link>
                 </article>
               );
             }

@@ -7,6 +7,14 @@ import {
   createClient,
 } from "@/lib/supabase/server";
 
+import {
+  createAdminClient,
+} from "@/lib/supabase/admin";
+
+import {
+  checkPermissionApi,
+} from "@/lib/admin/require-admin";
+
 
 export const dynamic =
   "force-dynamic";
@@ -64,6 +72,43 @@ export async function GET(
       );
     }
 
+    const viewAccess =
+      await checkPermissionApi(
+        "reports.view"
+      );
+
+    if (!viewAccess.ok) {
+      return NextResponse.json(
+        {
+          error:
+            viewAccess.error,
+        },
+        {
+          status:
+            viewAccess.status,
+        }
+      );
+    }
+
+    const allOutletAccess =
+      await checkPermissionApi(
+        "reports.all_outlets"
+      );
+
+    const hasAllOutlets =
+      allOutletAccess.ok;
+
+    const admin =
+      createAdminClient();
+
+    // Scoped users continue through normal RLS.
+    // BOD / ORG_ADMIN organization-wide readers use trusted
+    // server reads only after RBAC has authorized them.
+    const reportClient =
+      hasAllOutlets
+        ? admin
+        : supabase;
+
 
     // ========================================================
     // REPORT
@@ -77,10 +122,11 @@ export async function GET(
       error:
         reportError,
     } =
-      await supabase
+      await reportClient
         .from("reports")
         .select(`
           id,
+          organization_id,
           outlet_id,
           form_id,
           report_number,
@@ -89,6 +135,10 @@ export async function GET(
         .eq(
           "id",
           id
+        )
+        .eq(
+          "organization_id",
+          viewAccess.profile.organization_id
         )
         .maybeSingle();
 
@@ -133,7 +183,7 @@ export async function GET(
       error:
         formError,
     } =
-      await supabase
+      await reportClient
         .from("forms")
         .select(`
           id,
@@ -201,7 +251,8 @@ export async function GET(
     // ========================================================
 
     if (
-      isCkReport
+      isCkReport &&
+      !hasAllOutlets
     ) {
       const {
         data:
@@ -469,7 +520,7 @@ export async function GET(
       error:
         downloadError,
     } =
-      await supabase
+      await reportClient
         .storage
         .from(
           "operational-reports"

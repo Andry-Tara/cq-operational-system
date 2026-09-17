@@ -1685,39 +1685,30 @@ export async function POST(
     // ========================================================
     // CK AREA FINALIZATION SAFETY
     //
-    // CK section submission is not the final report event.
+    // CK section submission is never the final report event.
     //
-    // Production PIC:
-    // - submits section only
-    // - does not generate a PIC final PDF
+    // Every CK PIC, including:
+    // - Production
+    // - Store / Warehouse
     //
-    // Store/Warehouse keeps the existing PIC PDF flow.
-    // Parent CK completion will be handled later by
-    // area leader finalization.
+    // only submits its assigned section here.
+    //
+    // No PDF is generated or shared from the section-submit
+    // success layer. PDF/report sharing belongs exclusively
+    // to explicit area-leader finalization.
+    //
+    // Parent CK completion remains controlled by
+    // STORE + PRODUCTION area finalization.
     // ========================================================
 
-    const isProductionSection =
-      config.sectionScoped &&
-      [
-        "BEVERAGE",
-        "BUTCHER",
-        "STEWARD",
-        "PREMIX",
-        "COLD_KITCHEN",
-        "HOT_KITCHEN",
-        "HDS",
-      ].includes(
-        normalizedSectionCode
-      );
+
 
     const sectionSubmitCompletesParentReport =
       !config.sectionScoped &&
       allCompleted;
 
     const picReadyForPdf =
-      config.sectionScoped &&
-      !isProductionSection &&
-      picCompleted;
+      false;
 
     const wasReopened =
       String(

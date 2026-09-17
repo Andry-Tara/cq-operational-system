@@ -3,7 +3,9 @@ import Link from "next/link";
 import { AuditShareActions } from "@/components/audit/audit-share-actions";
 import { redirect } from "next/navigation";
 
-import { requirePermission } from "@/lib/admin/require-admin";
+import {
+  getAccessContext,
+} from "@/lib/admin/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 function one<T>(
@@ -63,7 +65,28 @@ export default async function AuditResultPage({
     user,
     profile,
     isAdmin,
-  } = await requirePermission("audit.submit");
+    permissionCodes,
+  } =
+    await getAccessContext();
+
+  const canSubmitAudit =
+    isAdmin ||
+    permissionCodes.includes(
+      "audit.submit"
+    );
+
+  const canViewManagement =
+    isAdmin ||
+    permissionCodes.includes(
+      "audit.view_management"
+    );
+
+  if (
+    !canSubmitAudit &&
+    !canViewManagement
+  ) {
+    redirect("/protected");
+  }
 
   const admin = createAdminClient();
 
@@ -101,18 +124,33 @@ export default async function AuditResultPage({
     );
   }
 
-  if (
+  const isOwner =
+    session.auditor_user_id ===
+    user.id;
+
+  const managementReadOnly =
     !isAdmin &&
-    session.auditor_user_id !== user.id
-  ) {
+    !isOwner &&
+    canViewManagement &&
+    session.status ===
+      "submitted";
+
+  const canReadSession =
+    isAdmin ||
+    isOwner ||
+    managementReadOnly;
+
+  if (!canReadSession) {
     return (
       <StateCard
         title="Access Denied"
-        message="Audit session ini bukan milik user tersebut."
+        message="Anda tidak memiliki akses ke audit session ini."
       />
     );
   }
 
+  // Draft remains private to the audit owner / admin.
+  // Management users can only consume submitted results.
   if (session.status === "draft") {
     redirect("/protected/audit");
   }
@@ -511,13 +549,33 @@ export default async function AuditResultPage({
               </div>
             )}
 
-            <div className="mt-8">
-              <AuditShareActions
-                sessionId={session.id}
-                auditNumber={session.audit_number}
-                outletName={outlet?.name || "Outlet"}
-              />
+            <div className="mt-8 flex flex-wrap gap-2">
+              <Link
+                href={`/protected/audit/${session.id}/report`}
+                className="inline-flex h-11 items-center rounded-xl border border-neutral-200 bg-white px-4 text-sm font-black text-neutral-700 transition hover:bg-neutral-50"
+              >
+                Full Audit Report →
+              </Link>
+
+              <a
+                href={`/api/audit/${session.id}/pdf`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-11 items-center rounded-xl bg-neutral-950 px-4 text-sm font-black text-white transition hover:bg-neutral-800"
+              >
+                View PDF →
+              </a>
             </div>
+
+            {isOwner && (
+              <div className="mt-5">
+                <AuditShareActions
+                  sessionId={session.id}
+                  auditNumber={session.audit_number}
+                  outletName={outlet?.name || "Outlet"}
+                />
+              </div>
+            )}
 
             <div className="mt-8 flex flex-col-reverse gap-3 border-t border-neutral-100 pt-6 sm:flex-row sm:justify-between">
               <Link
