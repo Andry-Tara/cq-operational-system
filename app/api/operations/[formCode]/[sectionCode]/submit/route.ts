@@ -538,78 +538,22 @@ export async function POST(
       allQuestions;
 
     if (applicabilityEnabled) {
-      const invalidApplicabilityConfig =
-        allQuestions.filter(
-          (question: any) => {
-            const applicability =
-              question?.config
-                ?.applicability;
-
-            const sourceType =
-              String(
-                applicability?.type ||
-                  ""
-              )
-                .trim()
-                .toLowerCase();
-
-            if (
-              ![
-                "global",
-                "facility",
-              ].includes(
-                sourceType
-              )
-            ) {
-              return true;
-            }
-
-            if (
-              sourceType ===
-                "global" &&
-              applicability
-                ?.facility_key != null
-            ) {
-              return true;
-            }
-
-            if (
-              sourceType ===
-                "facility" &&
-              !String(
-                applicability
-                  ?.facility_key ||
-                  ""
-              ).trim()
-            ) {
-              return true;
-            }
-
-            return false;
-          }
-        );
-
-      if (
-        invalidApplicabilityConfig.length >
-        0
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "Konfigurasi applicability pertanyaan belum lengkap.",
-            code:
-              "APPLICABILITY_CONFIG_INCOMPLETE",
-            questionIds:
-              invalidApplicabilityConfig.map(
-                (question: any) =>
-                  question.id
-              ),
-          },
-          {
-            status: 409,
-          }
-        );
-      }
+      // ======================================================
+      // SNAPSHOT IS AUTHORITATIVE AT SUBMIT TIME
+      //
+      // Question config is used when the operational session
+      // starts and the applicability snapshot is created.
+      //
+      // Once report_question_applicability exists, submit must
+      // validate against that historical snapshot instead of
+      // re-validating the current form-version question config.
+      //
+      // This is especially important for immutable legacy
+      // published versions such as CLOSING_CK V2.
+      //
+      // Snapshot completeness + question-id matching below
+      // remain strict and fail closed.
+      // ======================================================
 
       const {
         data:
