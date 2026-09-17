@@ -684,9 +684,127 @@ export async function POST(
 
     async function
     resolveApplicabilityPreflight() {
-      const sectionQuestions =
+      const rawSectionQuestions =
         operationQuestions ??
         [];
+
+      // ======================================================
+      // LEGACY CLOSING_CK V2 COMPATIBILITY
+      //
+      // CLOSING_CK V2 was published before every question
+      // had an explicit config.applicability.
+      //
+      // MAIN_WAREHOUSE contains a mixed legacy state:
+      // - some questions already have { type: "global" }
+      // - remaining questions have no applicability config
+      //
+      // Published versions are immutable, so DO NOT repair V2
+      // in the database.
+      //
+      // For this exact legacy version + section only, missing
+      // applicability is treated as GLOBAL in memory so the
+      // report can create a complete historical applicability
+      // snapshot.
+      // ======================================================
+
+      let sectionQuestions =
+        rawSectionQuestions;
+
+      if (
+        config?.formCode ===
+          "CLOSING_CK" &&
+        normalizedSectionCode ===
+          "MAIN_WAREHOUSE"
+      ) {
+        const effectiveFormVersionId =
+          String(
+            todaysReport
+              ?.form_version_id ||
+              assignment
+                .form_version_id ||
+              ""
+          );
+
+        const {
+          data:
+            effectiveFormVersion,
+          error:
+            effectiveFormVersionError,
+        } = await supabase
+          .from("form_versions")
+          .select(`
+            id,
+            version_number,
+            status
+          `)
+          .eq(
+            "id",
+            effectiveFormVersionId
+          )
+          .maybeSingle();
+
+        if (
+          effectiveFormVersionError
+        ) {
+          throw (
+            effectiveFormVersionError
+          );
+        }
+
+        const isLegacyClosingCkV2 =
+          Number(
+            effectiveFormVersion
+              ?.version_number
+          ) === 2 &&
+          String(
+            effectiveFormVersion
+              ?.status || ""
+          )
+            .trim()
+            .toLowerCase() ===
+            "published";
+
+        if (
+          isLegacyClosingCkV2
+        ) {
+          sectionQuestions =
+            rawSectionQuestions.map(
+              (question: any) => {
+                if (
+                  question?.config
+                    ?.applicability !=
+                  null
+                ) {
+                  return question;
+                }
+
+                const existingConfig =
+                  question?.config &&
+                  typeof question
+                    .config ===
+                    "object" &&
+                  !Array.isArray(
+                    question.config
+                  )
+                    ? question.config
+                    : {};
+
+                return {
+                  ...question,
+
+                  config: {
+                    ...existingConfig,
+
+                    applicability: {
+                      type:
+                        "global",
+                    },
+                  },
+                };
+              }
+            );
+        }
+      }
 
       const applicabilityConfigured =
         sectionQuestions.some(
@@ -1583,6 +1701,8 @@ export async function POST(
     // ========================================================
 
     const sectionQuestionsForApplicability =
+      applicabilityPreflight
+        ?.questions ??
       operationQuestions ??
       [];
 
