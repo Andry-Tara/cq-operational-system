@@ -80,7 +80,8 @@ export default async function AuditResultPage({
       auditor_name_snapshot,
       started_at,
       submitted_at,
-      score
+      score,
+      scoring_snapshot
     `)
     .eq("id", sessionId)
     .eq(
@@ -174,6 +175,34 @@ export default async function AuditResultPage({
     ).length,
   };
 
+  const scoring =
+    session.scoring_snapshot &&
+    typeof session.scoring_snapshot === "object"
+      ? session.scoring_snapshot as any
+      : {};
+
+  const scoreBefore =
+    Number(
+      scoring.monthly_score_before ?? 100,
+    );
+
+  const scoreAfter =
+    Number(
+      scoring.monthly_score_after ??
+        session.score ??
+        100,
+    );
+
+  const auditPenalty =
+    Number(
+      scoring.audit_penalty ?? 0,
+    );
+
+  const scoringPeriod =
+    typeof scoring.period === "string"
+      ? scoring.period
+      : session.audit_date.slice(0, 7);
+
   const areaCount = new Set(
     findings.map(
       (row) =>
@@ -204,17 +233,17 @@ export default async function AuditResultPage({
 
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <Summary
+                  label="Monthly Score"
+                  value={`${scoreAfter}/100`}
+                />
+                <Summary
                   label="Findings"
                   value={findings.length}
                 />
-                <Summary
-                  label="Areas"
-                  value={areaCount}
-                />
                 <div className="col-span-2 sm:col-span-1">
                   <Summary
-                    label="Status"
-                    value="Done"
+                    label="Penalty"
+                    value={`-${auditPenalty}`}
                   />
                 </div>
               </div>
@@ -270,6 +299,66 @@ export default async function AuditResultPage({
                 value={risks.critical}
                 tone="critical"
               />
+            </div>
+
+            <div className="mt-5 rounded-[20px] border border-neutral-200 bg-neutral-50 p-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.15em] text-neutral-400">
+                    Monthly Outlet Score
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-neutral-700">
+                    Period {scoringPeriod}
+                  </p>
+                </div>
+
+                <div className="text-left sm:text-right">
+                  <p className="text-3xl font-black">
+                    {scoreAfter}
+                    <span className="text-base text-neutral-400">
+                      /100
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <ScoreInfo
+                  label="Previous Score"
+                  value={scoreBefore}
+                />
+                <ScoreInfo
+                  label="This Audit"
+                  value={`-${auditPenalty}`}
+                />
+                <ScoreInfo
+                  label="Current Score"
+                  value={scoreAfter}
+                />
+              </div>
+
+              <div className="mt-5 space-y-2 border-t border-neutral-200 pt-4 text-sm">
+                <PenaltyRow
+                  label="Minor"
+                  count={risks.minor}
+                  weight={2}
+                />
+                <PenaltyRow
+                  label="Medium"
+                  count={risks.medium}
+                  weight={5}
+                />
+                <PenaltyRow
+                  label="Major"
+                  count={risks.major}
+                  weight={10}
+                />
+                <PenaltyRow
+                  label="Critical"
+                  count={risks.critical}
+                  weight={20}
+                />
+              </div>
             </div>
 
             <div className="mt-8 flex flex-wrap items-end justify-between gap-3">
@@ -423,6 +512,50 @@ function Info({
       <p className="mt-1 text-sm font-bold">
         {value}
       </p>
+    </div>
+  );
+}
+
+function ScoreInfo({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white p-4">
+      <p className="text-[9px] font-black uppercase tracking-wide text-neutral-400">
+        {label}
+      </p>
+      <p className="mt-2 text-xl font-black">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function PenaltyRow({
+  label,
+  count,
+  weight,
+}: {
+  label: string;
+  count: number;
+  weight: number;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="font-semibold text-neutral-600">
+        {label}
+      </span>
+
+      <span className="font-mono text-xs font-bold text-neutral-700">
+        {count} × -{weight}
+        <span className="ml-4 inline-block min-w-[42px] text-right">
+          -{count * weight}
+        </span>
+      </span>
     </div>
   );
 }
