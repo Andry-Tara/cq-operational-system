@@ -200,9 +200,8 @@ export function ProtectedHeader({
     pathname.startsWith(
       "/protected/operations/"
     ) ||
-    pathname.startsWith(
-      "/protected/audit"
-    );
+    pathname ===
+      "/protected/audit";
 
   const openingActive =
     pathname.startsWith(

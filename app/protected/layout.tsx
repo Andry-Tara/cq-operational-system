@@ -80,6 +80,9 @@ export default async function ProtectedLayout({
     isAdmin ||
     permissionCodes.includes(
       "audit.submit"
+    ) ||
+    permissionCodes.includes(
+      "audit.view_management"
     );
 
   const buildInfo =

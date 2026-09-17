@@ -5,7 +5,9 @@ import {
   OutletAuditRuntime,
   type AuditRuntimeData,
 } from "@/components/audit/outlet-audit-runtime";
-import { requirePermission } from "@/lib/admin/require-admin";
+import {
+  getAccessContext,
+} from "@/lib/admin/require-admin";
 import { getActiveOutlet } from "@/lib/active-outlet";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -24,10 +26,36 @@ function businessDate(timezone: string) {
 }
 
 export default async function OutletAuditPage() {
-  const { user, profile, isAdmin } =
-    await requirePermission("audit.submit");
+  const {
+    user,
+    profile,
+    isAdmin,
+    permissionCodes,
+  } =
+    await getAccessContext();
 
-  const outlet = await getActiveOutlet();
+  const canViewManagement =
+    isAdmin ||
+    permissionCodes.includes(
+      "audit.view_management"
+    );
+
+  if (canViewManagement) {
+    redirect(
+      "/protected/audit/management"
+    );
+  }
+
+  if (
+    !permissionCodes.includes(
+      "audit.submit"
+    )
+  ) {
+    redirect("/protected");
+  }
+
+  const outlet =
+    await getActiveOutlet();
 
   if (!outlet) {
     redirect("/protected/select-outlet");
