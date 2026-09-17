@@ -422,7 +422,12 @@ export function OutletAuditRuntime({
           : current,
       );
 
-      setMessage("Audit submitted successfully.");
+      // Submission is complete.
+      // Move directly to the immutable result / history view
+      // instead of leaving the auditor inside the runtime.
+      window.location.assign(
+        `/protected/audit/${raw.id || session.id}`,
+      );
     } catch (exception: any) {
       setError(exception?.message || "Unable to submit audit.");
     } finally {

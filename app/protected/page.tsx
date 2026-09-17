@@ -19,6 +19,8 @@ import {
 
 import ReopenReportButton from "./reports/reopen-report-button";
 import SplitOutletOperationsPanel from "@/components/split-outlet-operations-panel";
+import { AuditorDashboard } from "@/components/audit/auditor-dashboard";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   loadSplitOutletOperationCards,
 } from "@/lib/operations/load-split-outlet-dashboard";
@@ -341,6 +343,311 @@ export default async function ProtectedPage({
       -(period - 1)
     );
 
+
+  // ==========================================================
+  // OUTLET AUDITOR ACTION DASHBOARD
+  // ==========================================================
+  //
+  // Keep the existing operational dashboard untouched for
+  // Opening / Closing / CK / Management roles.
+  //
+  // An Outlet Auditor gets a task-oriented dashboard instead.
+  // ==========================================================
+
+  const isOutletAuditorExperience =
+    !isAdmin &&
+    permissionCodes.includes("audit.submit") &&
+    !canOpening &&
+    !canClosing &&
+    !canReports;
+
+  if (isOutletAuditorExperience) {
+    const auditAdmin =
+      createAdminClient();
+
+    const outletIds =
+      outlets.map(
+        (outlet: any) =>
+          outlet.id
+      );
+
+    const sinceDate =
+      shiftDate(
+        today,
+        -30
+      );
+
+    let auditSessions: any[] = [];
+
+    if (outletIds.length) {
+      const {
+        data,
+        error,
+      } =
+        await auditAdmin
+          .from("audit_sessions")
+          .select(`
+            id,
+            audit_number,
+            audit_date,
+            status,
+            outlet_id,
+            started_at,
+            submitted_at
+          `)
+          .eq(
+            "organization_id",
+            profile.organization_id
+          )
+          .eq(
+            "auditor_user_id",
+            user.id
+          )
+          .in(
+            "outlet_id",
+            outletIds
+          )
+          .gte(
+            "audit_date",
+            sinceDate
+          )
+          .order(
+            "started_at",
+            {
+              ascending: false,
+            }
+          )
+          .limit(200);
+
+      if (error) {
+        throw error;
+      }
+
+      auditSessions =
+        data ?? [];
+    }
+
+    const auditSessionIds =
+      auditSessions.map(
+        (session: any) =>
+          session.id
+      );
+
+    const findingCountBySession =
+      new Map<string, number>();
+
+    if (auditSessionIds.length) {
+      const {
+        data,
+        error,
+      } =
+        await auditAdmin
+          .from(
+            "audit_findings"
+          )
+          .select(
+            "audit_session_id"
+          )
+          .in(
+            "audit_session_id",
+            auditSessionIds
+          );
+
+      if (error) {
+        throw error;
+      }
+
+      for (
+        const finding
+        of data ?? []
+      ) {
+        if (
+          !finding
+            .audit_session_id
+        ) {
+          continue;
+        }
+
+        findingCountBySession.set(
+          finding
+            .audit_session_id,
+          (
+            findingCountBySession
+              .get(
+                finding
+                  .audit_session_id
+              ) ?? 0
+          ) + 1
+        );
+      }
+    }
+
+    const sessionsByOutlet =
+      new Map<
+        string,
+        any[]
+      >();
+
+    for (
+      const session
+      of auditSessions
+    ) {
+      const rows =
+        sessionsByOutlet.get(
+          session.outlet_id
+        ) ?? [];
+
+      rows.push(session);
+
+      sessionsByOutlet.set(
+        session.outlet_id,
+        rows
+      );
+    }
+
+    const auditorOutletCards =
+      outlets.map(
+        (outlet: any) => {
+          const outletSessions =
+            (
+              sessionsByOutlet.get(
+                outlet.id
+              ) ?? []
+            ).filter(
+              (session: any) =>
+                session.audit_date ===
+                today
+            );
+
+          const draft =
+            outletSessions.find(
+              (session: any) =>
+                session.status ===
+                "draft"
+            ) ?? null;
+
+          const submitted =
+            outletSessions.find(
+              (session: any) =>
+                session.status ===
+                "submitted"
+            ) ?? null;
+
+          const current =
+            draft ??
+            submitted ??
+            null;
+
+          return {
+            id: outlet.id,
+            code: outlet.code,
+            name: outlet.name,
+            status: draft
+              ? "draft"
+              : submitted
+                ? "submitted"
+                : "not_started",
+            sessionId:
+              current?.id ??
+              null,
+            auditNumber:
+              current
+                ?.audit_number ??
+              null,
+            findingCount:
+              current
+                ? findingCountBySession
+                    .get(
+                      current.id
+                    ) ?? 0
+                : 0,
+            startedAt:
+              current
+                ?.started_at ??
+              null,
+            submittedAt:
+              current
+                ?.submitted_at ??
+              null,
+          } as const;
+        }
+      );
+
+    const outletById =
+      new Map(
+        outlets.map(
+          (outlet: any) => [
+            outlet.id,
+            outlet,
+          ]
+        )
+      );
+
+    const recentAudits =
+      auditSessions
+        .filter(
+          (session: any) =>
+            session.status ===
+            "submitted"
+        )
+        .slice(
+          0,
+          6
+        )
+        .map(
+          (session: any) => {
+            const outlet =
+              outletById.get(
+                session.outlet_id
+              );
+
+            return {
+              sessionId:
+                session.id,
+              auditNumber:
+                session
+                  .audit_number,
+              outletId:
+                session
+                  .outlet_id,
+              outletCode:
+                outlet?.code ??
+                "",
+              outletName:
+                outlet?.name ??
+                "Outlet",
+              findingCount:
+                findingCountBySession
+                  .get(
+                    session.id
+                  ) ?? 0,
+              submittedAt:
+                session
+                  .submitted_at ??
+                null,
+            };
+          }
+        );
+
+    return (
+      <AuditorDashboard
+        auditorName={
+          profile.full_name ||
+          user.email ||
+          "Auditor"
+        }
+        dateLabel={
+          fullDate(today)
+        }
+        outlets={
+          auditorOutletCards
+        }
+        recentAudits={
+          recentAudits
+        }
+      />
+    );
+  }
 
   // ==========================================================
   // CLOSING FORM
