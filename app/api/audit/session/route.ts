@@ -123,6 +123,24 @@ export async function POST() {
 
     if (assignmentError) throw assignmentError;
 
+    // Draft OUTLET_AUDIT may be used only by form administrators
+    // while the form has not yet been activated for this outlet.
+    if (!assignment) {
+      const stagingAccess =
+        await checkPermissionApi("forms.manage");
+
+      if (!stagingAccess.ok) {
+        return NextResponse.json(
+          {
+            error:
+              "Outlet Audit belum diaktifkan untuk outlet ini.",
+            code: "AUDIT_NOT_ACTIVATED",
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     let version: { id: string; version_number: number; status: string } | null = null;
 
     if (assignment?.form_version_id) {

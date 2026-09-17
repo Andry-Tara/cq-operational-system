@@ -76,6 +76,12 @@ export default async function ProtectedLayout({
       "reports.view"
     );
 
+  const showAudit =
+    isAdmin ||
+    permissionCodes.includes(
+      "audit.submit"
+    );
+
   const buildInfo =
     getAppBuildInfo();
 
@@ -103,6 +109,9 @@ export default async function ProtectedLayout({
         }
         showReports={
           showReports
+        }
+        showAudit={
+          showAudit
         }
         appVersion={
           buildInfo.appVersion

@@ -14,6 +14,7 @@ type ProtectedHeaderProps = {
   showOpening: boolean;
   showClosing: boolean;
   showReports: boolean;
+  showAudit: boolean;
   appVersion: string;
   buildSha: string;
   environment: string;
@@ -24,6 +25,7 @@ type GlyphKind =
   | "opening"
   | "closing"
   | "reports"
+  | "audit"
   | "more";
 
 function getBackHref(pathname: string) {
@@ -81,6 +83,15 @@ function NavGlyph({
     return (
       <svg viewBox="0 0 24 24" className="h-[19px] w-[19px]" fill="none" stroke="currentColor" strokeWidth="1.8">
         <path strokeLinecap="round" strokeLinejoin="round" d="M20 15.5A8.2 8.2 0 0 1 8.5 4a8.5 8.5 0 1 0 11.5 11.5Z" />
+      </svg>
+    );
+  }
+
+  if (kind === "audit") {
+    return (
+      <svg viewBox="0 0 24 24" className="h-[19px] w-[19px]" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8 4.5h8M9 3h6a1 1 0 0 1 1 1v2H8V4a1 1 0 0 1 1-1Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h12v14H6zM9 10h6M9 14h4" />
       </svg>
     );
   }
@@ -167,6 +178,7 @@ export function ProtectedHeader({
   showOpening,
   showClosing,
   showReports,
+  showAudit,
   appVersion,
   buildSha,
   environment,
@@ -187,6 +199,9 @@ export function ProtectedHeader({
     ) ||
     pathname.startsWith(
       "/protected/operations/"
+    ) ||
+    pathname.startsWith(
+      "/protected/audit"
     );
 
   const openingActive =
@@ -202,6 +217,11 @@ export function ProtectedHeader({
   const reportsActive =
     pathname.startsWith(
       "/protected/reports"
+    );
+
+  const auditActive =
+    pathname.startsWith(
+      "/protected/audit"
     );
 
   const moreActive =
@@ -393,6 +413,17 @@ export function ProtectedHeader({
               />
             )}
 
+            {showAudit &&
+              !showOpening &&
+              !showClosing && (
+                <MobileNavItem
+                  href="/protected/audit"
+                  label="Audit"
+                  kind="audit"
+                  active={auditActive}
+                />
+              )}
+
             <button
               type="button"
               onClick={() =>
@@ -488,6 +519,16 @@ export function ProtectedHeader({
                 <MenuLink
                   href="/protected/admin"
                   label="Administration"
+                  onClick={() =>
+                    setMenuOpen(false)
+                  }
+                />
+              )}
+
+              {showAudit && (
+                <MenuLink
+                  href="/protected/audit"
+                  label="Outlet Audit"
                   onClick={() =>
                     setMenuOpen(false)
                   }
