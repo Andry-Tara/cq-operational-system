@@ -526,6 +526,13 @@ export default async function AuditResultPage({
                 </Link>
 
                 <Link
+                  href={`/api/audit/${session.id}/pdf?download=1`}
+                  className="inline-flex h-12 items-center justify-center rounded-xl border border-neutral-900 bg-white px-6 text-sm font-bold text-neutral-900 transition hover:bg-neutral-50"
+                >
+                  Download PDF
+                </Link>
+
+                <Link
                   href="/protected/audit"
                   className="inline-flex h-12 items-center justify-center rounded-xl bg-red-700 px-6 text-sm font-bold text-white transition hover:bg-red-800"
                 >
