@@ -139,7 +139,9 @@ export default async function AuditResultPage({
         created_at,
         audit_finding_photos (
           id,
-          original_filename
+          original_filename,
+          mime_type,
+          file_size
         )
       `)
       .eq(
@@ -181,22 +183,32 @@ export default async function AuditResultPage({
       ? session.scoring_snapshot as any
       : {};
 
-  const scoreBefore =
+  const hasScoring =
     Number(
-      scoring.monthly_score_before ?? 100,
-    );
+      scoring.scoring_version ?? 0,
+    ) >= 1;
+
+  const scoreBefore =
+    hasScoring
+      ? Number(
+          scoring.monthly_score_before,
+        )
+      : null;
 
   const scoreAfter =
-    Number(
-      scoring.monthly_score_after ??
-        session.score ??
-        100,
-    );
+    hasScoring
+      ? Number(
+          scoring.monthly_score_after ??
+            session.score,
+        )
+      : null;
 
   const auditPenalty =
-    Number(
-      scoring.audit_penalty ?? 0,
-    );
+    hasScoring
+      ? Number(
+          scoring.audit_penalty ?? 0,
+        )
+      : null;
 
   const scoringPeriod =
     typeof scoring.period === "string"
@@ -234,7 +246,7 @@ export default async function AuditResultPage({
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <Summary
                   label="Monthly Score"
-                  value={`${scoreAfter}/100`}
+                  value={hasScoring ? `${scoreAfter}/100` : "Not Scored"}
                 />
                 <Summary
                   label="Findings"
@@ -243,7 +255,7 @@ export default async function AuditResultPage({
                 <div className="col-span-2 sm:col-span-1">
                   <Summary
                     label="Penalty"
-                    value={`-${auditPenalty}`}
+                    value={hasScoring ? `-${auditPenalty}` : "—"}
                   />
                 </div>
               </div>
@@ -313,27 +325,33 @@ export default async function AuditResultPage({
                 </div>
 
                 <div className="text-left sm:text-right">
-                  <p className="text-3xl font-black">
-                    {scoreAfter}
-                    <span className="text-base text-neutral-400">
-                      /100
-                    </span>
-                  </p>
+                  {hasScoring ? (
+                    <p className="text-3xl font-black">
+                      {scoreAfter}
+                      <span className="text-base text-neutral-400">
+                        /100
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-lg font-black text-neutral-500">
+                      Pre-scoring Audit
+                    </p>
+                  )}
                 </div>
               </div>
 
               <div className="mt-5 grid gap-3 sm:grid-cols-3">
                 <ScoreInfo
                   label="Previous Score"
-                  value={scoreBefore}
+                  value={hasScoring ? scoreBefore! : "—"}
                 />
                 <ScoreInfo
                   label="This Audit"
-                  value={`-${auditPenalty}`}
+                  value={hasScoring ? `-${auditPenalty}` : "—"}
                 />
                 <ScoreInfo
                   label="Current Score"
-                  value={scoreAfter}
+                  value={hasScoring ? scoreAfter! : "—"}
                 />
               </div>
 
@@ -431,12 +449,47 @@ export default async function AuditResultPage({
                           <p className="text-[9px] font-black uppercase tracking-wide text-neutral-400">
                             Evidence
                           </p>
-                          <p className="mt-1 text-sm font-bold">
-                            {photo
-                              ? photo.original_filename ||
-                                "Photo attached"
-                              : "No photo"}
-                          </p>
+
+                          {photo ? (
+                            <div className="mt-3">
+                              <a
+                                href={`/api/audit/evidence/${photo.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block overflow-hidden rounded-xl border border-neutral-200 bg-white"
+                              >
+                                <img
+                                  src={`/api/audit/evidence/${photo.id}`}
+                                  alt={
+                                    photo.original_filename ||
+                                    "Audit evidence"
+                                  }
+                                  loading="lazy"
+                                  className="aspect-[4/3] w-full object-cover"
+                                />
+                              </a>
+
+                              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                                <p className="min-w-0 truncate text-xs font-semibold text-neutral-600">
+                                  {photo.original_filename ||
+                                    "Photo attached"}
+                                </p>
+
+                                <a
+                                  href={`/api/audit/evidence/${photo.id}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-xs font-bold text-red-700 hover:text-red-800"
+                                >
+                                  View full image →
+                                </a>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="mt-1 text-sm font-bold text-neutral-400">
+                              No photo
+                            </p>
+                          )}
                         </div>
                       </div>
 
@@ -464,12 +517,21 @@ export default async function AuditResultPage({
                 ← Back to Dashboard
               </Link>
 
-              <Link
-                href="/protected/audit"
-                className="inline-flex h-12 items-center justify-center rounded-xl bg-red-700 px-6 text-sm font-bold text-white transition hover:bg-red-800"
-              >
-                New Audit
-              </Link>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Link
+                  href={`/protected/audit/${session.id}/report`}
+                  className="inline-flex h-12 items-center justify-center rounded-xl bg-neutral-900 px-6 text-sm font-bold text-white transition hover:bg-black"
+                >
+                  View Full Report
+                </Link>
+
+                <Link
+                  href="/protected/audit"
+                  className="inline-flex h-12 items-center justify-center rounded-xl bg-red-700 px-6 text-sm font-bold text-white transition hover:bg-red-800"
+                >
+                  New Audit
+                </Link>
+              </div>
             </div>
           </div>
         </section>
