@@ -467,6 +467,94 @@ export async function GET(
           "-",
         );
 
+    // ========================================================
+    // OPTIONAL PRIVATE PDF PERSISTENCE
+    //
+    // Used by Secure Share.
+    // The file remains private inside operational-reports.
+    // ========================================================
+
+    const persist =
+      request.nextUrl.searchParams.get(
+        "persist",
+      ) === "1";
+
+    if (persist) {
+      const pdfStoragePath =
+        [
+          "audit",
+          session.organization_id,
+          session.outlet_id,
+          session.audit_date,
+          session.id,
+          `${safeAuditNumber}.pdf`,
+        ].join("/");
+
+      const {
+        error: uploadError,
+      } =
+        await admin.storage
+          .from(
+            "operational-reports",
+          )
+          .upload(
+            pdfStoragePath,
+            pdfBytes,
+            {
+              contentType:
+                "application/pdf",
+
+              upsert: true,
+
+              cacheControl:
+                "0",
+            },
+          );
+
+      if (uploadError) {
+        throw new Error(
+          `Unable to persist audit PDF: ${uploadError.message}`,
+        );
+      }
+
+      const {
+        error: updateError,
+      } =
+        await admin
+          .from(
+            "audit_sessions",
+          )
+          .update({
+            pdf_storage_path:
+              pdfStoragePath,
+
+            updated_at:
+              new Date()
+                .toISOString(),
+          })
+          .eq(
+            "id",
+            session.id,
+          );
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      const persistOnly =
+        request.nextUrl.searchParams.get(
+          "persistOnly",
+        ) === "1";
+
+      if (persistOnly) {
+        return NextResponse.json({
+          success: true,
+
+          pdfStoragePath,
+        });
+      }
+    }
+
     const download =
       request.nextUrl.searchParams.get(
         "download",

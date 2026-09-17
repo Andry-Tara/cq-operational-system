@@ -1,4 +1,6 @@
 import Link from "next/link";
+
+import { AuditShareActions } from "@/components/audit/audit-share-actions";
 import { redirect } from "next/navigation";
 
 import { requirePermission } from "@/lib/admin/require-admin";
@@ -508,6 +510,14 @@ export default async function AuditResultPage({
                 })}
               </div>
             )}
+
+            <div className="mt-8">
+              <AuditShareActions
+                sessionId={session.id}
+                auditNumber={session.audit_number}
+                outletName={outlet?.name || "Outlet"}
+              />
+            </div>
 
             <div className="mt-8 flex flex-col-reverse gap-3 border-t border-neutral-100 pt-6 sm:flex-row sm:justify-between">
               <Link
