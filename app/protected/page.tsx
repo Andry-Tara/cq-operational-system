@@ -1118,6 +1118,330 @@ export default async function ProtectedPage({
   }
 
   // ==========================================================
+  // FAST SPLIT OPERATIONAL DASHBOARD
+  //
+  // PERFORMANCE:
+  // FOH / BOH / Outlet Manager stop here before legacy
+  // Opening / Closing analytics, trend, CK KPI and other
+  // dashboard queries are executed.
+  //
+  // CK users intentionally continue through the existing
+  // scoped CK logic below.
+  // ==========================================================
+
+  const fastDashboardRoleCodes =
+    new Set(
+      roles.map(
+        (role: any) =>
+          String(
+            role?.code ||
+            ""
+          )
+            .trim()
+            .toUpperCase()
+      )
+    );
+
+
+  const fastIsOutletManager =
+    fastDashboardRoleCodes.has(
+      "STORE_MANAGER"
+    );
+
+  const fastIsFoh =
+    fastDashboardRoleCodes.has(
+      "FOH_STAFF"
+    );
+
+  const fastIsBoh =
+    fastDashboardRoleCodes.has(
+      "KITCHEN_STAFF"
+    );
+
+
+  const useFastSplitDashboard =
+    !isAdmin &&
+    activeOutlet?.id &&
+    activeOutlet.code !== "CNT" &&
+    (
+      fastIsOutletManager ||
+      fastIsFoh ||
+      fastIsBoh
+    );
+
+
+  if (
+    useFastSplitDashboard
+  ) {
+    const fastSplitOperations =
+      await loadSplitOutletOperationCards({
+        supabase,
+        organizationId:
+          profile.organization_id,
+        outletId:
+          activeOutlet.id,
+        outletTimezone:
+          activeOutlet.timezone ||
+          "Asia/Jakarta",
+        userId:
+          user.id,
+        isAdmin,
+      });
+
+
+    const fastHubOperations:
+      OperationalHubOperation[] =
+      fastSplitOperations.map(
+        (card) => ({
+          key:
+            card.formCode,
+          eyebrow:
+            card.area,
+          title:
+            card.title,
+          description:
+            card.description,
+          status:
+            card.status,
+          href:
+            card.href,
+          action:
+            card.status ===
+            "COMPLETED"
+              ? "View Report"
+              : card.status ===
+                  "IN PROGRESS"
+                ? "Resume"
+                : "Start",
+          disabled:
+            card.status !==
+              "COMPLETED" &&
+            !card.canFill,
+        })
+      );
+
+
+    // Recent Activity does not need another reports query.
+    // The loader already resolved today's exact report for
+    // every form visible to this user.
+    const fastHubActivities:
+      OperationalHubActivity[] =
+      fastSplitOperations
+        .filter(
+          (card) =>
+            Boolean(
+              card.reportId
+            )
+        )
+        .slice(
+          0,
+          4
+        )
+        .map(
+          (card) => ({
+            key:
+              card.reportId ||
+              card.formCode,
+            title:
+              card.reportNumber ||
+              card.title,
+            meta:
+              `Operational Report · ${today}`,
+            status:
+              card.status,
+            href:
+              card.href,
+          })
+        );
+
+
+    const fastQuickLinks:
+      OperationalHubQuickLink[] =
+      [];
+
+
+    if (
+      canReports
+    ) {
+      fastQuickLinks.push({
+        key:
+          "reports",
+        label:
+          "Reports Center",
+        description:
+          "Operational report history",
+        href:
+          "/protected/reports",
+      });
+    }
+
+
+    fastQuickLinks.push({
+      key:
+        "change-outlet",
+      label:
+        "Change Outlet",
+      description:
+        "Switch active operating outlet",
+      href:
+        "/protected/select-outlet",
+    });
+
+
+    // Only Outlet Manager needs the issue KPI.
+    // Staff do not pay for this query.
+    let fastIssueCount =
+      0;
+
+
+    if (
+      fastIsOutletManager
+    ) {
+      const fastReportIds =
+        fastSplitOperations
+          .map(
+            (card) =>
+              card.reportId
+          )
+          .filter(
+            (
+              id
+            ): id is string =>
+              Boolean(
+                id
+              )
+          );
+
+
+      if (
+        fastReportIds.length
+      ) {
+        const {
+          data:
+            fastIssueRows,
+        } =
+          await supabase
+            .from("issues")
+            .select(`
+              id,
+              report_id
+            `)
+            .in(
+              "report_id",
+              fastReportIds
+            );
+
+
+        fastIssueCount =
+          fastIssueRows?.length ??
+          0;
+      }
+    }
+
+
+    const fastAssigned =
+      fastHubOperations.length;
+
+    const fastCompleted =
+      fastHubOperations.filter(
+        (operation) =>
+          operation.status ===
+          "COMPLETED"
+      ).length;
+
+    const fastActive =
+      fastHubOperations.filter(
+        (operation) =>
+          operation.status ===
+          "IN PROGRESS"
+      ).length;
+
+    const fastRemaining =
+      Math.max(
+        0,
+        fastAssigned -
+        fastCompleted
+      );
+
+
+    return (
+      <main className="min-h-screen bg-[#f5f5f3] text-neutral-900">
+        <AutoRefresh
+          intervalMs={
+            60000
+          }
+        />
+
+        <div className="mx-auto max-w-[1480px] px-4 py-5 sm:px-5 sm:py-7 md:px-8 md:py-10">
+          <header>
+            <p className="text-[10px] font-black uppercase tracking-[0.17em] text-red-700">
+              Operational Overview
+            </p>
+
+            <h1 className="mt-1.5 text-[28px] font-black tracking-tight md:text-4xl">
+              Dashboard
+            </h1>
+
+            <p className="mt-2 text-sm text-neutral-500">
+              {
+                fullDate(
+                  today
+                )
+              }
+            </p>
+          </header>
+
+
+          <OperationalHub
+            outletName={
+              activeOutlet.name
+            }
+            dateLabel={
+              fullDate(
+                today
+              )
+            }
+            operations={
+              fastHubOperations
+            }
+            activities={
+              fastHubActivities
+            }
+            quickLinks={
+              fastQuickLinks
+            }
+          />
+
+
+          {fastIsOutletManager && (
+            <OutletInsights
+              outletName={
+                activeOutlet.name
+              }
+              assigned={
+                fastAssigned
+              }
+              completed={
+                fastCompleted
+              }
+              active={
+                fastActive
+              }
+              remaining={
+                fastRemaining
+              }
+              issues={
+                fastIssueCount
+              }
+            />
+          )}
+        </div>
+      </main>
+    );
+  }
+
+
+  // ==========================================================
   // CLOSING FORM
   // ==========================================================
   // OPENING - ACTIVE OUTLET
