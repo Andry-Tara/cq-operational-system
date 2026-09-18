@@ -77,18 +77,10 @@ export async function GET(
         "reports.view"
       );
 
-    if (!viewAccess.ok) {
-      return NextResponse.json(
-        {
-          error:
-            viewAccess.error,
-        },
-        {
-          status:
-            viewAccess.status,
-        }
-      );
-    }
+    const hasReportsView =
+      viewAccess.ok;
+
+
 
     const allOutletAccess =
       await checkPermissionApi(
@@ -100,6 +92,45 @@ export async function GET(
 
     const admin =
       createAdminClient();
+
+
+
+    const {
+      data:
+        requesterProfile,
+      error:
+        requesterProfileError,
+    } =
+      await admin
+        .from("profiles")
+        .select(`
+          id,
+          organization_id,
+          is_active
+        `)
+        .eq(
+          "id",
+          user.id
+        )
+        .maybeSingle();
+
+
+    if (
+      requesterProfileError ||
+      !requesterProfile ||
+      !requesterProfile.organization_id ||
+      requesterProfile.is_active === false
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Permission denied.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
 
     // Scoped users continue through normal RLS.
     // BOD / ORG_ADMIN organization-wide readers use trusted
@@ -116,7 +147,7 @@ export async function GET(
     // RLS still verifies parent report / outlet visibility.
     // ========================================================
 
-    const {
+    let {
       data:
         report,
       error:
@@ -138,13 +169,52 @@ export async function GET(
         )
         .eq(
           "organization_id",
-          viewAccess.profile.organization_id
+          requesterProfile.organization_id
         )
         .maybeSingle();
 
 
+
+
+    // Users without global report permission must go through
+    // exact split-form authorization below.
     if (
-      reportError
+      !hasReportsView &&
+      !hasAllOutlets &&
+      report
+    ) {
+      report = null;
+    }
+
+
+const reportAccessDenied =
+      Boolean(
+        reportError
+      ) &&
+      (
+        String(
+          reportError?.code ||
+          ""
+        ) === "42501" ||
+        /permission denied/i.test(
+          String(
+            reportError?.message ||
+            ""
+          )
+        )
+      );
+
+
+    // Permission-denied from parent report RLS is not yet the
+    // final answer for split FOH / BOH users.
+    //
+    // Let the explicit outlet + form permission fallback below
+    // decide whether this exact user may read this exact PDF.
+    //
+    // Other database errors still fail immediately.
+    if (
+      reportError &&
+      !reportAccessDenied
     ) {
       return NextResponse.json(
         {
@@ -160,14 +230,257 @@ export async function GET(
 
 
     if (!report) {
+      // ======================================================
+      // SPLIT OUTLET PDF FALLBACK
+      //
+      // A FOH / BOH operational user can open the final PDF
+      // only when the exact outlet + form is assigned through
+      // user_form_permissions.
+      //
+      // CK is intentionally excluded because its generic
+      // parent PDF can contain multiple areas / PIC sections.
+      // ======================================================
+
+      const admin =
+        createAdminClient();
+
+      const {
+        data:
+          scopedReport,
+        error:
+          scopedReportError,
+      } =
+        await admin
+          .from("reports")
+          .select(`
+            id,
+            outlet_id,
+            form_id,
+            report_number,
+            pdf_storage_path
+          `)
+          .eq(
+            "id",
+            id
+          )
+          .eq(
+            "organization_id",
+            requesterProfile.organization_id
+          )
+          .maybeSingle();
+
+      if (
+        scopedReportError
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              scopedReportError.message,
+          },
+          {
+            status: 500,
+          }
+        );
+      }
+
+      if (
+        scopedReport
+      ) {
+        const {
+          data:
+            scopedForm,
+          error:
+            scopedFormError,
+        } =
+          await admin
+            .from("forms")
+            .select(`
+              id,
+              code
+            `)
+            .eq(
+              "id",
+              scopedReport.form_id
+            )
+            .maybeSingle();
+
+        if (
+          scopedFormError
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                scopedFormError.message,
+            },
+            {
+              status: 500,
+            }
+          );
+        }
+
+        const scopedFormCode =
+          String(
+            scopedForm?.code ||
+            ""
+          )
+            .trim()
+            .toUpperCase();
+
+        const isSplitOutletForm =
+          [
+            "OPENING_FOH",
+            "OPENING_BOH",
+            "CLOSING_FOH",
+            "CLOSING_BOH",
+          ].includes(
+            scopedFormCode
+          );
+
+        if (
+          isSplitOutletForm
+        ) {
+          const {
+            data:
+              formPermission,
+            error:
+              formPermissionError,
+          } =
+            await admin
+              .from(
+                "user_form_permissions"
+              )
+              .select(`
+                can_fill,
+                can_submit,
+                can_review,
+                can_override
+              `)
+              .eq(
+                "user_id",
+                user.id
+              )
+              .eq(
+                "outlet_id",
+                scopedReport.outlet_id
+              )
+              .eq(
+                "form_id",
+                scopedReport.form_id
+              )
+              .limit(1)
+              .maybeSingle();
+
+          if (
+            formPermissionError
+          ) {
+            return NextResponse.json(
+              {
+                error:
+                  formPermissionError.message,
+              },
+              {
+                status: 500,
+              }
+            );
+          }
+
+          const canOpenOwnFormReport =
+            formPermission?.can_fill ===
+              true ||
+            formPermission?.can_submit ===
+              true ||
+            formPermission?.can_review ===
+              true ||
+            formPermission?.can_override ===
+              true;
+
+          if (
+            canOpenOwnFormReport &&
+            scopedReport
+              .pdf_storage_path
+          ) {
+            const {
+              data:
+                scopedPdfBlob,
+              error:
+                scopedDownloadError,
+            } =
+              await admin.storage
+                .from(
+                  "operational-reports"
+                )
+                .download(
+                  scopedReport
+                    .pdf_storage_path
+                );
+
+            if (
+              scopedDownloadError ||
+              !scopedPdfBlob
+            ) {
+              return NextResponse.json(
+                {
+                  error:
+                    scopedDownloadError
+                      ?.message ||
+                    "Unable to open PDF.",
+                },
+                {
+                  status: 500,
+                }
+              );
+            }
+
+            const safeNumber =
+              String(
+                scopedReport
+                  .report_number ||
+                "operational-report"
+              )
+                .replace(
+                  /[^a-zA-Z0-9_-]/g,
+                  "-"
+                )
+                .replace(
+                  /-+/g,
+                  "-"
+                );
+
+            const buffer =
+              await scopedPdfBlob
+                .arrayBuffer();
+
+            return new NextResponse(
+              buffer,
+              {
+                status: 200,
+                headers: {
+                  "Content-Type":
+                    "application/pdf",
+                  "Content-Disposition":
+                    `inline; filename="${safeNumber}.pdf"`,
+                  "Content-Length":
+                    String(
+                      buffer.byteLength
+                    ),
+                  "Cache-Control":
+                    "private, no-store, max-age=0",
+                  "X-Content-Type-Options":
+                    "nosniff",
+                },
+              }
+            );
+          }
+        }
+      }
+
       return NextResponse.json(
         {
           error:
             "Report tidak ditemukan.",
         },
         {
-          status:
-            404,
+          status: 404,
         }
       );
     }
