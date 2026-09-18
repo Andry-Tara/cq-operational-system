@@ -38,6 +38,9 @@ import {
 import {
   loadSplitOutletOperationCards,
 } from "@/lib/operations/load-split-outlet-dashboard";
+import {
+  loadFastCkDashboard,
+} from "@/lib/operations/load-fast-ck-dashboard";
 
 
 function one(value: any) {
@@ -1432,6 +1435,296 @@ export default async function ProtectedPage({
               }
               issues={
                 fastIssueCount
+              }
+            />
+          )}
+        </div>
+      </main>
+    );
+  }
+
+
+  // ==========================================================
+  // FAST CK OPERATIONAL DASHBOARD
+  //
+  // CK Staff / CK Leader stop before legacy outlet analytics.
+  // ==========================================================
+
+  const fastCkRoleCodes =
+    new Set(
+      roles.map(
+        (role: any) =>
+          String(
+            role?.code ||
+            ""
+          )
+            .trim()
+            .toUpperCase()
+      )
+    );
+
+
+  const fastIsCkLeader =
+    fastCkRoleCodes.has(
+      "CK_MANAGER"
+    );
+
+  const fastIsCkStaff =
+    fastCkRoleCodes.has(
+      "CK_STAFF"
+    );
+
+
+  const fastCkOutletId =
+    activeOutlet?.id ||
+    "";
+
+
+  const useFastCkDashboard =
+    !isAdmin &&
+    Boolean(
+      fastCkOutletId
+    ) &&
+    activeOutlet?.code ===
+      "CNT" &&
+    (
+      fastIsCkLeader ||
+      fastIsCkStaff
+    );
+
+
+  if (
+    useFastCkDashboard
+  ) {
+    let fastCkData:
+      Awaited<
+        ReturnType<
+          typeof loadFastCkDashboard
+        >
+      >;
+
+
+    try {
+      fastCkData =
+        await loadFastCkDashboard({
+          supabase,
+
+          organizationId:
+            profile.organization_id,
+
+          outletId:
+            fastCkOutletId,
+
+          userId:
+            user.id,
+
+          businessDate:
+            today,
+        });
+    } catch (
+      error
+    ) {
+      return (
+        <ErrorState
+          message={
+            error instanceof
+            Error
+              ? error.message
+              : "Unable to load Central Kitchen dashboard."
+          }
+        />
+      );
+    }
+
+
+    const fastCkStatus =
+      fastCkData.assignedCount >
+        0 &&
+      fastCkData.completedCount >=
+        fastCkData.assignedCount
+        ? "COMPLETED"
+        : fastCkData.completedCount >
+              0 ||
+            fastCkData.inProgressCount >
+              0
+          ? "IN PROGRESS"
+          : "READY";
+
+
+    const fastCkOperations:
+      OperationalHubOperation[] =
+      fastCkData.assignedCount >
+      0
+        ? [
+            {
+              key:
+                "central-kitchen",
+
+              eyebrow:
+                "Central Kitchen",
+
+              title:
+                "Opening CK / Closing CK",
+
+              description:
+                "Continue sections assigned to you and follow area finalization progress.",
+
+              status:
+                fastCkStatus,
+
+              href:
+                "/protected/central-kitchen",
+
+              action:
+                fastCkStatus ===
+                "IN PROGRESS"
+                  ? "Continue Central Kitchen"
+                  : "Open Central Kitchen",
+            },
+          ]
+        : [];
+
+
+    const fastCkActivities:
+      OperationalHubActivity[] =
+      fastCkData.reports.map(
+        report => ({
+          key:
+            report.id,
+
+          title:
+            report.reportNumber,
+
+          meta:
+            `${report.formCode} · ${today}`,
+
+          status:
+            report.status,
+
+          href:
+            "/protected/central-kitchen",
+        })
+      );
+
+
+    const fastCkQuickLinks:
+      OperationalHubQuickLink[] =
+      [];
+
+
+    if (
+      canReports
+    ) {
+      fastCkQuickLinks.push({
+        key:
+          "reports",
+
+        label:
+          "Reports Center",
+
+        description:
+          "Operational report history",
+
+        href:
+          "/protected/reports",
+      });
+    }
+
+
+    fastCkQuickLinks.push({
+      key:
+        "change-outlet",
+
+      label:
+        "Change Outlet",
+
+      description:
+        "Switch active operating outlet",
+
+      href:
+        "/protected/select-outlet",
+    });
+
+
+    return (
+      <main className="min-h-screen bg-[#f5f5f3] text-neutral-900">
+        <AutoRefresh
+          intervalMs={
+            60000
+          }
+        />
+
+        <div className="mx-auto max-w-[1480px] px-4 py-5 sm:px-5 sm:py-7 md:px-8 md:py-10">
+          <header>
+            <p className="text-[10px] font-black uppercase tracking-[0.17em] text-red-700">
+              Operational Overview
+            </p>
+
+            <h1 className="mt-1.5 text-[28px] font-black tracking-tight md:text-4xl">
+              Dashboard
+            </h1>
+
+            <p className="mt-2 text-sm text-neutral-500">
+              {
+                fullDate(
+                  today
+                )
+              }
+            </p>
+          </header>
+
+
+          <OperationalHub
+            outletName={
+              activeOutlet?.name ||
+              "CQ Central"
+            }
+
+            dateLabel={
+              fullDate(
+                today
+              )
+            }
+
+            operations={
+              fastCkOperations
+            }
+
+            activities={
+              fastCkActivities
+            }
+
+            quickLinks={
+              fastCkQuickLinks
+            }
+          />
+
+
+          {fastIsCkLeader && (
+            <CkProgress
+              outletName={
+                activeOutlet?.name ||
+                "CQ Central"
+              }
+
+              assigned={
+                fastCkData.assignedCount
+              }
+
+              completed={
+                fastCkData.completedCount
+              }
+
+              active={
+                fastCkData.inProgressCount
+              }
+
+              pending={
+                fastCkData.notSubmittedCount
+              }
+
+              issues={
+                fastCkData.issueCount
               }
             />
           )}
