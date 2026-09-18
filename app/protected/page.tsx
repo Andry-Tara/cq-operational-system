@@ -19,6 +19,16 @@ import {
 
 import ReopenReportButton from "./reports/reopen-report-button";
 import SplitOutletOperationsPanel from "@/components/split-outlet-operations-panel";
+import {
+  OperationalHub,
+  type OperationalHubActivity,
+  type OperationalHubOperation,
+  type OperationalHubQuickLink,
+} from "@/components/dashboard/operational-hub";
+import {
+  CkProgress,
+  OutletInsights,
+} from "@/components/dashboard/operational-insights";
 import { AuditorDashboard } from "@/components/audit/auditor-dashboard";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -193,6 +203,19 @@ export default async function ProtectedPage({
     isAdmin ||
     permissionCodes.includes(
       "reports.reopen"
+    );
+
+
+  const canAuditInput =
+    isAdmin ||
+    permissionCodes.includes(
+      "audit.submit"
+    );
+
+  const canAuditManagement =
+    isAdmin ||
+    permissionCodes.includes(
+      "audit.view_management"
     );
 
 
@@ -2995,6 +3018,670 @@ export default async function ProtectedPage({
 
 
   // ==========================================================
+  // OPERATIONAL HUB
+  //
+  // Navigation layer only.
+  // Existing dashboard metrics / CK / reports remain unchanged.
+  // ==========================================================
+
+  const hubOperations:
+    OperationalHubOperation[] =
+    [];
+
+
+  // ----------------------------------------------------------
+  // CENTRAL KITCHEN
+  // ----------------------------------------------------------
+
+  if (
+    useCkPicSummary
+  ) {
+    hubOperations.push({
+      key:
+        "central-kitchen",
+      eyebrow:
+        "Central Kitchen",
+      title:
+        "Opening CK / Closing CK",
+      description:
+        "Continue sections assigned to you and follow area finalization progress.",
+      status:
+        activeStatus ===
+        "completed"
+          ? "COMPLETED"
+          : activeStatus ===
+              "in_progress"
+            ? "IN PROGRESS"
+            : "READY",
+      href:
+        "/protected/central-kitchen",
+      action:
+        activeStatus ===
+        "in_progress"
+          ? "Continue Central Kitchen"
+          : "Open Central Kitchen",
+    });
+  }
+
+
+  // ----------------------------------------------------------
+  // SPLIT OUTLET
+  // ----------------------------------------------------------
+
+  else if (
+    useSplitOutletSummary
+  ) {
+    for (
+      const card
+      of splitOutletOperations
+    ) {
+      const completed =
+        card.status ===
+        "COMPLETED";
+
+      const canOpen =
+        completed ||
+        card.canFill;
+
+      hubOperations.push({
+        key:
+          card.formCode,
+        eyebrow:
+          card.area,
+        title:
+          card.title,
+        description:
+          card.description,
+        status:
+          card.status,
+        href:
+          canOpen
+            ? card.href
+            : "",
+        action:
+          completed
+            ? "View Report"
+            : card.status ===
+                "IN PROGRESS"
+              ? "Resume"
+              : "Start",
+        disabled:
+          !canOpen,
+      });
+    }
+  }
+
+
+  // ----------------------------------------------------------
+  // LEGACY OUTLET
+  // ----------------------------------------------------------
+
+  else {
+    if (
+      canOpening &&
+      openingStatus !==
+        "UNAVAILABLE"
+    ) {
+      hubOperations.push({
+        key:
+          "opening",
+        eyebrow:
+          "Opening",
+        title:
+          "Opening Outlet",
+        description:
+          "Daily opening readiness checklist for the active outlet.",
+        status:
+          openingStatus,
+        href:
+          openingHref,
+        action:
+          openingCTA,
+      });
+    }
+
+    if (
+      canClosing
+    ) {
+      hubOperations.push({
+        key:
+          "closing",
+        eyebrow:
+          "Closing",
+        title:
+          "Closing Outlet",
+        description:
+          "Daily closing checklist and operational report.",
+        status:
+          activeStatus ===
+          "completed"
+            ? "COMPLETED"
+            : activeStatus ===
+                "in_progress"
+              ? "IN PROGRESS"
+              : "NOT STARTED",
+        href:
+          activeAction,
+        action:
+          activeActionText,
+      });
+    }
+  }
+
+
+  // ----------------------------------------------------------
+  // AUDIT
+  // ----------------------------------------------------------
+
+  if (
+    canAuditInput
+  ) {
+    hubOperations.push({
+      key:
+        "outlet-audit",
+      eyebrow:
+        "Audit",
+      title:
+        "Outlet Audit",
+      description:
+        "Record findings and submit the outlet audit.",
+      status:
+        "READY",
+      href:
+        "/protected/audit",
+      action:
+        "Open Audit",
+    });
+  }
+
+
+  // ==========================================================
+  // RECENT ACTIVITY
+  // ==========================================================
+
+  const hubActivities:
+    OperationalHubActivity[] =
+    [];
+
+
+  const hubReportMap =
+    new Map<
+      string,
+      any
+    >();
+
+  for (
+    const report
+    of [
+      ...recentReports,
+      ...splitDashboardReports,
+    ]
+  ) {
+    if (
+      report?.id &&
+      !hubReportMap.has(
+        report.id
+      )
+    ) {
+      hubReportMap.set(
+        report.id,
+        report
+      );
+    }
+  }
+
+  const hubRecentReports =
+    Array.from(
+      hubReportMap.values()
+    )
+      .sort(
+        (
+          a: any,
+          b: any
+        ) => {
+          const dateCompare =
+            String(
+              b.business_date ||
+              ""
+            ).localeCompare(
+              String(
+                a.business_date ||
+                ""
+              )
+            );
+
+          if (
+            dateCompare !== 0
+          ) {
+            return dateCompare;
+          }
+
+          return String(
+            b.created_at ||
+            ""
+          ).localeCompare(
+            String(
+              a.created_at ||
+              ""
+            )
+          );
+        }
+      )
+      .slice(
+        0,
+        4
+      );
+
+
+  for (
+    const report
+    of hubRecentReports
+  ) {
+    hubActivities.push({
+      key:
+        `report-${report.id}`,
+      title:
+        report.report_number ||
+        "Operational Report",
+      meta:
+        `Operational Report · ${
+          report.business_date ||
+          today
+        }`,
+      status:
+        String(
+          report.status ||
+          "completed"
+        )
+          .replace(
+            /_/g,
+            " "
+          )
+          .toUpperCase(),
+      href:
+        report.pdf_storage_path
+          ? `/api/reports/${report.id}/pdf`
+          : "/protected/reports",
+    });
+  }
+
+
+  // Latest Audit for users who also have audit access.
+  if (
+    activeOutlet?.id &&
+    (
+      canAuditInput ||
+      canAuditManagement
+    )
+  ) {
+    const auditAdmin =
+      createAdminClient();
+
+    let latestAuditQuery =
+      auditAdmin
+        .from(
+          "audit_sessions"
+        )
+        .select(`
+          id,
+          audit_number,
+          audit_date,
+          status,
+          auditor_user_id,
+          submitted_at
+        `)
+        .eq(
+          "organization_id",
+          profile.organization_id
+        )
+        .eq(
+          "outlet_id",
+          activeOutlet.id
+        )
+        .eq(
+          "status",
+          "submitted"
+        );
+
+    if (
+      !isAdmin &&
+      !canAuditManagement
+    ) {
+      latestAuditQuery =
+        latestAuditQuery.eq(
+          "auditor_user_id",
+          user.id
+        );
+    }
+
+    const {
+      data:
+        latestAudit,
+      error:
+        latestAuditError,
+    } =
+      await latestAuditQuery
+        .order(
+          "submitted_at",
+          {
+            ascending:
+              false,
+          }
+        )
+        .limit(1)
+        .maybeSingle();
+
+    if (
+      latestAuditError
+    ) {
+      throw latestAuditError;
+    }
+
+    if (
+      latestAudit
+    ) {
+      hubActivities.unshift({
+        key:
+          `audit-${latestAudit.id}`,
+        title:
+          latestAudit.audit_number ||
+          "Outlet Audit",
+        meta:
+          `Outlet Audit · ${
+            latestAudit.audit_date
+          }`,
+        status:
+          "SUBMITTED",
+        href:
+          `/protected/audit/${latestAudit.id}/report`,
+      });
+    }
+  }
+
+
+  const visibleHubActivities =
+    hubActivities.slice(
+      0,
+      5
+    );
+
+
+  // ==========================================================
+  // QUICK ACCESS
+  // ==========================================================
+
+  const hubQuickLinks:
+    OperationalHubQuickLink[] =
+    [];
+
+  if (
+    canReports
+  ) {
+    hubQuickLinks.push({
+      key:
+        "reports",
+      label:
+        "Reports Center",
+      description:
+        "Operational report history",
+      href:
+        "/protected/reports",
+    });
+  }
+
+  if (
+    canAuditInput
+  ) {
+    hubQuickLinks.push({
+      key:
+        "audit-history",
+      label:
+        "Audit History",
+      description:
+        "Submitted outlet audits",
+      href:
+        "/protected/audit/history",
+    });
+  }
+
+  if (
+    canAuditManagement
+  ) {
+    hubQuickLinks.push({
+      key:
+        "audit-management",
+      label:
+        "Audit Management",
+      description:
+        "Scores, findings and outlet trends",
+      href:
+        "/protected/audit/management",
+    });
+  }
+
+  if (
+    isAdmin
+  ) {
+    hubQuickLinks.push({
+      key:
+        "admin",
+      label:
+        "Administration",
+      description:
+        "Users, forms and permissions",
+      href:
+        "/protected/admin",
+    });
+  }
+
+  hubQuickLinks.push({
+    key:
+      "change-outlet",
+    label:
+      "Change Outlet",
+    description:
+      "Switch active operating outlet",
+    href:
+      "/protected/select-outlet",
+  });
+
+
+  // ==========================================================
+  // FOCUSED OPERATIONAL DASHBOARD
+  //
+  // FOH / BOH / CK STAFF
+  //   -> Operational Hub only.
+  //
+  // STORE MANAGER
+  //   -> Operational Hub + Outlet Insights.
+  //
+  // CK MANAGER
+  //   -> Operational Hub + CK Progress.
+  //
+  // Other management / admin roles continue to the existing
+  // analytics render below.
+  // ==========================================================
+
+  const dashboardRoleCodes =
+    new Set(
+      roles.map(
+        (role: any) =>
+          String(
+            role?.code ||
+            ""
+          )
+            .trim()
+            .toUpperCase()
+      )
+    );
+
+
+  const isOutletManagerDashboard =
+    dashboardRoleCodes.has(
+      "STORE_MANAGER"
+    );
+
+  const isCkLeaderDashboard =
+    dashboardRoleCodes.has(
+      "CK_MANAGER"
+    );
+
+  const isCkStaffDashboard =
+    dashboardRoleCodes.has(
+      "CK_STAFF"
+    );
+
+  const isFohDashboard =
+    dashboardRoleCodes.has(
+      "FOH_STAFF"
+    );
+
+  const isBohDashboard =
+    dashboardRoleCodes.has(
+      "KITCHEN_STAFF"
+    );
+
+
+  const useFocusedOperationalDashboard =
+    !isAdmin &&
+    (
+      isOutletManagerDashboard ||
+      isCkLeaderDashboard ||
+      isCkStaffDashboard ||
+      isFohDashboard ||
+      isBohDashboard
+    );
+
+
+  if (
+    useFocusedOperationalDashboard
+  ) {
+    const focusedAssigned =
+      hubOperations.length;
+
+    const focusedCompleted =
+      hubOperations.filter(
+        operation =>
+          operation.status ===
+          "COMPLETED"
+      ).length;
+
+    const focusedActive =
+      hubOperations.filter(
+        operation =>
+          operation.status ===
+          "IN PROGRESS"
+      ).length;
+
+    const focusedRemaining =
+      Math.max(
+        0,
+        focusedAssigned -
+        focusedCompleted
+      );
+
+    return (
+      <main className="min-h-screen bg-[#f5f5f3] text-neutral-900">
+        <AutoRefresh
+          intervalMs={
+            60000
+          }
+        />
+
+        <div className="mx-auto max-w-[1480px] px-4 py-5 sm:px-5 sm:py-7 md:px-8 md:py-10">
+          <header>
+            <p className="text-[10px] font-black uppercase tracking-[0.17em] text-red-700">
+              Operational Overview
+            </p>
+
+            <h1 className="mt-1.5 text-[28px] font-black tracking-tight md:text-4xl">
+              Dashboard
+            </h1>
+
+            <p className="mt-2 text-sm text-neutral-500">
+              {
+                fullDate(
+                  today
+                )
+              }
+            </p>
+          </header>
+
+
+          <OperationalHub
+            outletName={
+              activeOutlet.name
+            }
+            dateLabel={
+              fullDate(
+                today
+              )
+            }
+            operations={
+              hubOperations
+            }
+            activities={
+              visibleHubActivities
+            }
+            quickLinks={
+              hubQuickLinks
+            }
+          />
+
+
+          {isOutletManagerDashboard && (
+            <OutletInsights
+              outletName={
+                activeOutlet.name
+              }
+              assigned={
+                focusedAssigned
+              }
+              completed={
+                focusedCompleted
+              }
+              active={
+                focusedActive
+              }
+              remaining={
+                focusedRemaining
+              }
+              issues={
+                todayIssues
+              }
+            />
+          )}
+
+
+          {isCkLeaderDashboard && (
+            <CkProgress
+              outletName={
+                activeOutlet.name
+              }
+              assigned={
+                ckAssignedCount
+              }
+              completed={
+                ckCompletedCount
+              }
+              active={
+                ckInProgressCount
+              }
+              pending={
+                ckNotSubmittedCount
+              }
+              issues={
+                ckIssueCount
+              }
+            />
+          )}
+        </div>
+      </main>
+    );
+  }
+
+
+  // ==========================================================
   // RENDER
   // ==========================================================
 
@@ -3052,6 +3739,27 @@ export default async function ProtectedPage({
           </div>
 
         </div>
+
+
+        <OperationalHub
+          outletName={
+            activeOutlet.name
+          }
+          dateLabel={
+            fullDate(
+              today
+            )
+          }
+          operations={
+            hubOperations
+          }
+          activities={
+            visibleHubActivities
+          }
+          quickLinks={
+            hubQuickLinks
+          }
+        />
 
 
         {/* SUMMARY */}
