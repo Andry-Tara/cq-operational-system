@@ -308,7 +308,7 @@ export default async function ExceptionCenterPage({
   const canView =
     isAdmin ||
     permissionCodes.includes(
-      "audit.view_management"
+      "exceptions.view"
     );
 
 
@@ -735,6 +735,116 @@ export default async function ExceptionCenterPage({
     ]);
 
 
+
+  // ==========================================================
+  // EXCEPTION WORKFLOW STATE
+  // ==========================================================
+
+  const operationIssueIds =
+    issueRows.map(
+      issue =>
+        String(
+          issue.id
+        )
+    );
+
+
+  const auditFindingIds =
+    auditFindingRows.map(
+      finding =>
+        String(
+          finding.id
+        )
+    );
+
+
+  const [
+    operationWorkflowRows,
+    auditWorkflowRows,
+  ] =
+    await Promise.all([
+      loadInBatches({
+        ids:
+          operationIssueIds,
+
+        loader:
+          batch =>
+            admin
+              .from(
+                "exception_workflows"
+              )
+              .select(`
+                source_type,
+                source_id,
+                status,
+                assigned_to,
+                due_at,
+                sla_hours,
+                escalated_at
+              `)
+              .eq(
+                "organization_id",
+                profile.organization_id
+              )
+              .eq(
+                "source_type",
+                "operations_issue"
+              )
+              .in(
+                "source_id",
+                batch
+              ),
+      }),
+
+      loadInBatches({
+        ids:
+          auditFindingIds,
+
+        loader:
+          batch =>
+            admin
+              .from(
+                "exception_workflows"
+              )
+              .select(`
+                source_type,
+                source_id,
+                status,
+                assigned_to,
+                due_at,
+                sla_hours,
+                escalated_at
+              `)
+              .eq(
+                "organization_id",
+                profile.organization_id
+              )
+              .eq(
+                "source_type",
+                "audit_finding"
+              )
+              .in(
+                "source_id",
+                batch
+              ),
+      }),
+    ]);
+
+
+  const workflowBySource =
+    new Map(
+      [
+        ...operationWorkflowRows,
+        ...auditWorkflowRows,
+      ].map(
+        workflow => [
+          `${workflow.source_type}:${workflow.source_id}`,
+          workflow,
+        ]
+      )
+    );
+
+
   const exceptions:
     ExceptionRow[] =
     [];
@@ -812,6 +922,9 @@ export default async function ExceptionCenterPage({
 
       status:
         normalizedStatus(
+          workflowBySource.get(
+            `operations_issue:${issue.id}`
+          )?.status ||
           issue.status
         ) ||
         "open",
@@ -841,7 +954,7 @@ export default async function ExceptionCenterPage({
         ),
 
       href:
-        `/protected/reports?date=${report.business_date}&detail=${report.id}`,
+        `/protected/exceptions/operations/${issue.id}`,
     });
   }
 
@@ -910,7 +1023,13 @@ export default async function ExceptionCenterPage({
         ),
 
       status:
-        "finding",
+        normalizedStatus(
+          workflowBySource.get(
+            `audit_finding:${finding.id}`
+          )?.status ||
+          "open"
+        ) ||
+        "open",
 
       area:
         String(
@@ -938,7 +1057,7 @@ export default async function ExceptionCenterPage({
         ),
 
       href:
-        `/protected/audit/${session.id}/report`,
+        `/protected/exceptions/audit/${finding.id}`,
     });
   }
 

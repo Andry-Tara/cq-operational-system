@@ -1,5 +1,9 @@
 import Link from "next/link";
 
+import {
+  MyExceptionTasks,
+} from "@/components/dashboard/my-exception-tasks";
+
 
 export type OperationalHubOperation = {
   key: string;
@@ -658,6 +662,9 @@ export function OperationalHub({
                 </div>
               </div>
             )}
+
+            <MyExceptionTasks />
+
           </div>
 
 
