@@ -235,7 +235,7 @@ export function BodExecutiveDashboard({
           </p>
 
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <Link
               href="/protected/reports"
               className="group rounded-[22px] border border-[#E5E0D9] bg-[#F6F4F1]/65 p-5 transition hover:-translate-y-0.5 hover:border-[#D8D2C8] hover:bg-[#F6F4F1]"
@@ -284,6 +284,31 @@ export function BodExecutiveDashboard({
 
               <p className="mt-5 text-xs font-black text-[#59570C]">
                 Open Audit Dashboard
+              </p>
+            </Link>
+
+            <Link
+              href="/protected/exceptions"
+              className="group rounded-2xl border border-[#E3DED6] bg-[#F6F4F1]/75 p-5 transition hover:border-[#D8D355] hover:bg-[#FBFAED]"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-black text-[#292824]">
+                    Exception Center
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-[#777169]">
+                    Operational issues and audit findings across all outlets.
+                  </p>
+                </div>
+
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-sm font-black text-[#777169] transition group-hover:bg-[#D8D355] group-hover:text-[#39380C]">
+                  →
+                </span>
+              </div>
+
+              <p className="mt-4 text-xs font-black text-red-700">
+                Open Exception Center →
               </p>
             </Link>
           </div>

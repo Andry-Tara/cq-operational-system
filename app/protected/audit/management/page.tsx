@@ -764,6 +764,14 @@ ManagementAuditDashboardPage({
             </div>
 
             <div className="flex items-center gap-2">
+
+              <Link
+                href="/protected/exceptions"
+                className="inline-flex h-10 items-center justify-center rounded-xl border border-[#D8D355] bg-[#F8F7DF] px-3 text-xs font-black text-[#5C5908] transition hover:bg-[#D8D355]"
+              >
+                Exception Center →
+              </Link>
+
               <Link
                 href={`/protected/audit/management?month=${previousMonth.slice(
                   0,
