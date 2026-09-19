@@ -1273,23 +1273,171 @@ export default async function ProtectedPage({
       ).size;
 
 
-    const fastTestFoodNeedsCorrection =
+    const fastTestFoodSessionIds =
       (
         fastTestFoodSessions ??
         []
-      ).some(
-        (
-          row: any
-        ) =>
-          row.result_status ===
-          "NEEDS_CORRECTION"
-      );
+      )
+        .map(
+          (
+            row: any
+          ) =>
+            row.id
+        )
+        .filter(
+          Boolean
+        );
+
+
+    let fastTestFoodUnresolvedCount =
+      0;
+
+
+    if (
+      fastTestFoodSessionIds.length
+    ) {
+      const {
+        data:
+          fastIssueChecks,
+        error:
+          fastIssueChecksError,
+      } =
+        await fastTestFoodAdmin
+          .from(
+            "test_food_checks"
+          )
+          .select(`
+            id
+          `)
+          .in(
+            "session_id",
+            fastTestFoodSessionIds
+          )
+          .eq(
+            "result_status",
+            "NEEDS_CORRECTION"
+          );
+
+
+      if (
+        fastIssueChecksError
+      ) {
+        fastTestFoodUnresolvedCount =
+          (
+            fastTestFoodSessions ??
+            []
+          ).some(
+            (
+              row: any
+            ) =>
+              row.result_status ===
+              "NEEDS_CORRECTION"
+          )
+            ? 1
+            : 0;
+
+      } else {
+        const issueCheckIds =
+          (
+            fastIssueChecks ??
+            []
+          )
+            .map(
+              (
+                row: any
+              ) =>
+                row.id
+            )
+            .filter(
+              Boolean
+            );
+
+
+        if (
+          issueCheckIds.length
+        ) {
+          const {
+            data:
+              fastRetests,
+          } =
+            await fastTestFoodAdmin
+              .from(
+                "test_food_retests"
+              )
+              .select(`
+                check_id,
+                attempt_no,
+                result_status
+              `)
+              .in(
+                "check_id",
+                issueCheckIds
+              )
+              .order(
+                "attempt_no",
+                {
+                  ascending:
+                    true,
+                }
+              );
+
+
+          const latestByCheck =
+            new Map<
+              string,
+              any
+            >();
+
+
+          for (
+            const retest of
+            fastRetests ??
+            []
+          ) {
+            const current =
+              latestByCheck.get(
+                retest.check_id
+              );
+
+            if (
+              !current ||
+              Number(
+                retest.attempt_no
+              ) >
+              Number(
+                current.attempt_no
+              )
+            ) {
+              latestByCheck.set(
+                retest.check_id,
+                retest
+              );
+            }
+          }
+
+
+          fastTestFoodUnresolvedCount =
+            issueCheckIds.filter(
+              (
+                checkId
+              ) =>
+                latestByCheck.get(
+                  checkId
+                )?.result_status !==
+                "PASS"
+            ).length;
+        }
+      }
+    }
 
 
     const fastTestFoodStatus =
       fastTestFoodShiftCount >=
       2
-        ? "COMPLETED"
+        ? fastTestFoodUnresolvedCount >
+            0
+          ? "NEEDS CORRECTION"
+          : "COMPLETED"
         : fastTestFoodShiftCount >
             0
           ? "IN PROGRESS"
@@ -1305,8 +1453,14 @@ export default async function ProtectedPage({
         "Test Food",
       description:
         `Morning & afternoon quality check · ${fastTestFoodShiftCount}/2 shifts${
-          fastTestFoodNeedsCorrection
-            ? " · Follow-up required"
+          fastTestFoodUnresolvedCount >
+          0
+            ? ` · ${fastTestFoodUnresolvedCount} ${
+                fastTestFoodUnresolvedCount ===
+                1
+                  ? "item"
+                  : "items"
+              } needs correction`
             : ""
         }`,
       status:
@@ -1319,7 +1473,10 @@ export default async function ProtectedPage({
       action:
         fastTestFoodShiftCount >=
         2
-          ? "View Report"
+          ? fastTestFoodUnresolvedCount >
+              0
+            ? "Follow Up"
+            : "View Report"
           : fastTestFoodShiftCount >
               0
             ? "Continue"

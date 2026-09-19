@@ -15,6 +15,9 @@ import {
 } from "@/lib/active-outlet";
 
 
+import RetestPanel from "./retest-panel";
+
+
 function businessDate(
   timezone: string
 ) {
@@ -309,6 +312,75 @@ export default async function TestFoodReportPage() {
   }
 
 
+  const issueCheckIds =
+    checks
+      .filter(
+        (
+          row: any
+        ) =>
+          row.result_status ===
+          "NEEDS_CORRECTION"
+      )
+      .map(
+        (
+          row: any
+        ) =>
+          row.id
+      );
+
+
+  let retests:
+    any[] =
+    [];
+
+
+  if (
+    issueCheckIds.length
+  ) {
+    const {
+      data,
+      error,
+    } =
+      await admin
+        .from(
+          "test_food_retests"
+        )
+        .select(`
+          id,
+          check_id,
+          attempt_no,
+          correction_note,
+          color_status,
+          taste_status,
+          texture_status,
+          notes,
+          result_status,
+          tested_at
+        `)
+        .in(
+          "check_id",
+          issueCheckIds
+        )
+        .order(
+          "attempt_no",
+          {
+            ascending:
+              true,
+          }
+        );
+
+
+    if (error) {
+      throw error;
+    }
+
+
+    retests =
+      data ??
+      [];
+  }
+
+
   const menuIds =
     [
       ...new Set(
@@ -377,6 +449,70 @@ export default async function TestFoodReportPage() {
     );
 
 
+  const latestRetestByCheck =
+    new Map<
+      string,
+      any
+    >();
+
+
+  for (
+    const retest of
+    retests
+  ) {
+    const current =
+      latestRetestByCheck.get(
+        retest.check_id
+      );
+
+    if (
+      !current ||
+      Number(
+        retest.attempt_no
+      ) >
+      Number(
+        current.attempt_no
+      )
+    ) {
+      latestRetestByCheck.set(
+        retest.check_id,
+        retest
+      );
+    }
+  }
+
+
+  const unresolvedCheckIds =
+    new Set(
+      checks
+        .filter(
+          (
+            check: any
+          ) => {
+            if (
+              check.result_status !==
+              "NEEDS_CORRECTION"
+            ) {
+              return false;
+            }
+
+            return (
+              latestRetestByCheck.get(
+                check.id
+              )?.result_status !==
+              "PASS"
+            );
+          }
+        )
+        .map(
+          (
+            check: any
+          ) =>
+            check.id
+        )
+    );
+
+
   const checksBySession =
     new Map<
       string,
@@ -417,13 +553,8 @@ export default async function TestFoodReportPage() {
 
 
   const dailyNeedsCorrection =
-    orderedSessions.some(
-      (
-        item: any
-      ) =>
-        item.result_status ===
-        "NEEDS_CORRECTION"
-    );
+    unresolvedCheckIds.size >
+    0;
 
 
   const dailyResult =
@@ -440,13 +571,7 @@ export default async function TestFoodReportPage() {
 
 
   const totalIssues =
-    checks.filter(
-      (
-        item: any
-      ) =>
-        item.result_status ===
-        "NEEDS_CORRECTION"
-    ).length;
+    unresolvedCheckIds.size;
 
 
   return (
@@ -575,8 +700,9 @@ export default async function TestFoodReportPage() {
                     (
                       item: any
                     ) =>
-                      item.result_status ===
-                      "NEEDS_CORRECTION"
+                      unresolvedCheckIds.has(
+                        item.id
+                      )
                   ).length;
 
                 return (
@@ -655,9 +781,25 @@ export default async function TestFoodReportPage() {
                               check.menu_id
                             );
 
-                          const issue =
+                          const initialIssue =
                             check.result_status ===
                             "NEEDS_CORRECTION";
+
+                          const latestRetest =
+                            latestRetestByCheck.get(
+                              check.id
+                            );
+
+                          const issue =
+                            unresolvedCheckIds.has(
+                              check.id
+                            );
+
+                          const corrected =
+                            initialIssue &&
+                            latestRetest
+                              ?.result_status ===
+                              "PASS";
 
                           return (
                             <article
@@ -705,7 +847,9 @@ export default async function TestFoodReportPage() {
                                 >
                                   {issue
                                     ? "NEEDS CORRECTION"
-                                    : "PASS"}
+                                    : corrected
+                                      ? "CORRECTED"
+                                      : "PASS"}
                                 </span>
 
                               </div>
@@ -749,6 +893,103 @@ export default async function TestFoodReportPage() {
                                     }
                                   </p>
                                 </div>
+                              )}
+
+
+                              {latestRetest && (
+                                <div className={[
+                                  "mt-4 rounded-2xl border p-4",
+                                  latestRetest.result_status ===
+                                  "PASS"
+                                    ? "border-emerald-200 bg-emerald-50/40"
+                                    : "border-amber-200 bg-amber-50/40",
+                                ].join(
+                                  " "
+                                )}>
+                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+
+                                    <div>
+                                      <p className="text-[9px] font-black uppercase tracking-[0.14em] text-neutral-400">
+                                        Latest Re-Test · Attempt {
+                                          latestRetest.attempt_no
+                                        }
+                                      </p>
+
+                                      <p className="mt-1 text-sm font-bold text-neutral-700">
+                                        {
+                                          latestRetest.correction_note
+                                        }
+                                      </p>
+                                    </div>
+
+                                    <span className={[
+                                      "w-fit rounded-full px-3 py-1.5 text-[9px] font-black",
+                                      latestRetest.result_status ===
+                                      "PASS"
+                                        ? "bg-emerald-100 text-emerald-700"
+                                        : "bg-amber-100 text-amber-800",
+                                    ].join(
+                                      " "
+                                    )}>
+                                      {
+                                        latestRetest.result_status ===
+                                        "PASS"
+                                          ? "PASS"
+                                          : "STILL NEEDS CORRECTION"
+                                      }
+                                    </span>
+
+                                  </div>
+
+
+                                  <div className="mt-3 grid grid-cols-3 gap-2">
+
+                                    <Quality
+                                      label="Warna"
+                                      value={
+                                        latestRetest.color_status
+                                      }
+                                    />
+
+                                    <Quality
+                                      label="Rasa"
+                                      value={
+                                        latestRetest.taste_status
+                                      }
+                                    />
+
+                                    <Quality
+                                      label="Tekstur"
+                                      value={
+                                        latestRetest.texture_status
+                                      }
+                                    />
+
+                                  </div>
+
+
+                                  {latestRetest.notes && (
+                                    <p className="mt-3 text-sm font-medium leading-6 text-neutral-600">
+                                      Notes: {
+                                        latestRetest.notes
+                                      }
+                                    </p>
+                                  )}
+
+                                </div>
+                              )}
+
+
+                              {issue && (
+                                <RetestPanel
+                                  checkId={
+                                    check.id
+                                  }
+                                  menuName={
+                                    menu?.name ||
+                                    "Test Food Menu"
+                                  }
+                                />
                               )}
 
                             </article>
