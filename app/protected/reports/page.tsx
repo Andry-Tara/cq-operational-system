@@ -1094,7 +1094,8 @@ export default async function ReportsPage() {
     );
 
 
-  // EXPECTED QUESTIONS BY VERSION SECTION
+  // ==========================================================
+  // EXPECTED QUESTIONS / REPORT DETAIL
   // ==========================================================
 
   const versionSectionIds =
@@ -1107,12 +1108,177 @@ export default async function ReportsPage() {
       )
     );
 
-  let questionRows:
-    any[] = [];
 
-  if (
-    versionSectionIds.length
-  ) {
+  // ==========================================================
+  // REPORT CENTER AUTHORITATIVE READ
+  //
+  // Parent report visibility has already passed RBAC + scope.
+  // Child detail rows use trusted server access exactly as before.
+  // ==========================================================
+
+  const reportDataClient =
+    createAdminClient();
+
+
+  const reportSectionIds =
+    reportSections.map(
+      (
+        section: any
+      ) =>
+        String(
+          section.id
+        )
+    );
+
+
+  const REPORT_SECTION_BATCH_SIZE =
+    20;
+
+  const REPORT_DETAIL_PAGE_SIZE =
+    1000;
+
+
+  // ==========================================================
+  // PAGED DETAIL LOADER
+  //
+  // Pagination inside one dataset remains deterministic.
+  // Independent datasets are started concurrently below.
+  // ==========================================================
+
+  async function loadPagedReportDetailRows({
+    table,
+    select,
+    orderColumns,
+    errorLabel,
+  }: {
+    table: string;
+    select: string;
+    orderColumns: string[];
+    errorLabel: string;
+  }) {
+    const output:
+      any[] = [];
+
+
+    if (
+      !reportSectionIds.length
+    ) {
+      return output;
+    }
+
+
+    for (
+      let batchStart = 0;
+      batchStart <
+      reportSectionIds.length;
+      batchStart +=
+        REPORT_SECTION_BATCH_SIZE
+    ) {
+      const sectionIdBatch =
+        reportSectionIds.slice(
+          batchStart,
+          batchStart +
+            REPORT_SECTION_BATCH_SIZE
+        );
+
+
+      let pageStart =
+        0;
+
+
+      while (true) {
+        let query =
+          (
+            reportDataClient as any
+          )
+            .from(
+              table
+            )
+            .select(
+              select
+            )
+            .in(
+              "report_section_id",
+              sectionIdBatch
+            );
+
+
+        for (
+          const column
+          of orderColumns
+        ) {
+          query =
+            query.order(
+              column,
+              {
+                ascending:
+                  true,
+              }
+            );
+        }
+
+
+        const {
+          data,
+          error,
+        } =
+          await query.range(
+            pageStart,
+            pageStart +
+              REPORT_DETAIL_PAGE_SIZE -
+              1
+          );
+
+
+        if (error) {
+          console.error(
+            errorLabel,
+            error
+          );
+
+          break;
+        }
+
+
+        const rows =
+          data ?? [];
+
+
+        output.push(
+          ...rows
+        );
+
+
+        if (
+          rows.length <
+          REPORT_DETAIL_PAGE_SIZE
+        ) {
+          break;
+        }
+
+
+        pageStart +=
+          REPORT_DETAIL_PAGE_SIZE;
+      }
+    }
+
+
+    return output;
+  }
+
+
+  // ==========================================================
+  // LIGHTWEIGHT INDEPENDENT LOADERS
+  // ==========================================================
+
+  async function loadQuestionRows() {
+    if (
+      !versionSectionIds.length
+    ) {
+      return [];
+    }
+
+
     const {
       data,
       error,
@@ -1136,251 +1302,29 @@ export default async function ReportsPage() {
           true
         );
 
+
     if (error) {
       console.error(
         "Unable to load report question counts:",
         error
       );
-    } else {
-      questionRows =
-        data ?? [];
+
+      return [];
     }
+
+
+    return data ?? [];
   }
 
 
-  // ==========================================================
-  // REPORT CENTER AUTHORITATIVE READ
-  //
-  // The parent report list has already passed RBAC + scope
-  // filtering. Detail rows are hydrated with the trusted server
-  // client so report_answers / report_photos are not accidentally
-  // hidden by narrower child-table RLS policies.
-  // ==========================================================
-
-  const reportDataClient =
-    createAdminClient();
-
-
-  // ==========================================================
-  // ANSWERS + PHOTOS
-  //
-  // IMPORTANT:
-  // Report history can contain enough child rows to exceed
-  // the PostgREST/Supabase per-request row limit.
-  //
-  // Never fetch all report_answers/report_photos in one request
-  // and then assume the response is complete.
-  //
-  // We batch report_section_id values and paginate each batch
-  // deterministically.
-  // ==========================================================
-
-  const reportSectionIds =
-    reportSections.map(
-      (
-        section: any
-      ) =>
-        String(
-          section.id
-        )
-    );
-
-  const REPORT_SECTION_BATCH_SIZE =
-    20;
-
-  const REPORT_DETAIL_PAGE_SIZE =
-    1000;
-
-
-  // ==========================================================
-  // ANSWERS
-  // ==========================================================
-
-  let answerRows:
-    any[] = [];
-
-  if (
-    reportSectionIds.length
-  ) {
-    for (
-      let batchStart = 0;
-      batchStart <
-      reportSectionIds.length;
-      batchStart +=
-        REPORT_SECTION_BATCH_SIZE
+  async function loadIssueRows() {
+    if (
+      !reportSectionIds.length
     ) {
-      const sectionIdBatch =
-        reportSectionIds.slice(
-          batchStart,
-          batchStart +
-            REPORT_SECTION_BATCH_SIZE
-        );
-
-      let pageStart =
-        0;
-
-      while (true) {
-        const {
-          data,
-          error,
-        } =
-          await reportDataClient
-            .from(
-              "report_answers"
-            )
-            .select(`
-              id,
-              report_section_id,
-              question_id,
-              answer_value
-            `)
-            .in(
-              "report_section_id",
-              sectionIdBatch
-            )
-            .order(
-              "id",
-              {
-                ascending:
-                  true,
-              }
-            )
-            .range(
-              pageStart,
-              pageStart +
-                REPORT_DETAIL_PAGE_SIZE -
-                1
-            );
-
-        if (error) {
-          console.error(
-            "Unable to load report answer counts:",
-            error
-          );
-
-          break;
-        }
-
-        const rows =
-          data ?? [];
-
-        answerRows.push(
-          ...rows
-        );
-
-        if (
-          rows.length <
-          REPORT_DETAIL_PAGE_SIZE
-        ) {
-          break;
-        }
-
-        pageStart +=
-          REPORT_DETAIL_PAGE_SIZE;
-      }
+      return [];
     }
-  }
 
 
-  // ==========================================================
-  // PHOTOS
-  // ==========================================================
-
-  let photoRows:
-    any[] = [];
-
-  if (
-    reportSectionIds.length
-  ) {
-    for (
-      let batchStart = 0;
-      batchStart <
-      reportSectionIds.length;
-      batchStart +=
-        REPORT_SECTION_BATCH_SIZE
-    ) {
-      const sectionIdBatch =
-        reportSectionIds.slice(
-          batchStart,
-          batchStart +
-            REPORT_SECTION_BATCH_SIZE
-        );
-
-      let pageStart =
-        0;
-
-      while (true) {
-        const {
-          data,
-          error,
-        } =
-          await reportDataClient
-            .from(
-              "report_photos"
-            )
-            .select(`
-              id,
-              report_section_id,
-              answer_id
-            `)
-            .in(
-              "report_section_id",
-              sectionIdBatch
-            )
-            .order(
-              "id",
-              {
-                ascending:
-                  true,
-              }
-            )
-            .range(
-              pageStart,
-              pageStart +
-                REPORT_DETAIL_PAGE_SIZE -
-                1
-            );
-
-        if (error) {
-          console.error(
-            "Unable to load report photo counts:",
-            error
-          );
-
-          break;
-        }
-
-        const rows =
-          data ?? [];
-
-        photoRows.push(
-          ...rows
-        );
-
-        if (
-          rows.length <
-          REPORT_DETAIL_PAGE_SIZE
-        ) {
-          break;
-        }
-
-        pageStart +=
-          REPORT_DETAIL_PAGE_SIZE;
-      }
-    }
-  }
-
-
-  // ==========================================================
-  // ISSUES
-  // ==========================================================
-
-  let issueRows:
-    any[] = [];
-
-  if (
-    reportSectionIds.length
-  ) {
     const {
       data,
       error,
@@ -1390,7 +1334,7 @@ export default async function ReportsPage() {
         .select(`
           id,
           report_id,
-            report_section_id,
+          report_section_id,
           status
         `)
         .in(
@@ -1398,35 +1342,29 @@ export default async function ReportsPage() {
           reportSectionIds
         );
 
+
     if (error) {
       console.error(
         "Unable to load report issue counts:",
         error
       );
-    } else {
-      issueRows =
-        data ?? [];
+
+      return [];
     }
+
+
+    return data ?? [];
   }
 
 
-  // ==========================================================
-  // AREA FINALIZATIONS
-  //
-  // AREA scoped CK reports are considered complete only after
-  // the corresponding area leader explicitly finalizes them.
-  //
-  // STORE      = Warehouse
-  // PRODUCTION = Production
-  // ==========================================================
-
-  let areaFinalizationRows:
-    any[] = [];
+  async function loadAreaFinalizationRows() {
+    if (
+      !reportIds.length
+    ) {
+      return [];
+    }
 
 
-  if (
-    reportIds.length
-  ) {
     const {
       data,
       error,
@@ -1454,11 +1392,96 @@ export default async function ReportsPage() {
         "Unable to load report area finalizations:",
         error
       );
-    } else {
-      areaFinalizationRows =
-        data ?? [];
+
+      return [];
     }
+
+
+    return data ?? [];
   }
+
+
+  // ==========================================================
+  // PARALLEL REPORT DETAIL HYDRATION
+  //
+  // Previously:
+  // questions -> answers -> photos -> issues ->
+  // finalizations -> applicability
+  //
+  // Now all independent datasets begin at the same time.
+  // ==========================================================
+
+  const [
+    questionRows,
+    answerRows,
+    photoRows,
+    issueRows,
+    areaFinalizationRows,
+    applicabilityRows,
+  ] =
+    await Promise.all([
+      loadQuestionRows(),
+
+      loadPagedReportDetailRows({
+        table:
+          "report_answers",
+
+        select: `
+          id,
+          report_section_id,
+          question_id,
+          answer_value
+        `,
+
+        orderColumns: [
+          "id",
+        ],
+
+        errorLabel:
+          "Unable to load report answer counts:",
+      }),
+
+      loadPagedReportDetailRows({
+        table:
+          "report_photos",
+
+        select: `
+          id,
+          report_section_id,
+          answer_id
+        `,
+
+        orderColumns: [
+          "id",
+        ],
+
+        errorLabel:
+          "Unable to load report photo counts:",
+      }),
+
+      loadIssueRows(),
+
+      loadAreaFinalizationRows(),
+
+      loadPagedReportDetailRows({
+        table:
+          "report_question_applicability",
+
+        select: `
+          report_section_id,
+          question_id,
+          is_applicable
+        `,
+
+        orderColumns: [
+          "report_section_id",
+          "question_id",
+        ],
+
+        errorLabel:
+          "Unable to load report question applicability:",
+      }),
+    ]);
 
 
   const areaFinalizationByKey =
@@ -1578,6 +1601,13 @@ export default async function ReportsPage() {
       number
     >();
 
+
+  const answerRowsBySection =
+    new Map<
+      string,
+      any[]
+    >();
+
   for (
     const answer of
     answerRows
@@ -1594,6 +1624,26 @@ export default async function ReportsPage() {
           answer.report_section_id
         ) ?? 0
       ) + 1
+    );
+
+
+    const answerSectionKey =
+      String(
+        answer.report_section_id
+      );
+
+    const currentSectionAnswers =
+      answerRowsBySection.get(
+        answerSectionKey
+      ) ?? [];
+
+    currentSectionAnswers.push(
+      answer
+    );
+
+    answerRowsBySection.set(
+      answerSectionKey,
+      currentSectionAnswers
     );
   }
 
@@ -1690,107 +1740,12 @@ export default async function ReportsPage() {
 
 
   // ==========================================================
+  // ==========================================================
   // REPORT APPLICABILITY SNAPSHOT
   //
-  // Historical report metrics must use the applicability
-  // snapshot captured for each report section.
-  //
-  // Load in batches + pages for the same reason as answers
-  // and photos: one report history screen may contain more
-  // than the PostgREST per-request row limit.
+  // applicabilityRows was fetched concurrently with answers,
+  // photos, issues, questions and finalizations above.
   // ==========================================================
-
-  let applicabilityRows:
-    any[] = [];
-
-  if (
-    reportSectionIds.length
-  ) {
-    for (
-      let batchStart = 0;
-      batchStart <
-      reportSectionIds.length;
-      batchStart +=
-        REPORT_SECTION_BATCH_SIZE
-    ) {
-      const sectionIdBatch =
-        reportSectionIds.slice(
-          batchStart,
-          batchStart +
-            REPORT_SECTION_BATCH_SIZE
-        );
-
-      let pageStart =
-        0;
-
-      while (true) {
-        const {
-          data,
-          error,
-        } =
-          await reportDataClient
-            .from(
-              "report_question_applicability"
-            )
-            .select(`
-              report_section_id,
-              question_id,
-              is_applicable
-            `)
-            .in(
-              "report_section_id",
-              sectionIdBatch
-            )
-            .order(
-              "report_section_id",
-              {
-                ascending:
-                  true,
-              }
-            )
-            .order(
-              "question_id",
-              {
-                ascending:
-                  true,
-              }
-            )
-            .range(
-              pageStart,
-              pageStart +
-                REPORT_DETAIL_PAGE_SIZE -
-                1
-            );
-
-        if (error) {
-          console.error(
-            "Unable to load report question applicability:",
-            error
-          );
-
-          break;
-        }
-
-        const rows =
-          data ?? [];
-
-        applicabilityRows.push(
-          ...rows
-        );
-
-        if (
-          rows.length <
-          REPORT_DETAIL_PAGE_SIZE
-        ) {
-          break;
-        }
-
-        pageStart +=
-          REPORT_DETAIL_PAGE_SIZE;
-      }
-    }
-  }
-
 
   const applicabilityBySection =
     new Map<
@@ -1905,15 +1860,11 @@ export default async function ReportsPage() {
     // ======================================================
 
     const sectionAnswerRows =
-      answerRows.filter(
-        (answer: any) =>
-          String(
-            answer.report_section_id
-          ) ===
-          String(
-            reportSection.id
-          )
-      );
+      answerRowsBySection.get(
+        String(
+          reportSection.id
+        )
+      ) ?? [];
 
     const sectionAnswerByQuestion =
       new Map<

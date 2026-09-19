@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
@@ -9,7 +10,7 @@ function one(value: any) {
     : value;
 }
 
-export async function getAccessContext() {
+async function getAccessContextUncached() {
   const supabase =
     await createClient();
 
@@ -154,6 +155,20 @@ export async function getAccessContext() {
     permissionCodes,
   };
 }
+
+
+// ============================================================
+// REQUEST-SCOPED ACCESS CONTEXT CACHE
+//
+// Protected layout and nested server pages commonly ask for the
+// same auth/profile/role/permission context during one render.
+// React cache deduplicates that work for the current server render.
+// ============================================================
+
+export const getAccessContext =
+  cache(
+    getAccessContextUncached
+  );
 
 
 export async function requirePermission(

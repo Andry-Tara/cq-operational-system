@@ -1,7 +1,8 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 
-export async function getActiveOutlet() {
+async function getActiveOutletUncached() {
   const supabase = await createClient();
 
   const {
@@ -116,3 +117,17 @@ export async function getActiveOutlet() {
 
   return null;
 }
+
+
+// ============================================================
+// REQUEST-SCOPED ACTIVE OUTLET CACHE
+//
+// Layout and nested pages may request the active outlet during
+// the same server render. Avoid repeating auth, access RPC and
+// outlet lookup work inside that render.
+// ============================================================
+
+export const getActiveOutlet =
+  cache(
+    getActiveOutletUncached
+  );
