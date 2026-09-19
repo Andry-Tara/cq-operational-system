@@ -17,6 +17,7 @@ type ProtectedHeaderProps = {
   showReports: boolean;
   showAuditInput: boolean;
   showAuditManagement: boolean;
+  showTestFood: boolean;
   appVersion: string;
   buildSha: string;
   environment: string;
@@ -183,6 +184,7 @@ export function ProtectedHeader({
   showReports,
   showAuditInput,
   showAuditManagement,
+  showTestFood,
   appVersion,
   buildSha,
   environment,
@@ -246,6 +248,9 @@ export function ProtectedHeader({
     ) ||
     pathname.startsWith(
       "/protected/select-outlet"
+    ) ||
+    pathname.startsWith(
+      "/protected/test-food"
     );
 
   useEffect(() => {
@@ -537,6 +542,16 @@ export function ProtectedHeader({
             </div>
 
             <div className="p-2.5">
+              {showTestFood && (
+                <MenuLink
+                  href="/protected/test-food"
+                  label="Test Food"
+                  onClick={() =>
+                    setMenuOpen(false)
+                  }
+                />
+              )}
+
               <MenuLink
                 href="/protected"
                 label="Dashboard"

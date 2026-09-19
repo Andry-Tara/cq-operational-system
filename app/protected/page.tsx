@@ -1227,6 +1227,108 @@ export default async function ProtectedPage({
     // Recent Activity does not need another reports query.
     // The loader already resolved today's exact report for
     // every form visible to this user.
+
+    const fastTestFoodAdmin =
+      createAdminClient();
+
+
+    const {
+      data:
+        fastTestFoodSessions,
+    } =
+      await fastTestFoodAdmin
+        .from(
+          "test_food_sessions"
+        )
+        .select(`
+          id,
+          shift,
+          result_status
+        `)
+        .eq(
+          "outlet_id",
+          activeOutlet.id
+        )
+        .eq(
+          "business_date",
+          today
+        )
+        .eq(
+          "status",
+          "SUBMITTED"
+        );
+
+
+    const fastTestFoodShiftCount =
+      new Set(
+        (
+          fastTestFoodSessions ??
+          []
+        ).map(
+          (
+            row: any
+          ) =>
+            row.shift
+        )
+      ).size;
+
+
+    const fastTestFoodNeedsCorrection =
+      (
+        fastTestFoodSessions ??
+        []
+      ).some(
+        (
+          row: any
+        ) =>
+          row.result_status ===
+          "NEEDS_CORRECTION"
+      );
+
+
+    const fastTestFoodStatus =
+      fastTestFoodShiftCount >=
+      2
+        ? "COMPLETED"
+        : fastTestFoodShiftCount >
+            0
+          ? "IN PROGRESS"
+          : "READY";
+
+
+    fastHubOperations.push({
+      key:
+        "test-food-operation",
+      eyebrow:
+        "Food Quality",
+      title:
+        "Test Food",
+      description:
+        `Morning & afternoon quality check · ${fastTestFoodShiftCount}/2 shifts${
+          fastTestFoodNeedsCorrection
+            ? " · Follow-up required"
+            : ""
+        }`,
+      status:
+        fastTestFoodStatus,
+      href:
+        fastTestFoodShiftCount >=
+        2
+          ? "/protected/test-food/report"
+          : "/protected/test-food",
+      action:
+        fastTestFoodShiftCount >=
+        2
+          ? "View Report"
+          : fastTestFoodShiftCount >
+              0
+            ? "Continue"
+            : "Start",
+      disabled:
+        false,
+    });
+
+
     const fastHubActivities:
       OperationalHubActivity[] =
       fastSplitOperations
@@ -1261,6 +1363,18 @@ export default async function ProtectedPage({
     const fastQuickLinks:
       OperationalHubQuickLink[] =
       [];
+
+
+    fastQuickLinks.push({
+      key:
+        "test-food",
+      label:
+        "Test Food",
+      description:
+        "Morning & afternoon food quality check",
+      href:
+        "/protected/test-food",
+    });
 
 
     if (
@@ -4030,6 +4144,23 @@ export default async function ProtectedPage({
   const hubQuickLinks:
     OperationalHubQuickLink[] =
     [];
+
+  if (
+    activeOutlet.code !==
+    "CNT"
+  ) {
+    hubQuickLinks.push({
+      key:
+        "test-food",
+      label:
+        "Test Food",
+      description:
+        "Morning & afternoon food quality check",
+      href:
+        "/protected/test-food",
+    });
+  }
+
 
   if (
     canReports

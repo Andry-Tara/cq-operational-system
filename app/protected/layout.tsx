@@ -97,6 +97,18 @@ export default async function ProtectedLayout({
       "audit.view_management"
     );
 
+  const showTestFood =
+    Boolean(
+      outlet &&
+      !isBodRole &&
+      String(
+        outlet.code ?? ""
+      )
+        .trim()
+        .toUpperCase() !==
+        "CNT"
+    );
+
   const buildInfo =
     getAppBuildInfo();
 
@@ -137,6 +149,9 @@ export default async function ProtectedLayout({
         }
         showAuditManagement={
           showAuditManagement
+        }
+        showTestFood={
+          showTestFood
         }
         appVersion={
           buildInfo.appVersion
