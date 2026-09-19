@@ -1486,7 +1486,99 @@ export default async function ProtectedPage({
     });
 
 
-    const fastHubActivities:
+
+    const {
+      data:
+        fastBriefingSessions,
+      error:
+        fastBriefingError,
+    } =
+      await fastTestFoodAdmin
+        .from(
+          "briefing_sessions"
+        )
+        .select(`
+          id,
+          session_type,
+          status
+        `)
+        .eq(
+          "outlet_id",
+          activeOutlet.id
+        )
+        .eq(
+          "business_date",
+          today
+        )
+        .eq(
+          "status",
+          "SUBMITTED"
+        );
+
+
+    const fastBriefingCount =
+      fastBriefingError
+        ? 0
+        : new Set(
+            (
+              fastBriefingSessions ??
+              []
+            ).map(
+              (
+                row: any
+              ) =>
+                row.session_type
+            )
+          ).size;
+
+
+    const fastBriefingStatus =
+      fastBriefingCount >=
+      3
+        ? "COMPLETED"
+        : fastBriefingCount >
+            0
+          ? "IN PROGRESS"
+          : "READY";
+
+
+    fastHubOperations.push({
+      key:
+        "briefing-operation",
+
+      eyebrow:
+        "Team Alignment",
+
+      title:
+        "Briefing",
+
+      description:
+        `Morning · Afternoon · Closing · ${fastBriefingCount}/3 sessions`,
+
+      status:
+        fastBriefingStatus,
+
+      href:
+        fastBriefingCount >=
+        3
+          ? "/protected/briefing/report"
+          : "/protected/briefing",
+
+      action:
+        fastBriefingCount >=
+        3
+          ? "View Report"
+          : fastBriefingCount >
+              0
+            ? "Continue"
+            : "Start",
+
+      disabled:
+        false,
+    });
+
+
+const fastHubActivities:
       OperationalHubActivity[] =
       fastSplitOperations
         .filter(
