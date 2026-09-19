@@ -4076,6 +4076,22 @@ export default async function ProtectedPage({
     });
   }
 
+
+  if (
+    canAuditManagement
+  ) {
+    hubQuickLinks.push({
+      key:
+        "exception-center",
+      label:
+        "Exception Center",
+      description:
+        "Issues, findings and follow-up",
+      href:
+        "/protected/exceptions",
+    });
+  }
+
   if (
     isAdmin
   ) {
