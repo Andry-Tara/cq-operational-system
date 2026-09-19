@@ -90,33 +90,36 @@ function statusClass(
   value: string
 ) {
   if (
-    [
-      "verified",
-      "closed",
-    ].includes(
-      value
-    )
+    value ===
+    "closed"
   ) {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   }
 
   if (
     value ===
-      "resolved"
+    "verified"
   ) {
-    return "border-blue-200 bg-blue-50 text-blue-700";
+    return "border-teal-200 bg-teal-50 text-teal-700";
   }
 
   if (
     value ===
-      "in_progress"
+    "resolved"
+  ) {
+    return "border-sky-200 bg-sky-50 text-sky-700";
+  }
+
+  if (
+    value ===
+    "in_progress"
   ) {
     return "border-[#D8D355] bg-[#F8F7DF] text-[#66620A]";
   }
 
   if (
     value ===
-      "assigned"
+    "assigned"
   ) {
     return "border-violet-200 bg-violet-50 text-violet-700";
   }
@@ -456,7 +459,11 @@ export function ExceptionWorkflowPanel({
               </p>
 
               <h2 className="mt-1 text-xl font-black text-[#292824]">
-                Follow-up Management
+                {
+                  canManage
+                    ? "Follow-up Management"
+                    : "Exception Follow-up"
+                }
               </h2>
             </div>
 

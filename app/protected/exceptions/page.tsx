@@ -162,13 +162,29 @@ function statusClass(
   status: string
 ) {
   if (
-    [
-      "closed",
-      "resolved",
-      "completed",
-    ].includes(
-      status
-    )
+    status ===
+    "closed"
+  ) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+
+  if (
+    status ===
+    "verified"
+  ) {
+    return "border-teal-200 bg-teal-50 text-teal-700";
+  }
+
+  if (
+    status ===
+    "resolved"
+  ) {
+    return "border-sky-200 bg-sky-50 text-sky-700";
+  }
+
+  if (
+    status ===
+    "completed"
   ) {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   }
@@ -178,6 +194,13 @@ function statusClass(
     "in_progress"
   ) {
     return "border-[#D8D355]/70 bg-[#D8D355]/15 text-[#66620A]";
+  }
+
+  if (
+    status ===
+    "assigned"
+  ) {
+    return "border-violet-200 bg-violet-50 text-violet-700";
   }
 
   if (
@@ -1584,7 +1607,7 @@ export default async function ExceptionCenterPage({
             </div>
 
             <p className="text-right text-[10px] font-semibold text-neutral-400">
-              Read Only · V1
+              Exception Workflow · V2
             </p>
           </div>
 
