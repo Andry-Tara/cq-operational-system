@@ -35,6 +35,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   BodExecutiveDashboard,
 } from "@/components/dashboard/bod-executive-dashboard";
+
+import {
+  ManagementDashboard,
+} from "@/components/dashboard/management-dashboard";
 import {
   loadSplitOutletOperationCards,
 } from "@/lib/operations/load-split-outlet-dashboard";
@@ -4657,6 +4661,27 @@ const fastHubActivities:
     );
 
 
+  const isManagementDashboard =
+    !isAdmin &&
+    (
+      dashboardRoleCodes.has(
+        "MANAGEMENT"
+      ) ||
+      roles.some(
+        (
+          role: any
+        ) =>
+          String(
+            role?.name ||
+            ""
+          )
+            .trim()
+            .toUpperCase() ===
+          "MANAGEMENT"
+      )
+    );
+
+
   const isOutletManagerDashboard =
     dashboardRoleCodes.has(
       "STORE_MANAGER"
@@ -4681,6 +4706,46 @@ const fastHubActivities:
     dashboardRoleCodes.has(
       "KITCHEN_STAFF"
     );
+
+
+  // ==========================================================
+  // MANAGEMENT DASHBOARD EARLY RETURN
+  //
+  // Management is an oversight role, not a daily input role.
+  // Do not continue into the legacy outlet analytics/cards
+  // below this point.
+  // ==========================================================
+
+  if (
+    isManagementDashboard
+  ) {
+    return (
+      <>
+        <AutoRefresh
+          intervalMs={
+            60000
+          }
+        />
+
+        <ManagementDashboard
+          outletName={
+            activeOutlet.name
+          }
+          dateLabel={
+            fullDate(
+              today
+            )
+          }
+          quickLinks={
+            hubQuickLinks
+          }
+          activities={
+            hubActivities
+          }
+        />
+      </>
+    );
+  }
 
 
   const useFocusedOperationalDashboard =
