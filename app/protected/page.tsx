@@ -71,6 +71,48 @@ function businessDate(
 }
 
 
+
+function outletTimeLabel(
+  timezone:
+    string |
+    null |
+    undefined
+) {
+  const value =
+    String(
+      timezone ||
+      "Asia/Jakarta"
+    );
+
+
+  if (
+    value ===
+    "Asia/Makassar"
+  ) {
+    return "WITA";
+  }
+
+
+  if (
+    value ===
+    "Asia/Jayapura"
+  ) {
+    return "WIT";
+  }
+
+
+  if (
+    value ===
+    "Asia/Jakarta"
+  ) {
+    return "WIB";
+  }
+
+
+  return value;
+}
+
+
 function shiftDate(
   date: string,
   amount: number
@@ -1691,35 +1733,128 @@ export default async function ProtectedPage({
     });
 
 
-const fastHubActivities:
-      OperationalHubActivity[] =
-      fastSplitOperations
-        .filter(
-          (card) =>
-            Boolean(
-              card.reportId
-            )
+    // ========================================================
+    // RECENT ACTIVITY
+    //
+    // Today's Operations uses today's outlet business date.
+    // Recent Activity intentionally spans previous business
+    // dates so it does not disappear at midnight.
+    // ========================================================
+
+    const fastActivityAdmin:
+      any =
+      createAdminClient();
+
+
+    const {
+      data:
+        fastRecentReportRows,
+      error:
+        fastRecentReportsError,
+    } =
+      await fastActivityAdmin
+        .from(
+          "reports"
         )
-        .slice(
-          0,
+        .select(`
+          id,
+          report_number,
+          business_date,
+          status,
+          created_at,
+          completed_at
+        `)
+        .eq(
+          "organization_id",
+          profile.organization_id
+        )
+        .eq(
+          "outlet_id",
+          activeOutlet.id
+        )
+        .order(
+          "completed_at",
+          {
+            ascending:
+              false,
+            nullsFirst:
+              false,
+          }
+        )
+        .order(
+          "created_at",
+          {
+            ascending:
+              false,
+          }
+        )
+        .limit(
           4
-        )
-        .map(
-          (card) => ({
-            key:
-              card.reportId ||
-              card.formCode,
-            title:
-              card.reportNumber ||
-              card.title,
-            meta:
-              `Operational Report · ${today}`,
-            status:
-              card.status,
-            href:
-              card.href,
-          })
         );
+
+
+    if (
+      fastRecentReportsError
+    ) {
+      console.error(
+        "Dashboard recent activity error:",
+        fastRecentReportsError
+      );
+    }
+
+
+    const fastHubActivities:
+      OperationalHubActivity[] =
+      (
+        fastRecentReportRows ??
+        []
+      ).map(
+        (
+          report: any
+        ) => {
+          const normalizedStatus =
+            String(
+              report.status ||
+              ""
+            )
+              .trim()
+              .toLowerCase();
+
+
+          const isCompleted =
+            [
+              "completed",
+              "submitted",
+              "reviewed",
+              "verified",
+              "closed",
+            ].includes(
+              normalizedStatus
+            );
+
+
+          return {
+            key:
+              report.id,
+
+            title:
+              report.report_number ||
+              "Operational Report",
+
+            meta:
+              `Operational Report · ${report.business_date}`,
+
+            status:
+              report.status ||
+              "in_progress",
+
+            href:
+              isCompleted
+                ? `/api/reports/${report.id}/pdf`
+                : "/protected/reports",
+          };
+        }
+      );
 
 
     const fastQuickLinks:
@@ -1876,9 +2011,11 @@ const fastHubActivities:
               activeOutlet.name
             }
             dateLabel={
-              fullDate(
+              `${fullDate(
                 today
-              )
+              )} · ${outletTimeLabel(
+                activeOutlet.timezone
+              )}`
             }
             operations={
               fastHubOperations
