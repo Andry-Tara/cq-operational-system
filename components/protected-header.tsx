@@ -12,6 +12,7 @@ type ProtectedHeaderProps = {
   outletName?: string | null;
   outletContextLabel?: string;
   showAdministration: boolean;
+  showTeamStructure: boolean;
   showOpening: boolean;
   showClosing: boolean;
   showReports: boolean;
@@ -179,6 +180,7 @@ export function ProtectedHeader({
   outletName,
   outletContextLabel = "Active Outlet",
   showAdministration,
+  showTeamStructure,
   showOpening,
   showClosing,
   showReports,
@@ -245,6 +247,9 @@ export function ProtectedHeader({
     menuOpen ||
     pathname.startsWith(
       "/protected/admin"
+    ) ||
+    pathname.startsWith(
+      "/protected/team-structure"
     ) ||
     pathname.startsWith(
       "/protected/select-outlet"
@@ -559,6 +564,17 @@ export function ProtectedHeader({
                   setMenuOpen(false)
                 }
               />
+
+              {showTeamStructure && (
+                <MenuLink
+                  href="/protected/team-structure"
+                  label="Team Structure"
+                  onClick={() =>
+                    setMenuOpen(false)
+                  }
+                />
+              )}
+
 
               {showAdministration && (
                 <MenuLink

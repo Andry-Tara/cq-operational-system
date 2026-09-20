@@ -196,6 +196,13 @@ export default async function ProtectedPage({
       "opening.submit"
     );
 
+  const canTeamStructure =
+    isAdmin ||
+    permissionCodes.includes(
+      "team_structure.manage"
+    );
+
+
   const canReports =
     isAdmin ||
     permissionCodes.includes(
@@ -1192,6 +1199,69 @@ export default async function ProtectedPage({
       });
 
 
+    // ======================================================
+    // FLOOR MAPPING DAILY PROGRESS
+    // ======================================================
+
+    const fastFloorMappingAdmin =
+      createAdminClient();
+
+
+    const {
+      count:
+        fastFloorMappingCountRaw,
+      error:
+        fastFloorMappingError,
+    } =
+      await fastFloorMappingAdmin
+        .from(
+          "floor_mapping_sessions"
+        )
+        .select(
+          "id",
+          {
+            count:
+              "exact",
+
+            head:
+              true,
+          }
+        )
+        .eq(
+          "outlet_id",
+          activeOutlet.id
+        )
+        .eq(
+          "business_date",
+          today
+        )
+        .eq(
+          "status",
+          "SUBMITTED"
+        );
+
+
+    if (
+      fastFloorMappingError
+    ) {
+      console.error(
+        "Floor Mapping dashboard count error:",
+        fastFloorMappingError
+      );
+    }
+
+
+    const fastFloorMappingCount =
+      Math.max(
+        0,
+        Math.min(
+          3,
+          fastFloorMappingCountRaw ??
+            0
+        )
+      );
+
+
     const fastHubOperations:
       OperationalHubOperation[] =
       fastSplitOperations.map(
@@ -1222,6 +1292,45 @@ export default async function ProtectedPage({
             !card.canFill,
         })
       );
+
+
+    fastHubOperations.push({
+      key:
+        "floor-mapping-operation",
+
+      eyebrow:
+        "Team Deployment",
+
+      title:
+        "Floor Mapping",
+
+      description:
+        `FOH map · BOH stations · ${fastFloorMappingCount}/3 sessions`,
+
+      status:
+        fastFloorMappingCount >=
+        3
+          ? "COMPLETED"
+          : fastFloorMappingCount >
+              0
+            ? "IN PROGRESS"
+            : "READY",
+
+      href:
+        fastFloorMappingCount >=
+        3
+          ? "/protected/floor-mapping/report"
+          : "/protected/floor-mapping",
+
+      action:
+        fastFloorMappingCount >=
+        3
+          ? "View Report"
+          : fastFloorMappingCount >
+              0
+            ? "Continue"
+            : "Start",
+    });
 
 
     // Recent Activity does not need another reports query.
@@ -4393,6 +4502,25 @@ const fastHubActivities:
   const hubQuickLinks:
     OperationalHubQuickLink[] =
     [];
+
+  if (
+    canTeamStructure
+  ) {
+    hubQuickLinks.push({
+      key:
+        "team-structure",
+
+      label:
+        "Team Structure",
+
+      description:
+        "Staff, positions & outlet assignments",
+
+      href:
+        "/protected/team-structure",
+    });
+  }
+
 
   if (
     activeOutlet.code !==

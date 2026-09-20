@@ -67,6 +67,13 @@ export default async function ProtectedLayout({
       "questions.manage"
     );
 
+  const showTeamStructure =
+    isAdmin ||
+    permissionCodes.includes(
+      "team_structure.manage"
+    );
+
+
   const showOpening =
     isAdmin ||
     permissionCodes.includes(
@@ -134,6 +141,9 @@ export default async function ProtectedLayout({
         }
         showAdministration={
           showAdministration
+        }
+        showTeamStructure={
+          showTeamStructure
         }
         showOpening={
           showOpening

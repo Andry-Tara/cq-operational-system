@@ -34,6 +34,22 @@ const menus = [
     status: "REVIEW",
     tile: "border-emerald-100 bg-emerald-50 text-emerald-700",
   },
+  {
+    href:
+      "/protected/admin/floor-mapping",
+
+    icon:
+      "FM",
+
+    title:
+      "Floor Mapping",
+
+    description:
+      "Upload outlet floor plans and configure responsive FOH map markers.",
+
+    status:
+      "MANAGE",
+  },
 ];
 
 export default async function AdminPage() {
