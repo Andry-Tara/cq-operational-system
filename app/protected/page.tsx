@@ -1540,6 +1540,21 @@ export default async function ProtectedPage({
   if (
     useFastSplitDashboard
   ) {
+    const __fastPerfStart =
+      performance.now();
+
+    const __fastPerf = (
+      label: string
+    ) => {
+      console.info(
+        `[PERF][DASHBOARD_FAST] ${label}: ${Math.round(
+          performance.now() -
+            __fastPerfStart
+        )}ms`
+      );
+    };
+
+    __fastPerf("START");
     const fastSplitOperations =
       await loadSplitOutletOperationCards({
         supabase,
@@ -1554,6 +1569,10 @@ export default async function ProtectedPage({
           user.id,
         isAdmin,
       });
+
+    __fastPerf(
+      "OPERATIONS"
+    );
 
 
     // ======================================================
@@ -1596,6 +1615,10 @@ export default async function ProtectedPage({
           "status",
           "SUBMITTED"
         );
+
+    __fastPerf(
+      "FLOOR_MAPPING"
+    );
 
 
     if (
@@ -1723,6 +1746,10 @@ export default async function ProtectedPage({
           "status",
           "SUBMITTED"
         );
+
+    __fastPerf(
+      "TEST_FOOD_SESSIONS"
+    );
 
 
     const fastTestFoodShiftCount =
@@ -1896,6 +1923,10 @@ export default async function ProtectedPage({
       }
     }
 
+    __fastPerf(
+      "TEST_FOOD_DETAIL"
+    );
+
 
     const fastTestFoodStatus =
       fastTestFoodShiftCount >=
@@ -1980,6 +2011,10 @@ export default async function ProtectedPage({
           "status",
           "SUBMITTED"
         );
+
+    __fastPerf(
+      "BRIEFING"
+    );
 
 
     const fastBriefingCount =
@@ -2102,6 +2137,10 @@ export default async function ProtectedPage({
         .limit(
           4
         );
+
+    __fastPerf(
+      "RECENT_ACTIVITY"
+    );
 
 
     if (
@@ -2263,6 +2302,10 @@ export default async function ProtectedPage({
       }
     }
 
+
+    __fastPerf(
+      "READY"
+    );
 
     const fastAssigned =
       fastHubOperations.length;
@@ -2658,21 +2701,27 @@ export default async function ProtectedPage({
   }
 
 
-  // ==========================================================
-  // CLOSING FORM
-  // ==========================================================
-  // OPENING - ACTIVE OUTLET
-  //
-  // Kept separate from Closing dashboard analytics.
-  // This prevents existing Closing trend / outlet status logic
-  // from changing while Opening is introduced.
-  // ==========================================================
 
-  const {
-    data:
-      openingForm,
-  } =
-    await supabase
+  const splitOutletOperationsPromise =
+    activeOutlet?.id &&
+    activeOutlet.code !== "CNT"
+      ? loadSplitOutletOperationCards({
+          supabase,
+          organizationId:
+            profile.organization_id,
+          outletId:
+            activeOutlet.id,
+          outletTimezone:
+            activeOutlet.timezone ||
+            "Asia/Jakarta",
+          userId:
+            user.id,
+          isAdmin,
+        })
+      : Promise.resolve([]);
+
+  const openingFormPromise =
+    supabase
       .from("forms")
       .select(`
         id,
@@ -2692,6 +2741,71 @@ export default async function ProtectedPage({
         true
       )
       .maybeSingle();
+
+  const closingFormPromise =
+    supabase
+      .from("forms")
+      .select(`
+        id,
+        code,
+        name
+      `)
+      .eq(
+        "organization_id",
+        profile.organization_id
+      )
+      .eq(
+        "code",
+        "CLOSING"
+      )
+      .eq(
+        "is_active",
+        true
+      )
+      .maybeSingle();
+
+  const splitDashboardFormCodes = [
+    "OPENING_FOH",
+    "OPENING_BOH",
+    "CLOSING_FOH",
+    "CLOSING_BOH",
+  ];
+
+  const splitDashboardFormsPromise =
+    supabase
+      .from("forms")
+      .select(`
+        id,
+        code
+      `)
+      .eq(
+        "organization_id",
+        profile.organization_id
+      )
+      .eq(
+        "is_active",
+        true
+      )
+      .in(
+        "code",
+        splitDashboardFormCodes
+      );
+
+  // ==========================================================
+  // CLOSING FORM
+  // ==========================================================
+  // OPENING - ACTIVE OUTLET
+  //
+  // Kept separate from Closing dashboard analytics.
+  // This prevents existing Closing trend / outlet status logic
+  // from changing while Opening is introduced.
+  // ==========================================================
+
+  const {
+    data:
+      openingForm,
+  } =
+    await openingFormPromise;
 
 
   let openingAssignment:
@@ -2864,48 +2978,14 @@ export default async function ProtectedPage({
   // ==========================================================
 
   const splitOutletOperations =
-    activeOutlet?.id &&
-    activeOutlet.code !== "CNT"
-      ? await loadSplitOutletOperationCards({
-          supabase,
-          organizationId:
-            profile.organization_id,
-          outletId:
-            activeOutlet.id,
-          outletTimezone:
-            activeOutlet.timezone ||
-            "Asia/Jakarta",
-          userId:
-            user.id,
-          isAdmin,
-        })
-      : [];
+    await splitOutletOperationsPromise;
 
 
   const {
     data:
       closingForm,
   } =
-    await supabase
-      .from("forms")
-      .select(`
-        id,
-        code,
-        name
-      `)
-      .eq(
-        "organization_id",
-        profile.organization_id
-      )
-      .eq(
-        "code",
-        "CLOSING"
-      )
-      .eq(
-        "is_active",
-        true
-      )
-      .maybeSingle();
+    await closingFormPromise;
 
 
   // ==========================================================
@@ -3000,35 +3080,11 @@ export default async function ProtectedPage({
   // each business date.
   // ==========================================================
 
-  const splitDashboardFormCodes = [
-    "OPENING_FOH",
-    "OPENING_BOH",
-    "CLOSING_FOH",
-    "CLOSING_BOH",
-  ];
-
   const {
     data: splitDashboardFormsData,
     error: splitDashboardFormsError,
   } =
-    await supabase
-      .from("forms")
-      .select(`
-        id,
-        code
-      `)
-      .eq(
-        "organization_id",
-        profile.organization_id
-      )
-      .eq(
-        "is_active",
-        true
-      )
-      .in(
-        "code",
-        splitDashboardFormCodes
-      );
+    await splitDashboardFormsPromise;
 
   if (splitDashboardFormsError) {
     return (
@@ -3230,6 +3286,7 @@ export default async function ProtectedPage({
           assignment.outlet_id
       )
     );
+
 
 
   // ==========================================================
@@ -4710,6 +4767,7 @@ export default async function ProtectedPage({
   }
 
 
+
   // ----------------------------------------------------------
   // AUDIT
   // ----------------------------------------------------------
@@ -4845,6 +4903,7 @@ export default async function ProtectedPage({
           : "/protected/reports",
     });
   }
+
 
 
   // Latest Audit for users who also have audit access.
@@ -5094,6 +5153,7 @@ export default async function ProtectedPage({
   // Other management / admin roles continue to the existing
   // analytics render below.
   // ==========================================================
+
 
   const dashboardRoleCodes =
     new Set(
