@@ -108,6 +108,30 @@ function toneFor(
 
   if (
     normalized.includes(
+      "pos"
+    ) ||
+    normalized.includes(
+      "void"
+    )
+  ) {
+    return {
+      shell:
+        "border-red-100 bg-red-50/55",
+
+      icon:
+        "bg-red-100 text-red-700",
+
+      eyebrow:
+        "text-red-700",
+
+      symbol:
+        "P",
+    };
+  }
+
+
+  if (
+    normalized.includes(
       "report"
     )
   ) {
@@ -514,7 +538,10 @@ export function ManagementDashboard({
                             " "
                           )}
                         >
-                          Management Access
+                          {item.key ===
+                          "pos-void-sales"
+                            ? "POS Insights"
+                            : "Management Access"}
                         </p>
 
 

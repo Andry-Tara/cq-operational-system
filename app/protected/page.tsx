@@ -54,6 +54,244 @@ function one(value: any) {
 }
 
 
+type PosVoidInsight = {
+  businessDate:
+    string;
+
+  voidItems:
+    number;
+
+  voidQty:
+    number;
+
+  voidAmount:
+    number;
+
+  affectedOrders:
+    number;
+};
+
+
+function formatPosMoney(
+  value:
+    number
+) {
+  return `Rp${new Intl.NumberFormat(
+    "id-ID",
+    {
+      maximumFractionDigits:
+        0,
+    }
+  ).format(
+    Math.abs(
+      value
+    )
+  )}`;
+}
+
+
+async function loadLatestPosVoidInsight(
+  admin:
+    any,
+
+  organizationId:
+    string
+): Promise<
+  PosVoidInsight |
+  null
+> {
+  const {
+    data:
+      latestRow,
+    error:
+      latestError,
+  } =
+    await admin
+      .from(
+        "pos_order_items"
+      )
+      .select(
+        "business_date"
+      )
+      .eq(
+        "organization_id",
+        organizationId
+      )
+      .eq(
+        "provider",
+        "CHONGQING"
+      )
+      .eq(
+        "is_void",
+        true
+      )
+      .order(
+        "business_date",
+        {
+          ascending:
+            false,
+        }
+      )
+      .limit(
+        1
+      )
+      .maybeSingle();
+
+
+  if (latestError) {
+    throw latestError;
+  }
+
+
+  const businessDate =
+    String(
+      latestRow
+        ?.business_date ||
+      ""
+    );
+
+
+  if (!businessDate) {
+    return null;
+  }
+
+
+  const rows:
+    any[] =
+    [];
+
+  const pageSize =
+    1000;
+
+  const maxRows =
+    5000;
+
+
+  for (
+    let from = 0;
+    from < maxRows;
+    from += pageSize
+  ) {
+    const {
+      data,
+      error,
+    } =
+      await admin
+        .from(
+          "pos_order_items"
+        )
+        .select(`
+          external_order_id,
+          qty,
+          total_price
+        `)
+        .eq(
+          "organization_id",
+          organizationId
+        )
+        .eq(
+          "provider",
+          "CHONGQING"
+        )
+        .eq(
+          "is_void",
+          true
+        )
+        .eq(
+          "business_date",
+          businessDate
+        )
+        .range(
+          from,
+          from +
+            pageSize -
+            1
+        );
+
+
+    if (error) {
+      throw error;
+    }
+
+
+    const current =
+      data ??
+      [];
+
+
+    rows.push(
+      ...current
+    );
+
+
+    if (
+      current.length <
+      pageSize
+    ) {
+      break;
+    }
+  }
+
+
+  return {
+    businessDate,
+
+    voidItems:
+      rows.length,
+
+    voidQty:
+      rows.reduce(
+        (
+          total:
+            number,
+          row:
+            any
+        ) =>
+          total +
+          Math.abs(
+            Number(
+              row.qty ??
+              0
+            )
+          ),
+        0
+      ),
+
+    voidAmount:
+      rows.reduce(
+        (
+          total:
+            number,
+          row:
+            any
+        ) =>
+          total +
+          Math.abs(
+            Number(
+              row.total_price ??
+              0
+            )
+          ),
+        0
+      ),
+
+    affectedOrders:
+      new Set(
+        rows.map(
+          (
+            row:
+              any
+          ) =>
+            String(
+              row
+                .external_order_id
+            )
+        )
+      ).size,
+  };
+}
+
+
 function businessDate(
   timezone: string
 ) {
@@ -684,35 +922,101 @@ export default async function ProtectedPage({
         count ?? 0;
     }
 
+    const bodPosInsight =
+      permissionCodes.includes(
+        "pos.view"
+      )
+        ? await loadLatestPosVoidInsight(
+            executiveAdmin,
+            profile.organization_id
+          )
+        : null;
+
+
     return (
-      <BodExecutiveDashboard
-        executiveName={
-          profile.full_name ||
-          user.email ||
-          "BOD"
-        }
-        dateLabel={
-          fullDate(today)
-        }
-        outletCount={
-          outlets.length
-        }
-        completedReports={
-          completedReports
-        }
-        inProgressReports={
-          inProgressReports
-        }
-        auditAverage={
-          auditAverage
-        }
-        scoredOutlets={
-          validScores.length
-        }
-        criticalFindings={
-          criticalFindings
-        }
-      />
+      <>
+        <BodExecutiveDashboard
+          executiveName={
+            profile.full_name ||
+            user.email ||
+            "BOD"
+          }
+          dateLabel={
+            fullDate(today)
+          }
+          outletCount={
+            outlets.length
+          }
+          completedReports={
+            completedReports
+          }
+          inProgressReports={
+            inProgressReports
+          }
+          auditAverage={
+            auditAverage
+          }
+          scoredOutlets={
+            validScores.length
+          }
+          criticalFindings={
+            criticalFindings
+          }
+        />
+
+
+        {bodPosInsight && (
+          <div className="bg-[#F5F5F3] px-4 pb-8 sm:px-5 md:px-8">
+
+            <div className="mx-auto max-w-[1480px]">
+
+              <Link
+                href="/protected/pos/void-sales"
+                className="group grid gap-5 overflow-hidden rounded-[26px] border border-red-100 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_14px_36px_rgba(50,45,38,0.08)] sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
+              >
+
+                <div>
+
+                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-red-700">
+                    POS Insights
+                  </p>
+
+                  <h2 className="mt-1 text-xl font-black tracking-tight text-[#292824]">
+                    Void Sales
+                  </h2>
+
+                  <p className="mt-2 text-sm font-medium text-neutral-500">
+                    {bodPosInsight.voidItems} items
+                    {" · "}
+                    {bodPosInsight.affectedOrders} affected orders
+                    {" · "}
+                    {formatPosMoney(
+                      bodPosInsight.voidAmount
+                    )}
+                  </p>
+
+                  <p className="mt-2 text-[10px] font-bold text-neutral-400">
+                    Mapped POS Outlets · Jakarta API
+                    {" · "}
+                    {shortDate(
+                      bodPosInsight.businessDate
+                    )}
+                  </p>
+
+                </div>
+
+
+                <div className="flex h-11 items-center justify-center rounded-xl bg-[#292824] px-5 text-xs font-black text-white">
+                  Review Void Sales →
+                </div>
+
+              </Link>
+
+            </div>
+
+          </div>
+        )}
+      </>
     );
   }
 
@@ -4856,6 +5160,55 @@ export default async function ProtectedPage({
   if (
     isManagementDashboard
   ) {
+    const managementAdmin =
+      createAdminClient();
+
+
+    const managementPosInsight =
+      permissionCodes.includes(
+        "pos.view"
+      )
+        ? await loadLatestPosVoidInsight(
+            managementAdmin,
+            profile.organization_id
+          )
+        : null;
+
+
+    const managementQuickLinks =
+      [
+        ...hubQuickLinks,
+      ];
+
+
+    if (
+      managementPosInsight &&
+      !managementQuickLinks.some(
+        item =>
+          item.key ===
+          "pos-void-sales"
+      )
+    ) {
+      managementQuickLinks.unshift({
+        key:
+          "pos-void-sales",
+
+        label:
+          "Void Sales",
+
+        description:
+          `${managementPosInsight.voidItems} items · ${formatPosMoney(
+            managementPosInsight.voidAmount
+          )} · ${shortDate(
+            managementPosInsight.businessDate
+          )} · Mapped POS / Jakarta API`,
+
+        href:
+          "/protected/pos/void-sales",
+      });
+    }
+
+
     return (
       <>
         <AutoRefresh
@@ -4874,7 +5227,7 @@ export default async function ProtectedPage({
             )
           }
           quickLinks={
-            hubQuickLinks
+            managementQuickLinks
           }
           activities={
             hubActivities
