@@ -37,39 +37,64 @@ export default async function FloorMappingPage() {
 
   const supabase = await createClient();
 
-  if (!context.isAdmin) {
-    const { data: hasOutletAccess } = await supabase.rpc("has_outlet_access", {
-      p_outlet_id: activeOutlet.id,
-    });
-
-    if (hasOutletAccess !== true) {
-      return (
-        <StateCard
-          title="Outlet Access Required"
-          message="You do not have access to Floor Mapping for the active outlet."
-        />
-      );
-    }
-  }
-
   const admin = createAdminClient();
 
-  const { data: outlet, error: outletError } = await admin
-    .from("outlets")
-    .select(
-      `
-        id,
-        code,
-        name,
-        timezone,
-        organization_id,
-        is_active
-      `,
-    )
-    .eq("id", activeOutlet.id)
-    .eq("organization_id", context.profile.organization_id)
-    .eq("is_active", true)
-    .maybeSingle();
+  const accessPromise = context.isAdmin
+    ? Promise.resolve({
+        data: true,
+        error: null,
+      })
+    : supabase.rpc("has_outlet_access", {
+        p_outlet_id: activeOutlet.id,
+      });
+
+  const [accessResult, outletResult, templateResult] = await Promise.all([
+    accessPromise,
+
+    admin
+      .from("outlets")
+      .select(
+        `
+          id,
+          code,
+          name,
+          timezone,
+          organization_id,
+          is_active
+        `,
+      )
+      .eq("id", activeOutlet.id)
+      .eq("organization_id", context.profile.organization_id)
+      .eq("is_active", true)
+      .maybeSingle(),
+
+    admin
+      .from("floor_mapping_templates")
+      .select(
+        `
+          id,
+          name,
+          version_number,
+          image_storage_path,
+          is_active
+        `,
+      )
+      .eq("outlet_id", activeOutlet.id)
+      .eq("organization_id", context.profile.organization_id)
+      .eq("is_active", true)
+      .maybeSingle(),
+  ]);
+
+  if (accessResult.data !== true) {
+    return (
+      <StateCard
+        title="Outlet Access Required"
+        message="You do not have access to Floor Mapping for the active outlet."
+      />
+    );
+  }
+
+  const { data: outlet, error: outletError } = outletResult;
 
   if (outletError || !outlet) {
     throw outletError || new Error("Active outlet not found.");
@@ -88,21 +113,7 @@ export default async function FloorMappingPage() {
     );
   }
 
-  const { data: template, error: templateError } = await admin
-    .from("floor_mapping_templates")
-    .select(
-      `
-        id,
-        name,
-        version_number,
-        image_storage_path,
-        is_active
-      `,
-    )
-    .eq("outlet_id", outlet.id)
-    .eq("organization_id", outlet.organization_id)
-    .eq("is_active", true)
-    .maybeSingle();
+  const { data: template, error: templateError } = templateResult;
 
   if (templateError) {
     throw templateError;
@@ -119,97 +130,95 @@ export default async function FloorMappingPage() {
 
   const today = businessDate(outlet.timezone || "Asia/Jakarta");
 
-  const [signedResult, zonesResult, bohPositionsResult, sessionsResult] =
-    await Promise.all([
-      admin.storage
-        .from("operational-photos")
-        .createSignedUrl(template.image_storage_path, 3600),
-
-      admin
-        .from("floor_mapping_zones")
-        .select(
-          `
-          id,
-          zone_code,
-          zone_name,
-          zone_type,
-          x_pct,
-          y_pct,
-          shape,
-          display_label,
-          capacity,
-          sort_order
-        `,
-        )
-        .eq("template_id", template.id)
-        .eq("is_active", true)
-        .order("sort_order", {
-          ascending: true,
-        }),
-
-      admin
-        .from("floor_mapping_boh_positions")
-        .select(
-          `
-          id,
-          position_code,
-          position_name,
-          default_station,
-          sort_order
-        `,
-        )
-        .eq("template_id", template.id)
-        .eq("is_active", true)
-        .order("sort_order", {
-          ascending: true,
-        }),
-
-      admin
-        .from("floor_mapping_sessions")
-        .select(
-          `
-          id,
-          session_type,
-          status,
-          general_notes,
-          pic_name_snapshot,
-          submitted_at
-        `,
-        )
-        .eq("outlet_id", outlet.id)
-        .eq("business_date", today)
-        .in("session_type", ["MORNING", "AFTERNOON", "CLOSING"]),
-    ]);
-
-  if (zonesResult.error) {
-    throw zonesResult.error;
-  }
-
-  if (bohPositionsResult.error) {
-    throw bohPositionsResult.error;
-  }
-
-  if (sessionsResult.error) {
-    throw sessionsResult.error;
-  }
-
-  // ==========================================================
-  // TEAM STRUCTURE — FOH STAFF DIRECTORY
-  //
-  // Floor Mapping does not maintain its own employee master.
-  // Current outlet assignment determines:
-  //
-  // - staff name
-  // - operational position
-  // - FOH color category
-  //
-  // Existing submitted Floor Mapping rows remain snapshots.
-  // ==========================================================
-
   const teamDb: any = admin;
 
-  const { data: teamAssignmentsData, error: teamAssignmentsError } =
-    await teamDb
+  const [
+    signedResult,
+    zonesResult,
+    bohPositionsResult,
+    sessionsResult,
+    teamAssignmentsResult,
+  ] = await Promise.all([
+    admin.storage
+      .from("operational-photos")
+      .createSignedUrl(template.image_storage_path, 3600),
+
+    admin
+      .from("floor_mapping_zones")
+      .select(
+        `
+        id,
+        zone_code,
+        zone_name,
+        zone_type,
+        x_pct,
+        y_pct,
+        shape,
+        display_label,
+        capacity,
+        sort_order
+      `,
+      )
+      .eq("template_id", template.id)
+      .eq("is_active", true)
+      .order("sort_order", {
+        ascending: true,
+      }),
+
+    admin
+      .from("floor_mapping_boh_positions")
+      .select(
+        `
+        id,
+        position_code,
+        position_name,
+        default_station,
+        sort_order
+      `,
+      )
+      .eq("template_id", template.id)
+      .eq("is_active", true)
+      .order("sort_order", {
+        ascending: true,
+      }),
+
+    admin
+      .from("floor_mapping_sessions")
+      .select(
+        `
+        id,
+        session_type,
+        status,
+        general_notes,
+        pic_name_snapshot,
+        submitted_at,
+        floor_mapping_staff_pins (
+          id,
+          session_id,
+          position_label,
+          role_type,
+          assigned_names,
+          x_pct,
+          y_pct,
+          notes,
+          sort_order
+        ),
+        floor_mapping_boh_assignments (
+          id,
+          session_id,
+          position_id,
+          assigned_names,
+          station_note,
+          sort_order
+        )
+      `,
+      )
+      .eq("outlet_id", outlet.id)
+      .eq("business_date", today)
+      .in("session_type", ["MORNING", "AFTERNOON", "CLOSING"])
+      .limit(3),
+
+    teamDb
       .from("team_staff_assignments")
       .select(
         `
@@ -238,7 +247,23 @@ export default async function FloorMappingPage() {
       .eq("outlet_id", outlet.id)
       .eq("is_primary", true)
       .lte("effective_from", today)
-      .or(`effective_to.is.null,effective_to.gte.${today}`);
+      .or(`effective_to.is.null,effective_to.gte.${today}`),
+  ]);
+
+  if (zonesResult.error) {
+    throw zonesResult.error;
+  }
+
+  if (bohPositionsResult.error) {
+    throw bohPositionsResult.error;
+  }
+
+  if (sessionsResult.error) {
+    throw sessionsResult.error;
+  }
+
+  const { data: teamAssignmentsData, error: teamAssignmentsError } =
+    teamAssignmentsResult;
 
   if (teamAssignmentsError) {
     throw teamAssignmentsError;
@@ -350,69 +375,17 @@ export default async function FloorMappingPage() {
 
   const sessions = sessionsResult.data ?? [];
 
-  const sessionIds = sessions.map((item) => item.id);
+  const staffPins = sessions
+    .flatMap((session: any) => session.floor_mapping_staff_pins ?? [])
+    .sort(
+      (a: any, b: any) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0),
+    );
 
-  const [staffPinsResult, bohAssignmentsResult] = sessionIds.length
-    ? await Promise.all([
-        admin
-          .from("floor_mapping_staff_pins")
-          .select(
-            `
-              id,
-              session_id,
-              position_label,
-              role_type,
-              assigned_names,
-              x_pct,
-              y_pct,
-              notes,
-              sort_order
-            `,
-          )
-          .in("session_id", sessionIds)
-          .order("sort_order", {
-            ascending: true,
-          }),
-
-        admin
-          .from("floor_mapping_boh_assignments")
-          .select(
-            `
-              id,
-              session_id,
-              position_id,
-              assigned_names,
-              station_note,
-              sort_order
-            `,
-          )
-          .in("session_id", sessionIds)
-          .order("sort_order", {
-            ascending: true,
-          }),
-      ])
-    : [
-        {
-          data: [],
-          error: null,
-        },
-        {
-          data: [],
-          error: null,
-        },
-      ];
-
-  if (staffPinsResult.error) {
-    throw staffPinsResult.error;
-  }
-
-  if (bohAssignmentsResult.error) {
-    throw bohAssignmentsResult.error;
-  }
-
-  const staffPins = staffPinsResult.data ?? [];
-
-  const bohAssignments = bohAssignmentsResult.data ?? [];
+  const bohAssignments = sessions
+    .flatMap((session: any) => session.floor_mapping_boh_assignments ?? [])
+    .sort(
+      (a: any, b: any) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0),
+    );
 
   const initialSessions = Object.fromEntries(
     ["MORNING", "AFTERNOON", "CLOSING"].map((sessionType) => {
@@ -442,7 +415,6 @@ export default async function FloorMappingPage() {
       ];
     }),
   );
-
   return (
     <FloorMappingClient
       outlet={{

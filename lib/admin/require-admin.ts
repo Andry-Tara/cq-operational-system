@@ -3,17 +3,14 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 function one(value: any) {
   return Array.isArray(value) ? value[0] : value;
 }
 
 async function getAccessContextUncached() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
 
   if (!user) {
     redirect("/auth/login");
@@ -21,39 +18,41 @@ async function getAccessContextUncached() {
 
   const admin = createAdminClient();
 
-  const { data: profile } = await admin
-    .from("profiles")
-    .select(
-      `
-        id,
-        organization_id,
-        full_name,
-        job_title,
-        is_active
-      `,
-    )
-    .eq("id", user.id)
-    .maybeSingle();
+  const [{ data: profile }, { data: roleRows }] = await Promise.all([
+    admin
+      .from("profiles")
+      .select(
+        `
+          id,
+          organization_id,
+          full_name,
+          job_title,
+          is_active
+        `,
+      )
+      .eq("id", user.id)
+      .maybeSingle(),
+
+    admin
+      .from("user_roles")
+      .select(
+        `
+          role_id,
+          roles (
+            id,
+            code,
+            name,
+            is_admin,
+            is_active
+          )
+        `,
+      )
+      .eq("user_id", user.id),
+  ]);
 
   if (!profile || !profile.organization_id || profile.is_active === false) {
     redirect("/auth/login");
   }
-
-  const { data: roleRows } = await admin
-    .from("user_roles")
-    .select(
-      `
-        role_id,
-        roles (
-          id,
-          code,
-          name,
-          is_admin,
-          is_active
-        )
-      `,
-    )
-    .eq("user_id", user.id);
 
   const roles = (roleRows ?? [])
     .map((row: any) => one(row.roles))

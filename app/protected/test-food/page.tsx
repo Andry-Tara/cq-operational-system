@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -18,17 +18,14 @@ function businessDate(timezone: string) {
 }
 
 export default async function TestFoodPage() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const [user, outlet] = await Promise.all([
+    getCurrentUser(),
+    getActiveOutlet(),
+  ]);
 
   if (!user) {
     redirect("/auth/login");
   }
-
-  const outlet = await getActiveOutlet();
 
   if (!outlet) {
     redirect("/protected/select-outlet");
@@ -111,68 +108,65 @@ export default async function TestFoodPage() {
     );
   }
 
-  const { data: menuScopeRows, error: menuScopeError } = await admin
-    .from("test_food_menu_outlets")
-    .select(
-      `
-        menu_id
-      `,
-    )
-    .eq("outlet_id", outletRow.id)
-    .eq("is_active", true);
-
-  if (menuScopeError) {
-    return <ErrorState message={menuScopeError.message} />;
-  }
-
-  const menuIds = (menuScopeRows ?? [])
-    .map((row: any) => row.menu_id)
-    .filter(Boolean);
-
-  let menus: any[] = [];
-
-  if (menuIds.length) {
-    const { data, error } = await admin
-      .from("test_food_menus")
-      .select(
-        `
-          id,
-          code,
-          name,
-          category,
-          notes,
-          is_seasonal,
-          sort_order
-        `,
-      )
-      .in("id", menuIds)
-      .eq("organization_id", outletRow.organization_id)
-      .eq("is_active", true)
-      .order("sort_order", {
-        ascending: true,
-      });
-
-    if (error) {
-      return <ErrorState message={error.message} />;
-    }
-
-    menus = data ?? [];
-  }
-
   const date = businessDate(outletRow.timezone || "Asia/Jakarta");
 
-  const { data: todaySessions } = await admin
-    .from("test_food_sessions")
-    .select(
-      `
-        shift,
-        result_status
-      `,
-    )
-    .eq("outlet_id", outletRow.id)
-    .eq("business_date", date)
-    .eq("status", "SUBMITTED");
+  const [menuScopeResult, sessionsResult] = await Promise.all([
+    admin
+      .from("test_food_menu_outlets")
+      .select(
+        `
+          menu_id,
+          test_food_menus!inner (
+            id,
+            code,
+            name,
+            category,
+            notes,
+            is_seasonal,
+            sort_order,
+            organization_id,
+            is_active
+          )
+        `,
+      )
+      .eq("outlet_id", outletRow.id)
+      .eq("is_active", true)
+      .eq("test_food_menus.organization_id", outletRow.organization_id)
+      .eq("test_food_menus.is_active", true),
 
+    admin
+      .from("test_food_sessions")
+      .select(
+        `
+          shift,
+          result_status
+        `,
+      )
+      .eq("outlet_id", outletRow.id)
+      .eq("business_date", date)
+      .eq("status", "SUBMITTED")
+      .limit(3),
+  ]);
+
+  if (menuScopeResult.error) {
+    return <ErrorState message={menuScopeResult.error.message} />;
+  }
+
+  const menus = (menuScopeResult.data ?? [])
+    .flatMap((row: any) => {
+      const menu = row.test_food_menus;
+
+      if (Array.isArray(menu)) {
+        return menu;
+      }
+
+      return menu ? [menu] : [];
+    })
+    .sort(
+      (a: any, b: any) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0),
+    );
+
+  const todaySessions = sessionsResult.data ?? [];
   return (
     <TestFoodClient
       outlet={{

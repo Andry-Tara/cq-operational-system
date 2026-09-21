@@ -8,10 +8,12 @@ export default async function ProtectedLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, profile, roles, isAdmin, permissionCodes } =
-    await getAccessContext();
+  const [context, outlet] = await Promise.all([
+    getAccessContext(),
+    getActiveOutlet(),
+  ]);
 
-  const outlet = await getActiveOutlet();
+  const { user, profile, roles, isAdmin, permissionCodes } = context;
 
   const role = roles[0];
 

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -21,17 +21,14 @@ function businessDate(timezone: string) {
 }
 
 export default async function BriefingPage() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const [user, outlet] = await Promise.all([
+    getCurrentUser(),
+    getActiveOutlet(),
+  ]);
 
   if (!user) {
     redirect("/auth/login");
   }
-
-  const outlet = await getActiveOutlet();
 
   if (!outlet) {
     redirect("/protected/select-outlet");
@@ -118,7 +115,6 @@ export default async function BriefingPage() {
   if (sessionsError) {
     throw sessionsError;
   }
-
   return (
     <BriefingClient
       outletName={outletRow.name}

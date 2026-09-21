@@ -178,6 +178,7 @@ function MobileNavItem({
 }) {
   return (
     <Link
+      prefetch={false}
       href={href}
       className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 transition ${
         active ? "text-red-700" : "text-neutral-400 active:bg-neutral-100"
@@ -207,6 +208,7 @@ function MenuLink({
 }) {
   return (
     <Link
+      prefetch={false}
       href={href}
       onClick={onClick}
       className="flex min-h-11 items-center justify-between rounded-xl px-3.5 text-[13px] font-bold text-neutral-700 transition hover:bg-neutral-50 active:bg-neutral-100"
@@ -308,6 +310,7 @@ export function ProtectedHeader({
           <div className="flex min-w-0 items-center gap-2.5">
             {!isDashboard && (
               <Link
+                prefetch={false}
                 href={backHref}
                 className="inline-flex h-9 shrink-0 items-center gap-1 rounded-xl border border-neutral-200 px-2.5 text-[11px] font-bold text-neutral-500 transition hover:border-neutral-300 hover:text-neutral-900"
               >
@@ -315,7 +318,7 @@ export function ProtectedHeader({
               </Link>
             )}
 
-            <Link href="/protected" className="min-w-0">
+            <Link prefetch={false} href="/protected" className="min-w-0">
               <p className="truncate text-[9px] font-black uppercase tracking-[0.15em] text-red-700 sm:text-[10px]">
                 Resto Operational System
               </p>
