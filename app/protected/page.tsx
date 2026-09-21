@@ -453,8 +453,18 @@ export default async function ProtectedPage({
       ? 30
       : 7;
 
-  const supabase =
-    await createClient();
+  const activeOutletPromise =
+    getActiveOutlet();
+
+  const [
+    supabase,
+    accessContext,
+  ] = await Promise.all([
+    createClient(),
+    requirePermission(
+      "dashboard.view"
+    ),
+  ]);
 
   const {
     user,
@@ -462,10 +472,7 @@ export default async function ProtectedPage({
     roles,
     isAdmin,
     permissionCodes,
-  } =
-    await requirePermission(
-      "dashboard.view"
-    );
+  } = accessContext;
 
   const canClosing =
     isAdmin ||
@@ -629,7 +636,7 @@ export default async function ProtectedPage({
   // ==========================================================
 
   const activeOutlet =
-    await getActiveOutlet();
+    await activeOutletPromise;
 
   if (!activeOutlet) {
     redirect(

@@ -120,16 +120,20 @@ export async function POST(
     const supabase =
       await createClient();
 
-    // ========================================================
-    // AUTH
-    // ========================================================
+    // AUTH + ACTIVE OUTLET are independent network work.
+    const [
+      authResult,
+      activeOutlet,
+    ] = await Promise.all([
+      supabase.auth.getUser(),
+      getActiveOutlet(),
+    ]);
 
     const {
       data: {
         user,
       },
-    } =
-      await supabase.auth.getUser();
+    } = authResult;
 
     if (!user) {
       return NextResponse.json(
@@ -146,11 +150,7 @@ export async function POST(
     // ========================================================
     // ACTIVE OUTLET
     // ========================================================
-
-    const activeOutlet =
-      await getActiveOutlet();
-
-    if (!activeOutlet) {
+if (!activeOutlet) {
       return NextResponse.json(
         {
           error:
@@ -163,6 +163,15 @@ export async function POST(
         }
       );
     }
+
+    const outletAccessPromise =
+      supabase.rpc(
+        "has_outlet_access",
+        {
+          p_outlet_id:
+            activeOutlet.id,
+        }
+      );
 
     const {
       data: outlet,
@@ -209,13 +218,7 @@ export async function POST(
         hasOutletAccess,
       error:
         accessError,
-    } = await supabase.rpc(
-      "has_outlet_access",
-      {
-        p_outlet_id:
-          outlet.id,
-      }
-    );
+    } = await outletAccessPromise;
 
     if (accessError) {
       throw accessError;

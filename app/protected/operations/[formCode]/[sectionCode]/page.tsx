@@ -145,13 +145,19 @@ export default async function OperationPage({
   const supabase =
     await createClient();
 
+  const [
+    authResult,
+    outlet,
+  ] = await Promise.all([
+    supabase.auth.getUser(),
+    getActiveOutlet(),
+  ]);
 
   const {
     data: {
       user,
     },
-  } =
-    await supabase.auth.getUser();
+  } = authResult;
 
   if (!user) {
     redirect(
@@ -159,6 +165,17 @@ export default async function OperationPage({
     );
   }
 
+
+  const outletAccessPromise =
+outlet
+      ? supabase.rpc(
+          "has_outlet_access",
+          {
+            p_outlet_id:
+              outlet.id,
+          }
+        )
+      : null;
 
   const {
     data: profile,
@@ -197,13 +214,7 @@ export default async function OperationPage({
       />
     );
   }
-
-
-  const outlet =
-    await getActiveOutlet();
-
-
-  if (!outlet) {
+if (!outlet) {
     redirect(
       "/protected/select-outlet"
     );
@@ -216,13 +227,7 @@ export default async function OperationPage({
     error:
       outletAccessError,
   } =
-    await supabase.rpc(
-      "has_outlet_access",
-      {
-        p_outlet_id:
-          outlet.id,
-      }
-    );
+    await outletAccessPromise!;
 
 
   if (

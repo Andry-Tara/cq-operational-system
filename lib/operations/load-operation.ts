@@ -130,6 +130,28 @@ export async function loadOperationDefinition({
     assignment = currentAssignment;
   }
 
+  // PERFORMANCE:
+  // SECTION only depends on form.id, so start it while
+  // FORM VERSION is being resolved.
+  const sectionPromise =
+    supabase
+    .from("sections")
+    .select(`
+      id,
+      form_id,
+      code,
+      name,
+      description,
+      area_code
+    `)
+    .eq("form_id", form.id)
+    .eq(
+      "code",
+      normalizedSectionCode
+    )
+    .eq("is_active", true)
+    .maybeSingle();
+
   // ==========================================================
   // FORM VERSION
   // ==========================================================
@@ -178,23 +200,7 @@ export async function loadOperationDefinition({
   const {
     data: section,
     error: sectionError,
-  } = await supabase
-    .from("sections")
-    .select(`
-      id,
-      form_id,
-      code,
-      name,
-      description,
-      area_code
-    `)
-    .eq("form_id", form.id)
-    .eq(
-      "code",
-      normalizedSectionCode
-    )
-    .eq("is_active", true)
-    .maybeSingle();
+  } = await sectionPromise;
 
   if (sectionError) {
     throw sectionError;
@@ -250,10 +256,8 @@ export async function loadOperationDefinition({
   // GROUPS
   // ==========================================================
 
-  const {
-    data: groupsData,
-    error: groupsError,
-  } = await supabase
+  const groupsPromise =
+    supabase
     .from("question_groups")
     .select(`
       id,
@@ -270,6 +274,47 @@ export async function loadOperationDefinition({
     .order("sort_order", {
       ascending: true,
     });
+
+  const questionsPromise =
+    supabase
+    .from("questions")
+    .select(`
+      id,
+      question_group_id,
+      code,
+      question_text,
+      help_text,
+      question_type,
+      is_required,
+      unit,
+      min_value,
+      max_value,
+      placeholder,
+      config,
+      sort_order
+    `)
+    .eq(
+      "version_section_id",
+      versionSection.id
+    )
+    .eq("is_active", true)
+    .order("sort_order", {
+      ascending: true,
+    });
+
+  const [
+    {
+      data: groupsData,
+      error: groupsError,
+    },
+    {
+      data: questionsData,
+      error: questionsError,
+    },
+  ] = await Promise.all([
+    groupsPromise,
+    questionsPromise,
+  ]);
 
   if (groupsError) {
     throw groupsError;
@@ -349,34 +394,8 @@ export async function loadOperationDefinition({
   // QUESTIONS
   // ==========================================================
 
-  const {
-    data: questionsData,
-    error: questionsError,
-  } = await supabase
-    .from("questions")
-    .select(`
-      id,
-      question_group_id,
-      code,
-      question_text,
-      help_text,
-      question_type,
-      is_required,
-      unit,
-      min_value,
-      max_value,
-      placeholder,
-      config,
-      sort_order
-    `)
-    .eq(
-      "version_section_id",
-      versionSection.id
-    )
-    .eq("is_active", true)
-    .order("sort_order", {
-      ascending: true,
-    });
+  // QUESTIONS already loaded in parallel with GROUPS.
+
 
   if (questionsError) {
     throw questionsError;

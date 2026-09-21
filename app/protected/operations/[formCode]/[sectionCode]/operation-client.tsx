@@ -649,6 +649,16 @@ export default function OperationClient({
   ] =
     useState(false);
 
+  const sessionAttemptRef =
+    useRef<{
+      key: string;
+      promise: Promise<{
+        ok: boolean;
+        status: number;
+        payload: any;
+      }>;
+    } | null>(null);
+
   const photoUploadTokenRef =
     useRef<Record<string, string>>({});
 
@@ -720,31 +730,67 @@ export default function OperationClient({
           attempt += 1
         ) {
           try {
+            const sessionAttemptKey =
+              `${apiBase}|${requestedReportId || ""}|${sessionRetryKey}|${attempt}`;
+
+            let sessionAttempt =
+              sessionAttemptRef.current;
+
+            if (
+              !sessionAttempt ||
+              sessionAttempt.key !==
+                sessionAttemptKey
+            ) {
+              const promise = (async () => {
+                const rawResponse =
+                  await fetch(
+                    `${apiBase}/session`,
+                    {
+                      method: "POST",
+                      cache: "no-store",
+                      headers: {
+                        "Content-Type":
+                          "application/json",
+                      },
+                      body:
+                        JSON.stringify({
+                          reportId:
+                            requestedReportId ||
+                            null,
+                        }),
+                    }
+                  );
+
+                const payload =
+                  await rawResponse
+                    .json()
+                    .catch(
+                      () => ({})
+                    );
+
+                return {
+                  ok: rawResponse.ok,
+                  status:
+                    rawResponse.status,
+                  payload,
+                };
+              })();
+
+              sessionAttempt = {
+                key:
+                  sessionAttemptKey,
+                promise,
+              };
+
+              sessionAttemptRef.current =
+                sessionAttempt;
+            }
+
             const response =
-              await fetch(
-                `${apiBase}/session`,
-                {
-                  method: "POST",
-                  cache: "no-store",
-                  headers: {
-                    "Content-Type":
-                      "application/json",
-                  },
-                  body:
-                    JSON.stringify({
-                      reportId:
-                        requestedReportId ||
-                        null,
-                    }),
-                }
-              );
+              await sessionAttempt.promise;
 
             const payload =
-              await response
-                .json()
-                .catch(
-                  () => ({})
-                );
+              response.payload;
 
             if (!response.ok) {
               const failure: any =

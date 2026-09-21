@@ -35,6 +35,60 @@ type ExceptionTask = {
   href: string;
 };
 
+const EXCEPTION_TASK_CACHE_MS = 15_000;
+
+let exceptionTaskCache:
+  | {
+      tasks: ExceptionTask[];
+      fetchedAt: number;
+    }
+  | null = null;
+
+let exceptionTaskRequest: Promise<ExceptionTask[]> | null = null;
+
+async function loadExceptionTasksCached() {
+  const now = Date.now();
+
+  if (
+    exceptionTaskCache &&
+    now - exceptionTaskCache.fetchedAt < EXCEPTION_TASK_CACHE_MS
+  ) {
+    return exceptionTaskCache.tasks;
+  }
+
+  if (exceptionTaskRequest) {
+    return exceptionTaskRequest;
+  }
+
+  exceptionTaskRequest = fetch("/api/exceptions/my-tasks", {
+    cache: "no-store",
+  })
+    .then(async response => {
+      if (!response.ok) {
+        return [];
+      }
+
+      const payload = await response.json();
+
+      const tasks: ExceptionTask[] = Array.isArray(payload?.tasks)
+        ? payload.tasks
+        : [];
+
+      exceptionTaskCache = {
+        tasks,
+        fetchedAt: Date.now(),
+      };
+
+      return tasks;
+    })
+    .finally(() => {
+      exceptionTaskRequest = null;
+    });
+
+  return exceptionTaskRequest;
+}
+
+
 
 function cleanStatus(
   value: string
@@ -143,70 +197,31 @@ export function MyExceptionTasks() {
     );
 
 
-  useEffect(
-    () => {
-      let mounted =
-        true;
+  useEffect(() => {
+    let mounted = true;
 
+    async function loadTasks() {
+      try {
+        const nextTasks = await loadExceptionTasksCached();
 
-      async function loadTasks() {
-        try {
-          const response =
-            await fetch(
-              "/api/exceptions/my-tasks",
-              {
-                cache:
-                  "no-store",
-              }
-            );
-
-
-          if (
-            !response.ok
-          ) {
-            return;
-          }
-
-
-          const payload =
-            await response.json();
-
-
-          if (mounted) {
-            setTasks(
-              Array.isArray(
-                payload?.tasks
-              )
-                ? payload.tasks
-                : []
-            );
-          }
-
-        } catch {
-          // Keep Operational Hub usable
-          // if exception tasks fail.
-
-        } finally {
-          if (mounted) {
-            setLoading(
-              false
-            );
-          }
+        if (mounted) {
+          setTasks(nextTasks);
+        }
+      } catch {
+        // Keep Operational Hub usable if exception tasks fail.
+      } finally {
+        if (mounted) {
+          setLoading(false);
         }
       }
+    }
 
+    loadTasks();
 
-      loadTasks();
-
-
-      return () => {
-        mounted =
-          false;
-      };
-    },
-    []
-  );
-
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   if (
     loading ||
