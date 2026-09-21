@@ -5,56 +5,44 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 function one(value: any) {
-  return Array.isArray(value)
-    ? value[0]
-    : value;
+  return Array.isArray(value) ? value[0] : value;
 }
 
 async function getAccessContextUncached() {
-  const supabase =
-    await createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },
-  } =
-    await supabase.auth.getUser();
+  } = await supabase.auth.getUser();
 
   if (!user) {
     redirect("/auth/login");
   }
 
-  const admin =
-    createAdminClient();
+  const admin = createAdminClient();
 
-  const {
-    data: profile,
-  } =
-    await admin
-      .from("profiles")
-      .select(`
+  const { data: profile } = await admin
+    .from("profiles")
+    .select(
+      `
         id,
         organization_id,
         full_name,
         job_title,
         is_active
-      `)
-      .eq("id", user.id)
-      .maybeSingle();
+      `,
+    )
+    .eq("id", user.id)
+    .maybeSingle();
 
-  if (
-    !profile ||
-    !profile.organization_id ||
-    profile.is_active === false
-  ) {
+  if (!profile || !profile.organization_id || profile.is_active === false) {
     redirect("/auth/login");
   }
 
-  const {
-    data: roleRows,
-  } =
-    await admin
-      .from("user_roles")
-      .select(`
+  const { data: roleRows } = await admin
+    .from("user_roles")
+    .select(
+      `
         role_id,
         roles (
           id,
@@ -63,89 +51,47 @@ async function getAccessContextUncached() {
           is_admin,
           is_active
         )
-      `)
-      .eq(
-        "user_id",
-        user.id
-      );
+      `,
+    )
+    .eq("user_id", user.id);
 
-  const roles =
-    (roleRows ?? [])
-      .map((row: any) =>
-        one(row.roles)
-      )
-      .filter(
-        (role: any) =>
-          role &&
-          role.is_active !== false
-      );
+  const roles = (roleRows ?? [])
+    .map((row: any) => one(row.roles))
+    .filter((role: any) => role && role.is_active !== false);
 
-  const roleIds =
-    roles.map(
-      (role: any) =>
-        role.id
-    );
+  const roleIds = roles.map((role: any) => role.id);
 
-  let permissionCodes:
-    string[] = [];
+  let permissionCodes: string[] = [];
 
   if (roleIds.length) {
-    const {
-      data:
-        permissionRows,
-    } =
-      await admin
-        .from(
-          "role_permissions"
-        )
-        .select(`
+    const { data: permissionRows } = await admin
+      .from("role_permissions")
+      .select(
+        `
           role_id,
           is_allowed,
           permissions (
             code,
             is_active
           )
-        `)
-        .in(
-          "role_id",
-          roleIds
-        )
-        .eq(
-          "is_allowed",
-          true
-        );
+        `,
+      )
+      .in("role_id", roleIds)
+      .eq("is_allowed", true);
 
-    permissionCodes =
-      Array.from(
-        new Set(
-          (permissionRows ?? [])
-            .map(
-              (row: any) =>
-                one(
-                  row.permissions
-                )
-            )
-            .filter(
-              (permission: any) =>
-                permission &&
-                permission.is_active !==
-                  false
-            )
-            .map(
-              (
-                permission: any
-              ) =>
-                permission.code
-            )
-        )
-      );
+    permissionCodes = Array.from(
+      new Set(
+        (permissionRows ?? [])
+          .map((row: any) => one(row.permissions))
+          .filter(
+            (permission: any) => permission && permission.is_active !== false,
+          )
+          .map((permission: any) => permission.code),
+      ),
+    );
   }
 
-  const isAdmin =
-    roles.some(
-      (role: any) =>
-        role.is_admin === true
-    );
+  const isAdmin = roles.some((role: any) => role.is_admin === true);
 
   return {
     user,
@@ -156,7 +102,6 @@ async function getAccessContextUncached() {
   };
 }
 
-
 // ============================================================
 // REQUEST-SCOPED ACCESS CONTEXT CACHE
 //
@@ -165,48 +110,28 @@ async function getAccessContextUncached() {
 // React cache deduplicates that work for the current server render.
 // ============================================================
 
-export const getAccessContext =
-  cache(
-    getAccessContextUncached
-  );
+export const getAccessContext = cache(getAccessContextUncached);
 
+export async function requirePermission(permissionCode: string) {
+  const context = await getAccessContext();
 
-export async function requirePermission(
-  permissionCode: string
-) {
-  const context =
-    await getAccessContext();
-
-  if (
-    !context.isAdmin &&
-    !context.permissionCodes.includes(
-      permissionCode
-    )
-  ) {
+  if (!context.isAdmin && !context.permissionCodes.includes(permissionCode)) {
     redirect("/protected");
   }
 
   return context;
 }
 
-
 export async function getAdminContext() {
-  return requirePermission(
-    "admin.access"
-  );
+  return requirePermission("admin.access");
 }
 
-
-export async function checkPermissionApi(
-  permissionCode: string
-) {
-  const supabase =
-    await createClient();
+export async function checkPermissionApi(permissionCode: string) {
+  const supabase = await createClient();
 
   const {
     data: { user },
-  } =
-    await supabase.auth.getUser();
+  } = await supabase.auth.getUser();
 
   if (!user) {
     return {
@@ -216,28 +141,22 @@ export async function checkPermissionApi(
     };
   }
 
-  const admin =
-    createAdminClient();
+  const admin = createAdminClient();
 
-  const {
-    data: profile,
-  } =
-    await admin
-      .from("profiles")
-      .select(`
+  const { data: profile } = await admin
+    .from("profiles")
+    .select(
+      `
         id,
         organization_id,
         full_name,
         is_active
-      `)
-      .eq("id", user.id)
-      .maybeSingle();
+      `,
+    )
+    .eq("id", user.id)
+    .maybeSingle();
 
-  if (
-    !profile ||
-    !profile.organization_id ||
-    profile.is_active === false
-  ) {
+  if (!profile || !profile.organization_id || profile.is_active === false) {
     return {
       ok: false as const,
       status: 403,
@@ -245,40 +164,25 @@ export async function checkPermissionApi(
     };
   }
 
-  const {
-    data: roleRows,
-  } =
-    await admin
-      .from("user_roles")
-      .select(`
+  const { data: roleRows } = await admin
+    .from("user_roles")
+    .select(
+      `
         role_id,
         roles (
           id,
           is_admin,
           is_active
         )
-      `)
-      .eq(
-        "user_id",
-        user.id
-      );
+      `,
+    )
+    .eq("user_id", user.id);
 
-  const roles =
-    (roleRows ?? [])
-      .map((row: any) =>
-        one(row.roles)
-      )
-      .filter(
-        (role: any) =>
-          role &&
-          role.is_active !== false
-      );
+  const roles = (roleRows ?? [])
+    .map((row: any) => one(row.roles))
+    .filter((role: any) => role && role.is_active !== false);
 
-  const isAdmin =
-    roles.some(
-      (role: any) =>
-        role.is_admin === true
-    );
+  const isAdmin = roles.some((role: any) => role.is_admin === true);
 
   if (isAdmin) {
     return {
@@ -289,67 +193,42 @@ export async function checkPermissionApi(
     };
   }
 
-  const roleIds =
-    roles.map(
-      (role: any) =>
-        role.id
-    );
+  const roleIds = roles.map((role: any) => role.id);
 
   if (!roleIds.length) {
     return {
       ok: false as const,
       status: 403,
-      error:
-        "Permission denied.",
+      error: "Permission denied.",
     };
   }
 
-  const {
-    data:
-      permissionRows,
-  } =
-    await admin
-      .from(
-        "role_permissions"
-      )
-      .select(`
+  const { data: permissionRows } = await admin
+    .from("role_permissions")
+    .select(
+      `
         permission_id,
         permissions!inner (
           code,
           is_active
         )
-      `)
-      .in(
-        "role_id",
-        roleIds
-      )
-      .eq(
-        "is_allowed",
-        true
-      );
+      `,
+    )
+    .in("role_id", roleIds)
+    .eq("is_allowed", true);
 
-  const allowed =
-    (permissionRows ?? [])
-      .map(
-        (row: any) =>
-          one(
-            row.permissions
-          )
-      )
-      .some(
-        (permission: any) =>
-          permission?.code ===
-            permissionCode &&
-          permission?.is_active !==
-            false
-      );
+  const allowed = (permissionRows ?? [])
+    .map((row: any) => one(row.permissions))
+    .some(
+      (permission: any) =>
+        permission?.code === permissionCode && permission?.is_active !== false,
+    );
 
   if (!allowed) {
     return {
       ok: false as const,
       status: 403,
-      error:
-        "Permission denied.",
+      error: "Permission denied.",
     };
   }
 
@@ -361,9 +240,6 @@ export async function checkPermissionApi(
   };
 }
 
-
 export async function checkAdminApi() {
-  return checkPermissionApi(
-    "admin.access"
-  );
+  return checkPermissionApi("admin.access");
 }

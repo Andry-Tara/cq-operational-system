@@ -24,13 +24,7 @@ type ProtectedHeaderProps = {
   environment: string;
 };
 
-type GlyphKind =
-  | "home"
-  | "opening"
-  | "closing"
-  | "reports"
-  | "audit"
-  | "more";
+type GlyphKind = "home" | "opening" | "closing" | "reports" | "audit" | "more";
 
 function getBackHref(pathname: string) {
   if (pathname.startsWith("/protected/admin/")) {
@@ -60,50 +54,103 @@ function getBackHref(pathname: string) {
   return "/protected";
 }
 
-function NavGlyph({
-  kind,
-}: {
-  kind: GlyphKind;
-}) {
+function NavGlyph({ kind }: { kind: GlyphKind }) {
   if (kind === "home") {
     return (
-      <svg viewBox="0 0 24 24" className="h-[19px] w-[19px]" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3.5 10.5 12 3.8l8.5 6.7" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M5.5 9.5v10h13v-10M9.5 19.5v-6h5v6" />
+      <svg
+        viewBox="0 0 24 24"
+        className="h-[19px] w-[19px]"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M3.5 10.5 12 3.8l8.5 6.7"
+        />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M5.5 9.5v10h13v-10M9.5 19.5v-6h5v6"
+        />
       </svg>
     );
   }
 
   if (kind === "opening") {
     return (
-      <svg viewBox="0 0 24 24" className="h-[19px] w-[19px]" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <svg
+        viewBox="0 0 24 24"
+        className="h-[19px] w-[19px]"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      >
         <circle cx="12" cy="12" r="3.5" />
-        <path strokeLinecap="round" d="M12 2.7v2.2M12 19.1v2.2M2.7 12h2.2M19.1 12h2.2M5.4 5.4 7 7M17 17l1.6 1.6M18.6 5.4 17 7M7 17l-1.6 1.6" />
+        <path
+          strokeLinecap="round"
+          d="M12 2.7v2.2M12 19.1v2.2M2.7 12h2.2M19.1 12h2.2M5.4 5.4 7 7M17 17l1.6 1.6M18.6 5.4 17 7M7 17l-1.6 1.6"
+        />
       </svg>
     );
   }
 
   if (kind === "closing") {
     return (
-      <svg viewBox="0 0 24 24" className="h-[19px] w-[19px]" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M20 15.5A8.2 8.2 0 0 1 8.5 4a8.5 8.5 0 1 0 11.5 11.5Z" />
+      <svg
+        viewBox="0 0 24 24"
+        className="h-[19px] w-[19px]"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M20 15.5A8.2 8.2 0 0 1 8.5 4a8.5 8.5 0 1 0 11.5 11.5Z"
+        />
       </svg>
     );
   }
 
   if (kind === "audit") {
     return (
-      <svg viewBox="0 0 24 24" className="h-[19px] w-[19px]" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M8 4.5h8M9 3h6a1 1 0 0 1 1 1v2H8V4a1 1 0 0 1 1-1Z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h12v14H6zM9 10h6M9 14h4" />
+      <svg
+        viewBox="0 0 24 24"
+        className="h-[19px] w-[19px]"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M8 4.5h8M9 3h6a1 1 0 0 1 1 1v2H8V4a1 1 0 0 1 1-1Z"
+        />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M6 6h12v14H6zM9 10h6M9 14h4"
+        />
       </svg>
     );
   }
 
   if (kind === "reports") {
     return (
-      <svg viewBox="0 0 24 24" className="h-[19px] w-[19px]" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6 3.5h9l3 3v14H6z" />
+      <svg
+        viewBox="0 0 24 24"
+        className="h-[19px] w-[19px]"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M6 3.5h9l3 3v14H6z"
+        />
         <path strokeLinecap="round" d="M9 10h6M9 14h6M9 18h4" />
       </svg>
     );
@@ -133,9 +180,7 @@ function MobileNavItem({
     <Link
       href={href}
       className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 transition ${
-        active
-          ? "text-red-700"
-          : "text-neutral-400 active:bg-neutral-100"
+        active ? "text-red-700" : "text-neutral-400 active:bg-neutral-100"
       }`}
       aria-current={active ? "page" : undefined}
     >
@@ -146,9 +191,7 @@ function MobileNavItem({
       >
         <NavGlyph kind={kind} />
       </span>
-      <span className="max-w-full truncate text-[9px] font-bold">
-        {label}
-      </span>
+      <span className="max-w-full truncate text-[9px] font-bold">{label}</span>
     </Link>
   );
 }
@@ -192,71 +235,38 @@ export function ProtectedHeader({
   environment,
 }: ProtectedHeaderProps) {
   const pathname = usePathname();
-  const [menuOpen, setMenuOpen] =
-    useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  const isDashboard =
-    pathname === "/protected";
+  const isDashboard = pathname === "/protected";
 
-  const backHref =
-    getBackHref(pathname);
+  const backHref = getBackHref(pathname);
 
   const isOperationalInput =
-    pathname.startsWith(
-      "/protected/closing/"
-    ) ||
-    pathname.startsWith(
-      "/protected/operations/"
-    ) ||
-    pathname ===
-      "/protected/audit";
+    pathname.startsWith("/protected/closing/") ||
+    pathname.startsWith("/protected/operations/") ||
+    pathname === "/protected/audit";
 
-  const openingActive =
-    pathname.startsWith(
-      "/protected/operations/"
-    );
+  const openingActive = pathname.startsWith("/protected/operations/");
 
-  const closingActive =
-    pathname.startsWith(
-      "/protected/closing/"
-    );
+  const closingActive = pathname.startsWith("/protected/closing/");
 
-  const reportsActive =
-    pathname.startsWith(
-      "/protected/reports"
-    );
+  const reportsActive = pathname.startsWith("/protected/reports");
 
   const auditInputActive =
-    pathname ===
-      "/protected/audit" ||
-    (
-      pathname.startsWith(
-        "/protected/audit/"
-      ) &&
-      !pathname.startsWith(
-        "/protected/audit/management"
-      )
-    );
+    pathname === "/protected/audit" ||
+    (pathname.startsWith("/protected/audit/") &&
+      !pathname.startsWith("/protected/audit/management"));
 
-  const auditManagementActive =
-    pathname.startsWith(
-      "/protected/audit/management"
-    );
+  const auditManagementActive = pathname.startsWith(
+    "/protected/audit/management",
+  );
 
   const moreActive =
     menuOpen ||
-    pathname.startsWith(
-      "/protected/admin"
-    ) ||
-    pathname.startsWith(
-      "/protected/team-structure"
-    ) ||
-    pathname.startsWith(
-      "/protected/select-outlet"
-    ) ||
-    pathname.startsWith(
-      "/protected/test-food"
-    );
+    pathname.startsWith("/protected/admin") ||
+    pathname.startsWith("/protected/team-structure") ||
+    pathname.startsWith("/protected/select-outlet") ||
+    pathname.startsWith("/protected/test-food");
 
   useEffect(() => {
     setMenuOpen(false);
@@ -267,33 +277,22 @@ export function ProtectedHeader({
       return;
     }
 
-    const previousOverflow =
-      document.body.style.overflow;
+    const previousOverflow = document.body.style.overflow;
 
-    document.body.style.overflow =
-      "hidden";
+    document.body.style.overflow = "hidden";
 
-    const onKeyDown = (
-      event: KeyboardEvent
-    ) => {
+    const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setMenuOpen(false);
       }
     };
 
-    window.addEventListener(
-      "keydown",
-      onKeyDown
-    );
+    window.addEventListener("keydown", onKeyDown);
 
     return () => {
-      document.body.style.overflow =
-        previousOverflow;
+      document.body.style.overflow = previousOverflow;
 
-      window.removeEventListener(
-        "keydown",
-        onKeyDown
-      );
+      window.removeEventListener("keydown", onKeyDown);
     };
   }, [menuOpen]);
 
@@ -312,17 +311,11 @@ export function ProtectedHeader({
                 href={backHref}
                 className="inline-flex h-9 shrink-0 items-center gap-1 rounded-xl border border-neutral-200 px-2.5 text-[11px] font-bold text-neutral-500 transition hover:border-neutral-300 hover:text-neutral-900"
               >
-                ←
-                <span className="hidden sm:inline">
-                  Back
-                </span>
+                ←<span className="hidden sm:inline">Back</span>
               </Link>
             )}
 
-            <Link
-              href="/protected"
-              className="min-w-0"
-            >
+            <Link href="/protected" className="min-w-0">
               <p className="truncate text-[9px] font-black uppercase tracking-[0.15em] text-red-700 sm:text-[10px]">
                 Resto Operational System
               </p>
@@ -375,9 +368,7 @@ export function ProtectedHeader({
 
             <button
               type="button"
-              onClick={() =>
-                setMenuOpen(true)
-              }
+              onClick={() => setMenuOpen(true)}
               className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${
                 moreActive
                   ? "border-red-100 bg-red-50 text-red-700"
@@ -399,8 +390,7 @@ export function ProtectedHeader({
         <nav
           className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200/80 bg-white/95 px-2 pt-1.5 shadow-[0_-8px_24px_rgba(0,0,0,0.04)] backdrop-blur md:hidden"
           style={{
-            paddingBottom:
-              "max(0.45rem, env(safe-area-inset-bottom))",
+            paddingBottom: "max(0.45rem, env(safe-area-inset-bottom))",
           }}
         >
           <div className="mx-auto flex max-w-md items-center gap-0.5">
@@ -438,37 +428,27 @@ export function ProtectedHeader({
               />
             )}
 
-            {showAuditInput &&
-              !showOpening &&
-              !showClosing && (
-                <MobileNavItem
-                  href="/protected/audit"
-                  label="Audit Outlet"
-                  kind="audit"
-                  active={
-                    auditInputActive
-                  }
-                />
-              )}
+            {showAuditInput && !showOpening && !showClosing && (
+              <MobileNavItem
+                href="/protected/audit"
+                label="Audit Outlet"
+                kind="audit"
+                active={auditInputActive}
+              />
+            )}
 
-            {showAuditManagement &&
-              !showOpening &&
-              !showClosing && (
-                <MobileNavItem
-                  href="/protected/audit/management"
-                  label="Audit Mgmt"
-                  kind="reports"
-                  active={
-                    auditManagementActive
-                  }
-                />
-              )}
+            {showAuditManagement && !showOpening && !showClosing && (
+              <MobileNavItem
+                href="/protected/audit/management"
+                label="Audit Mgmt"
+                kind="reports"
+                active={auditManagementActive}
+              />
+            )}
 
             <button
               type="button"
-              onClick={() =>
-                setMenuOpen(true)
-              }
+              onClick={() => setMenuOpen(true)}
               className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 transition ${
                 moreActive
                   ? "text-red-700"
@@ -477,16 +457,12 @@ export function ProtectedHeader({
             >
               <span
                 className={`flex h-7 w-9 items-center justify-center rounded-xl ${
-                  moreActive
-                    ? "bg-red-50"
-                    : ""
+                  moreActive ? "bg-red-50" : ""
                 }`}
               >
                 <NavGlyph kind="more" />
               </span>
-              <span className="text-[9px] font-bold">
-                More
-              </span>
+              <span className="text-[9px] font-bold">More</span>
             </button>
           </div>
         </nav>
@@ -498,17 +474,14 @@ export function ProtectedHeader({
           <button
             type="button"
             aria-label="Close menu"
-            onClick={() =>
-              setMenuOpen(false)
-            }
+            onClick={() => setMenuOpen(false)}
             className="absolute inset-0 bg-black/30 backdrop-blur-[1px]"
           />
 
           <section
             className="absolute inset-x-0 bottom-0 max-h-[86svh] overflow-y-auto rounded-t-[24px] border border-neutral-200 bg-white shadow-2xl md:inset-x-auto md:bottom-auto md:right-6 md:top-[76px] md:w-[360px] md:rounded-[20px]"
             style={{
-              paddingBottom:
-                "max(1rem, env(safe-area-inset-bottom))",
+              paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
             }}
           >
             <div className="flex justify-center pb-1 pt-2.5 md:hidden">
@@ -518,10 +491,7 @@ export function ProtectedHeader({
             <div className="border-b border-neutral-100 px-5 pb-4 pt-3 md:pt-5">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-red-50 text-xs font-black text-red-700">
-                  {displayName
-                    .trim()
-                    .slice(0, 2)
-                    .toUpperCase()}
+                  {displayName.trim().slice(0, 2).toUpperCase()}
                 </div>
 
                 <div className="min-w-0">
@@ -551,38 +521,29 @@ export function ProtectedHeader({
                 <MenuLink
                   href="/protected/test-food"
                   label="Test Food"
-                  onClick={() =>
-                    setMenuOpen(false)
-                  }
+                  onClick={() => setMenuOpen(false)}
                 />
               )}
 
               <MenuLink
                 href="/protected"
                 label="Dashboard"
-                onClick={() =>
-                  setMenuOpen(false)
-                }
+                onClick={() => setMenuOpen(false)}
               />
 
               {showTeamStructure && (
                 <MenuLink
                   href="/protected/team-structure"
                   label="Team Structure"
-                  onClick={() =>
-                    setMenuOpen(false)
-                  }
+                  onClick={() => setMenuOpen(false)}
                 />
               )}
-
 
               {showAdministration && (
                 <MenuLink
                   href="/protected/admin"
                   label="Administration"
-                  onClick={() =>
-                    setMenuOpen(false)
-                  }
+                  onClick={() => setMenuOpen(false)}
                 />
               )}
 
@@ -590,9 +551,7 @@ export function ProtectedHeader({
                 <MenuLink
                   href="/protected/audit"
                   label="Audit Outlet"
-                  onClick={() =>
-                    setMenuOpen(false)
-                  }
+                  onClick={() => setMenuOpen(false)}
                 />
               )}
 
@@ -600,18 +559,14 @@ export function ProtectedHeader({
                 <MenuLink
                   href="/protected/audit/management"
                   label="Management Audit Dashboard"
-                  onClick={() =>
-                    setMenuOpen(false)
-                  }
+                  onClick={() => setMenuOpen(false)}
                 />
               )}
 
               <MenuLink
                 href="/protected/select-outlet"
                 label="Change Outlet"
-                onClick={() =>
-                  setMenuOpen(false)
-                }
+                onClick={() => setMenuOpen(false)}
               />
 
               <button
@@ -642,9 +597,7 @@ export function ProtectedHeader({
                   <span className="text-neutral-300">·</span>
                   <span>{appVersion}</span>
                   <span className="text-neutral-300">·</span>
-                  <span className="font-mono text-[10px]">
-                    {buildSha}
-                  </span>
+                  <span className="font-mono text-[10px]">{buildSha}</span>
                 </div>
               </div>
 
