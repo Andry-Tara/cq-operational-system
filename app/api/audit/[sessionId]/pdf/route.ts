@@ -42,6 +42,159 @@ function one<T>(
         null;
 }
 
+
+function escapeHtml(
+  value: string,
+) {
+  const replacements:
+    Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "\"": "&quot;",
+      "'": "&#39;",
+    };
+
+  return value.replace(
+    /[&<>"']/g,
+    (
+      char,
+    ) =>
+      replacements[char] ??
+      char,
+  );
+}
+
+
+async function openStoredAuditPdf({
+  admin,
+  storagePath,
+  fileName,
+  download,
+}: {
+  admin: any;
+  storagePath: string;
+  fileName: string;
+  download: boolean;
+}) {
+  const {
+    data,
+    error,
+  } =
+    await admin.storage
+      .from(
+        "operational-reports",
+      )
+      .createSignedUrl(
+        storagePath,
+        300,
+        download
+          ? {
+              download:
+                fileName,
+            }
+          : undefined,
+      );
+
+  if (
+    error ||
+    !data?.signedUrl
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          error?.message ||
+          "Unable to open audit PDF.",
+      },
+      {
+        status: 500,
+      },
+    );
+  }
+
+  if (download) {
+    return NextResponse.redirect(
+      data.signedUrl,
+      302,
+    );
+  }
+
+  const safeTitle =
+    escapeHtml(fileName);
+
+  const safeUrl =
+    escapeHtml(data.signedUrl);
+
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${safeTitle}</title>
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: #111827;
+      overflow: hidden;
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #ffffff;
+    }
+
+    .fallback {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: #ffffff;
+      font-family: Arial, sans-serif;
+    }
+
+    .fallback a {
+      color: #ffffff;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <iframe
+    src="${safeUrl}"
+    title="${safeTitle}"
+    loading="eager"
+  ></iframe>
+
+  <noscript>
+    <div class="fallback">
+      <a href="${safeUrl}" target="_blank" rel="noreferrer">
+        Open PDF
+      </a>
+    </div>
+  </noscript>
+</body>
+</html>`;
+
+  return new NextResponse(
+    html,
+    {
+      status: 200,
+      headers: {
+        "Content-Type":
+          "text/html; charset=utf-8",
+        "Cache-Control":
+          "private, no-store, max-age=0",
+      },
+    },
+  );
+}
+
+
 export async function GET(
   request: NextRequest,
   {
@@ -155,7 +308,8 @@ export async function GET(
           started_at,
           submitted_at,
           score,
-          scoring_snapshot
+          scoring_snapshot,
+            pdf_storage_path
         `)
         .eq(
           "id",
@@ -232,6 +386,55 @@ export async function GET(
           status: 409,
         },
       );
+    }
+
+    const safeAuditNumber =
+      String(
+        session.audit_number ||
+          "audit-report",
+      )
+        .replace(
+          /[^a-zA-Z0-9_-]/g,
+          "-",
+        )
+        .replace(
+          /-+/g,
+          "-",
+        );
+
+    const fileName =
+      `${safeAuditNumber}.pdf`;
+
+    const download =
+      request.nextUrl.searchParams.get(
+        "download",
+      ) === "1";
+
+    const persist =
+      request.nextUrl.searchParams.get(
+        "persist",
+      ) === "1";
+
+    const persistOnly =
+      request.nextUrl.searchParams.get(
+        "persistOnly",
+      ) === "1";
+
+    let currentPdfStoragePath =
+      session.pdf_storage_path ??
+      null;
+
+    if (
+      currentPdfStoragePath &&
+      !persist
+    ) {
+      return openStoredAuditPdf({
+        admin,
+        storagePath:
+          currentPdfStoragePath,
+        fileName,
+        download,
+      });
     }
 
     const [
@@ -496,45 +699,24 @@ export async function GET(
         findings,
       });
 
-    const safeAuditNumber =
-      String(
-        session.audit_number ||
-          "audit-report",
-      )
-        .replace(
-          /[^a-zA-Z0-9_-]/g,
-          "-",
-        )
-        .replace(
-          /-+/g,
-          "-",
-        );
-
-    // ========================================================
-    // OPTIONAL PRIVATE PDF PERSISTENCE
-    //
-    // Used by Secure Share.
-    // The file remains private inside operational-reports.
-    // ========================================================
-
-    const persist =
-      request.nextUrl.searchParams.get(
-        "persist",
-      ) === "1";
-
-    if (persist) {
+    if (
+      !currentPdfStoragePath ||
+      persist
+    ) {
       const pdfStoragePath =
+        currentPdfStoragePath ??
         [
           "audit",
           session.organization_id,
           session.outlet_id,
           session.audit_date,
           session.id,
-          `${safeAuditNumber}.pdf`,
+          fileName,
         ].join("/");
 
       const {
-        error: uploadError,
+        error:
+          uploadError,
       } =
         await admin.storage
           .from(
@@ -546,92 +728,116 @@ export async function GET(
             {
               contentType:
                 "application/pdf",
-
               upsert: true,
-
               cacheControl:
                 "0",
             },
           );
 
       if (uploadError) {
-        throw new Error(
-          `Unable to persist audit PDF: ${uploadError.message}`,
-        );
-      }
-
-      const {
-        error: updateError,
-      } =
-        await admin
-          .from(
-            "audit_sessions",
-          )
-          .update({
-            pdf_storage_path:
-              pdfStoragePath,
-
-            updated_at:
-              new Date()
-                .toISOString(),
-          })
-          .eq(
-            "id",
-            session.id,
+        if (persist) {
+          throw new Error(
+            `Unable to persist audit PDF: ${uploadError.message}`,
           );
+        }
 
-      if (updateError) {
-        throw updateError;
-      }
+        console.error(
+          "Audit PDF cache upload error:",
+          uploadError,
+        );
+      } else {
+        currentPdfStoragePath =
+          pdfStoragePath;
 
-      const persistOnly =
-        request.nextUrl.searchParams.get(
-          "persistOnly",
-        ) === "1";
+        const {
+          error:
+            updateError,
+        } =
+          await admin
+            .from(
+              "audit_sessions",
+            )
+            .update({
+              pdf_storage_path:
+                pdfStoragePath,
+              updated_at:
+                new Date()
+                  .toISOString(),
+            })
+            .eq(
+              "id",
+              session.id,
+            );
 
-      if (persistOnly) {
-        return NextResponse.json({
-          success: true,
+        if (updateError) {
+          if (persist) {
+            throw updateError;
+          }
 
-          pdfStoragePath,
-        });
+          console.error(
+            "Audit PDF cache update error:",
+            updateError,
+          );
+        }
       }
     }
 
-    const download =
-      request.nextUrl.searchParams.get(
-        "download",
-      ) === "1";
+    if (persistOnly) {
+      if (!currentPdfStoragePath) {
+        return NextResponse.json(
+          {
+            error:
+              "Unable to persist audit PDF.",
+          },
+          {
+            status: 500,
+          },
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        pdfStoragePath:
+          currentPdfStoragePath,
+      });
+    }
+
+    if (currentPdfStoragePath) {
+      return openStoredAuditPdf({
+        admin,
+        storagePath:
+          currentPdfStoragePath,
+        fileName,
+        download,
+      });
+    }
 
     return new NextResponse(
       pdfBytes as BodyInit,
       {
         status: 200,
-
         headers: {
           "Content-Type":
             "application/pdf",
-
           "Content-Disposition":
             `${
               download
                 ? "attachment"
                 : "inline"
-            }; filename="${safeAuditNumber}.pdf"`,
-
+            }; filename="${fileName}"`,
           "Content-Length":
             String(
               pdfBytes.byteLength,
             ),
-
           "Cache-Control":
             "private, no-store, max-age=0",
-
           "X-Content-Type-Options":
             "nosniff",
         },
       },
     );
+
+
   } catch (
     error: any
   ) {
