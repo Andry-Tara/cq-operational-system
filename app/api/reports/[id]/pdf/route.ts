@@ -31,6 +31,58 @@ function relationOne(
 }
 
 
+async function redirectToStoredReportPdf({
+  admin,
+  storagePath,
+}: {
+  admin: any;
+  storagePath: string;
+}) {
+  const {
+    data,
+    error,
+  } =
+    await admin
+      .storage
+      .from(
+        "operational-reports"
+      )
+      .createSignedUrl(
+        storagePath,
+        120
+      );
+
+  if (
+    error ||
+    !data?.signedUrl
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          error?.message ||
+          "Unable to open PDF.",
+      },
+      {
+        status: 500,
+      }
+    );
+  }
+
+  const response =
+    NextResponse.redirect(
+      data.signedUrl,
+      302
+    );
+
+  response.headers.set(
+    "Cache-Control",
+    "private, no-store, max-age=0"
+  );
+
+  return response;
+}
+
+
 export async function GET(
   request: NextRequest,
   context: {
@@ -399,78 +451,14 @@ const reportAccessDenied =
             scopedReport
               .pdf_storage_path
           ) {
-            const {
-              data:
-                scopedPdfBlob,
-              error:
-                scopedDownloadError,
-            } =
-              await admin.storage
-                .from(
-                  "operational-reports"
-                )
-                .download(
-                  scopedReport
-                    .pdf_storage_path
-                );
-
-            if (
-              scopedDownloadError ||
-              !scopedPdfBlob
-            ) {
-              return NextResponse.json(
-                {
-                  error:
-                    scopedDownloadError
-                      ?.message ||
-                    "Unable to open PDF.",
-                },
-                {
-                  status: 500,
-                }
-              );
-            }
-
-            const safeNumber =
-              String(
+            return redirectToStoredReportPdf({
+              admin,
+              storagePath:
                 scopedReport
-                  .report_number ||
-                "operational-report"
-              )
-                .replace(
-                  /[^a-zA-Z0-9_-]/g,
-                  "-"
-                )
-                .replace(
-                  /-+/g,
-                  "-"
-                );
-
-            const buffer =
-              await scopedPdfBlob
-                .arrayBuffer();
-
-            return new NextResponse(
-              buffer,
-              {
-                status: 200,
-                headers: {
-                  "Content-Type":
-                    "application/pdf",
-                  "Content-Disposition":
-                    `inline; filename="${safeNumber}.pdf"`,
-                  "Content-Length":
-                    String(
-                      buffer.byteLength
-                    ),
-                  "Cache-Control":
-                    "private, no-store, max-age=0",
-                  "X-Content-Type-Options":
-                    "nosniff",
-                },
-              }
-            );
+                  .pdf_storage_path,
+            });
           }
+
         }
       }
 
@@ -822,103 +810,18 @@ const reportAccessDenied =
 
 
     // ========================================================
-    // DOWNLOAD PRIVATE PDF
+    // REDIRECT TO PRIVATE PDF SIGNED URL
     //
-    // Browser never receives Supabase signed URL.
+    // Keep permission checks in this route, but do not proxy the
+    // whole PDF through the application server.
     // ========================================================
 
-    const {
-      data:
-        pdfBlob,
-      error:
-        downloadError,
-    } =
-      await reportClient
-        .storage
-        .from(
-          "operational-reports"
-        )
-        .download(
-          report.pdf_storage_path
-        );
+    return redirectToStoredReportPdf({
+      admin,
+      storagePath:
+        report.pdf_storage_path,
+    });
 
-
-    if (
-      downloadError ||
-      !pdfBlob
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            downloadError?.message ||
-            "Unable to open PDF.",
-        },
-        {
-          status:
-            500,
-        }
-      );
-    }
-
-
-    // ========================================================
-    // SAFE FILENAME
-    // ========================================================
-
-    const safeReportNumber =
-      String(
-        report.report_number ||
-        "operational-report"
-      )
-        .replace(
-          /[^a-zA-Z0-9_-]/g,
-          "-"
-        )
-        .replace(
-          /-+/g,
-          "-"
-        );
-
-
-    const filename =
-      `${safeReportNumber}.pdf`;
-
-
-    // ========================================================
-    // STREAM THROUGH APPLICATION DOMAIN
-    // ========================================================
-
-    const arrayBuffer =
-      await pdfBlob
-        .arrayBuffer();
-
-
-    return new NextResponse(
-      arrayBuffer,
-      {
-        status:
-          200,
-
-        headers: {
-          "Content-Type":
-            "application/pdf",
-
-          "Content-Disposition":
-            `inline; filename="${filename}"`,
-
-          "Content-Length":
-            String(
-              arrayBuffer.byteLength
-            ),
-
-          "Cache-Control":
-            "private, no-store, max-age=0",
-
-          "X-Content-Type-Options":
-            "nosniff",
-        },
-      }
-    );
 
   } catch (
     error: any
