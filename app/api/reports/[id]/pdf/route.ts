@@ -31,12 +31,29 @@ function relationOne(
 }
 
 
-async function streamStoredReportPdf({
-  request,
+function escapeHtml(
+  value: string
+) {
+  return value.replace(
+    /[&<>"']/g,
+    (
+      char
+    ) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;",
+      })[char] || char
+  );
+}
+
+
+async function renderStoredReportPdfViewer({
   admin,
   storagePath,
 }: {
-  request: NextRequest;
   admin: any;
   storagePath: string;
 }) {
@@ -51,7 +68,7 @@ async function streamStoredReportPdf({
       )
       .createSignedUrl(
         storagePath,
-        120
+        300
       );
 
   if (
@@ -70,85 +87,88 @@ async function streamStoredReportPdf({
     );
   }
 
-  const range =
-    request.headers.get("range");
-
-  const upstream =
-    await fetch(
-      data.signedUrl,
-      {
-        cache: "no-store",
-        headers: range
-          ? {
-              Range: range,
-            }
-          : undefined,
-      }
-    );
-
-  if (
-    !upstream.ok &&
-    upstream.status !== 206
-  ) {
-    return NextResponse.json(
-      {
-        error:
-          "Unable to open PDF.",
-      },
-      {
-        status:
-          upstream.status || 502,
-      }
-    );
-  }
-
-  const headers =
-    new Headers();
-
-  headers.set(
-    "Content-Type",
-    upstream.headers.get("content-type") ||
-      "application/pdf"
-  );
-
-  headers.set(
-    "Content-Disposition",
-    `inline; filename="${storagePath
+  const fileName =
+    storagePath
       .split("/")
       .pop()
-      ?.replace(/[^a-zA-Z0-9._-]/g, "_") || "report.pdf"}"`
-  );
+      ?.replace(
+        /[^a-zA-Z0-9._-]/g,
+        "_"
+      ) || "report.pdf";
 
-  headers.set(
-    "Cache-Control",
-    "private, no-store, max-age=0"
-  );
+  const safeTitle =
+    escapeHtml(fileName);
 
-  for (
-    const key of [
-      "accept-ranges",
-      "content-length",
-      "content-range",
-      "etag",
-      "last-modified",
-    ]
-  ) {
-    const value =
-      upstream.headers.get(key);
+  const safeUrl =
+    escapeHtml(data.signedUrl);
 
-    if (value) {
-      headers.set(
-        key,
-        value
-      );
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${safeTitle}</title>
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: #111827;
+      overflow: hidden;
     }
-  }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #ffffff;
+    }
+
+    .fallback {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: #ffffff;
+      font-family: Arial, sans-serif;
+      pointer-events: none;
+    }
+
+    .fallback a {
+      color: #ffffff;
+      font-weight: 700;
+      pointer-events: auto;
+    }
+  </style>
+</head>
+<body>
+  <iframe
+    src="${safeUrl}"
+    title="${safeTitle}"
+    loading="eager"
+  ></iframe>
+
+  <noscript>
+    <div class="fallback">
+      <a href="${safeUrl}" target="_blank" rel="noreferrer">
+        Open PDF
+      </a>
+    </div>
+  </noscript>
+</body>
+</html>`;
 
   return new NextResponse(
-    upstream.body,
+    html,
     {
-      status: upstream.status,
-      headers,
+      status: 200,
+      headers: {
+        "Content-Type":
+          "text/html; charset=utf-8",
+        "Cache-Control":
+          "private, no-store, max-age=0",
+      },
     }
   );
 }
@@ -462,8 +482,7 @@ const reportAccessDenied =
             scopedReport
               .pdf_storage_path
           ) {
-            return streamStoredReportPdf({
-              request,
+            return renderStoredReportPdfViewer({
               admin,
               storagePath:
                 scopedReport
@@ -804,14 +823,13 @@ const reportAccessDenied =
 
 
     // ========================================================
-    // STREAM PRIVATE PDF THROUGH APP ROUTE
+    // RENDER APP-DOMAIN PDF VIEWER
     //
     // Keep permission checks in this route and keep the browser URL
     // on the application domain while streaming the PDF body.
     // ========================================================
 
-    return streamStoredReportPdf({
-      request,
+    return renderStoredReportPdfViewer({
       admin,
       storagePath:
         report.pdf_storage_path,
