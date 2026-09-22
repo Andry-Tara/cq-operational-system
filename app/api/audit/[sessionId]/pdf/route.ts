@@ -403,7 +403,7 @@ export async function GET(
         );
 
     const fileName =
-      `${safeAuditNumber}.pdf`;
+      `${safeAuditNumber}-premium-white-v5.pdf`;
 
     const download =
       request.nextUrl.searchParams.get(
@@ -420,9 +420,22 @@ export async function GET(
         "persistOnly",
       ) === "1";
 
+    const expectedCacheSuffix =
+      `/${fileName}`;
+
+    const storedPdfPath =
+      typeof session.pdf_storage_path ===
+        "string" &&
+      session.pdf_storage_path.endsWith(
+        expectedCacheSuffix,
+      )
+        ? session.pdf_storage_path
+        : null;
+
     let currentPdfStoragePath =
-      session.pdf_storage_path ??
-      null;
+      persist
+        ? null
+        : storedPdfPath;
 
     if (
       currentPdfStoragePath &&
@@ -704,15 +717,24 @@ export async function GET(
       persist
     ) {
       const pdfStoragePath =
-        currentPdfStoragePath ??
-        [
-          "audit",
-          session.organization_id,
-          session.outlet_id,
-          session.audit_date,
-          session.id,
-          fileName,
-        ].join("/");
+        persist
+          ? [
+              "audit",
+              session.organization_id,
+              session.outlet_id,
+              session.audit_date,
+              session.id,
+              fileName,
+            ].join("/")
+          : currentPdfStoragePath ??
+            [
+              "audit",
+              session.organization_id,
+              session.outlet_id,
+              session.audit_date,
+              session.id,
+              fileName,
+            ].join("/");
 
       const {
         error:

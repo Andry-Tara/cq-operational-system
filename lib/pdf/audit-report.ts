@@ -140,6 +140,11 @@ const COLORS = {
 
   amber: rgb(0.68, 0.40, 0.04),
   amberSoft: rgb(1, 0.98, 0.90),
+  navy: rgb(0.04, 0.07, 0.13),
+  navySoft: rgb(0.08, 0.12, 0.20),
+  gold: rgb(0.78, 0.58, 0.22),
+  goldSoft: rgb(0.90, 0.82, 0.62),
+  paper: rgb(0.985, 0.975, 0.95),
 
   text: rgb(0.08, 0.08, 0.09),
   muted: rgb(0.48, 0.49, 0.52),
@@ -363,11 +368,12 @@ function riskStyle(
 
   return {
     text:
-      COLORS.text,
+      COLORS.navy,
     fill:
-      COLORS.soft,
+      COLORS.paper,
   };
 }
+
 
 async function embedPhoto(
   pdf: PDFDocument,
@@ -544,7 +550,14 @@ export async function buildAuditReportPdf(
     value: string,
   ) {
     const height =
-      54;
+      62;
+    const upperTitle =
+      pdfSafe(
+        title,
+      ).toUpperCase();
+    const isCurrent =
+      upperTitle ===
+      "CURRENT";
 
     page.drawRectangle({
       x,
@@ -553,23 +566,42 @@ export async function buildAuditReportPdf(
       width,
       height,
       color:
-        COLORS.soft,
+        isCurrent
+          ? COLORS.navy
+          : COLORS.paper,
       borderColor:
-        COLORS.line,
-      borderWidth: 1,
+        isCurrent
+          ? COLORS.gold
+          : COLORS.goldSoft,
+      borderWidth:
+        isCurrent
+          ? 1.2
+          : 0.8,
+    });
+
+    page.drawRectangle({
+      x,
+      y:
+        yy - 6,
+      width,
+      height: 5,
+      color:
+        isCurrent
+          ? COLORS.gold
+          : COLORS.goldSoft,
     });
 
     page.drawText(
-      pdfSafe(
-        title,
-      ).toUpperCase(),
+      upperTitle,
       {
         x: x + 11,
-        y: yy - 17,
+        y: yy - 21,
         size: 7,
         font: bold,
         color:
-          COLORS.muted,
+          isCurrent
+            ? COLORS.gold
+            : COLORS.muted,
       },
     );
 
@@ -579,25 +611,47 @@ export async function buildAuditReportPdf(
       ),
       {
         x: x + 11,
-        y: yy - 39,
-        size: 15,
+        y: yy - 45,
+        size:
+          isCurrent
+            ? 16
+            : 14,
         font: bold,
         color:
-          COLORS.text,
+          isCurrent
+            ? COLORS.white
+            : COLORS.text,
       },
     );
   }
 
+
   // ==========================================================
-  // HEADER
+  // CLEAN WHITE PREMIUM COVER HEADER
   // ==========================================================
+
+  page.drawRectangle({
+    x: 0,
+    y: 0,
+    width:
+      PAGE.width,
+    height:
+      PAGE.height,
+    color:
+      COLORS.white,
+  });
+
+  const headerTop =
+    PAGE.height -
+    42;
 
   page.drawText(
     brand.systemName,
     {
       x:
         PAGE.marginX,
-      y,
+      y:
+        headerTop,
       size: 8,
       font: bold,
       color:
@@ -609,11 +663,9 @@ export async function buildAuditReportPdf(
     brandLogo
   ) {
     const logoMaxWidth =
-      96;
-
+      126;
     const logoMaxHeight =
-      46;
-
+      58;
     const logoSize =
       contain(
         brandLogo.width,
@@ -629,29 +681,25 @@ export async function buildAuditReportPdf(
           PAGE.width -
           PAGE.marginX -
           logoSize.width,
-
         y:
-          y -
-          logoSize.height +
-          9,
-
+          PAGE.height -
+          74,
         width:
           logoSize.width,
-
         height:
           logoSize.height,
       },
     );
   }
 
-  y -= 24;
-
   page.drawText(
     "OUTLET AUDIT REPORT",
     {
       x:
         PAGE.marginX,
-      y,
+      y:
+        PAGE.height -
+        75,
       size: 8,
       font: bold,
       color:
@@ -659,24 +707,33 @@ export async function buildAuditReportPdf(
     },
   );
 
-  y -= 28;
-
-  page.drawText(
-    pdfSafe(
+  const outletLines =
+    wrapText(
       input.outletName,
+      bold,
+      28,
+      360,
+    );
+
+  drawLines(
+    page,
+    outletLines.slice(
+      0,
+      2,
     ),
     {
       x:
         PAGE.marginX,
-      y,
-      size: 25,
+      y:
+        PAGE.height -
+        111,
       font: bold,
+      size: 28,
       color:
         COLORS.text,
+      lineHeight: 31,
     },
   );
-
-  y -= 23;
 
   page.drawText(
     pdfSafe(
@@ -685,38 +742,44 @@ export async function buildAuditReportPdf(
     {
       x:
         PAGE.marginX,
-      y,
-      size: 10,
+      y:
+        PAGE.height -
+        150,
+      size: 9,
       font: mono,
       color:
         COLORS.muted,
     },
   );
 
-  y -= 25;
-
   page.drawLine({
     start: {
       x:
         PAGE.marginX,
-      y,
+      y:
+        PAGE.height -
+        182,
     },
     end: {
       x:
         PAGE.width -
         PAGE.marginX,
-      y,
+      y:
+        PAGE.height -
+        182,
     },
     thickness: 1,
     color:
-      COLORS.line,
+      COLORS.goldSoft,
   });
-
-  y -= 27;
 
   const infoWidth =
     contentWidth / 4;
-
+  const infoTop =
+    PAGE.height -
+    214;
+  const infoHeight =
+    52;
   const infos = [
     [
       "AUDIT DATE",
@@ -752,10 +815,37 @@ export async function buildAuditReportPdf(
         infoWidth *
           index;
 
-      label(
-        title,
+      page.drawRectangle({
         x,
-        y,
+        y:
+          infoTop -
+          infoHeight,
+        width:
+          infoWidth -
+          7,
+        height:
+          infoHeight,
+        color:
+          COLORS.paper,
+        borderColor:
+          COLORS.goldSoft,
+        borderWidth: 0.7,
+      });
+
+      page.drawText(
+        pdfSafe(
+          title,
+        ).toUpperCase(),
+        {
+          x: x + 10,
+          y:
+            infoTop -
+            17,
+          size: 7,
+          font: bold,
+          color:
+            COLORS.muted,
+        },
       );
 
       const lines =
@@ -764,7 +854,7 @@ export async function buildAuditReportPdf(
           bold,
           9,
           infoWidth -
-            12,
+            20,
         );
 
       drawLines(
@@ -774,19 +864,24 @@ export async function buildAuditReportPdf(
           2,
         ),
         {
-          x,
-          y: y - 15,
+          x: x + 10,
+          y:
+            infoTop -
+            35,
           font: bold,
           size: 9,
           color:
             COLORS.text,
-          lineHeight: 11,
+          lineHeight: 10,
         },
       );
     },
   );
 
-  y -= 54;
+  y =
+    infoTop -
+    infoHeight -
+    34;
 
   // ==========================================================
   // SCORE SUMMARY
@@ -1154,9 +1249,9 @@ export async function buildAuditReportPdf(
         contentWidth,
       height: 28,
       color:
-        COLORS.soft,
+        COLORS.navy,
       borderColor:
-        COLORS.line,
+        COLORS.goldSoft,
       borderWidth: 1,
     });
 
@@ -1172,7 +1267,7 @@ export async function buildAuditReportPdf(
         size: 7,
         font: bold,
         color:
-          COLORS.muted,
+          COLORS.white,
       },
     );
 
@@ -1424,7 +1519,7 @@ export async function buildAuditReportPdf(
             fitted.height +
             2,
           borderColor:
-            COLORS.line,
+            COLORS.goldSoft,
           borderWidth: 1,
         });
 
@@ -1797,7 +1892,7 @@ export async function buildAuditReportPdf(
         thickness:
           0.5,
         color:
-          COLORS.line,
+          COLORS.goldSoft,
       });
 
       pdfPage.drawText(
