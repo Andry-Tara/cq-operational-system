@@ -50,6 +50,14 @@ const menus = [
     status:
       "MANAGE",
   },
+  {
+    href: "/protected/admin/facilities",
+    icon: "OF",
+    title: "Outlet Facilities",
+    description:
+      "Configure facility availability for each outlet.",
+    status: "MANAGE",
+  },
 ];
 
 export default async function AdminPage() {
