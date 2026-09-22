@@ -7,23 +7,56 @@ import {
   updateSession,
 } from "@/lib/supabase/proxy";
 
+function isPublicAuthRoute(
+  pathname: string
+) {
+  return (
+    pathname === "/auth/login" ||
+    pathname.startsWith(
+      "/auth/login/"
+    ) ||
+    pathname ===
+      "/auth/forgot-password" ||
+    pathname.startsWith(
+      "/auth/forgot-password/"
+    ) ||
+    pathname ===
+      "/auth/sign-up" ||
+    pathname.startsWith(
+      "/auth/sign-up/"
+    ) ||
+    pathname ===
+      "/auth/sign-up-success" ||
+    pathname.startsWith(
+      "/auth/sign-up-success/"
+    ) ||
+    pathname ===
+      "/auth/error" ||
+    pathname.startsWith(
+      "/auth/error/"
+    ) ||
+    pathname ===
+      "/auth/confirm" ||
+    pathname.startsWith(
+      "/auth/confirm/"
+    ) ||
+    pathname === "/login" ||
+    pathname.startsWith(
+      "/login/"
+    )
+  );
+}
+
 export async function proxy(
   request: NextRequest
 ) {
   const pathname =
     request.nextUrl.pathname;
 
-  // ==========================================================
-  // PUBLIC REPORT ROUTES
-  //
-  // These routes perform their own server-side authorization:
-  //
-  // /r/p/... = existing Production public report
-  // /r/a/... = secure Outlet Audit share token
-  //
-  // Do not require a Supabase login session here.
-  // ==========================================================
-
+  /*
+   * Public report routes perform
+   * their own authorization.
+   */
   if (
     pathname.startsWith(
       "/r/p/"
@@ -35,20 +68,41 @@ export async function proxy(
     return NextResponse.next();
   }
 
-  return await updateSession(
+  /*
+   * CRITICAL:
+   *
+   * Login / sign-up / recovery entry routes
+   * must NOT try to refresh an already broken
+   * Supabase session.
+   *
+   * Otherwise:
+   *
+   * invalid refresh token
+   *   -> /auth/login
+   *   -> proxy getClaims()
+   *   -> refresh again
+   *   -> /auth/login
+   *   -> repeated auth traffic / 429
+   *
+   * /auth/update-password intentionally remains
+   * behind updateSession because a password recovery
+   * session may need its auth cookies refreshed.
+   */
+  if (
+    isPublicAuthRoute(
+      pathname
+    )
+  ) {
+    return NextResponse.next();
+  }
+
+  return updateSession(
     request
   );
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static
-     * - _next/image
-     * - favicon.ico
-     * - static image files
-     */
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
