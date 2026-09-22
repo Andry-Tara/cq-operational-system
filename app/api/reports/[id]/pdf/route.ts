@@ -12,7 +12,7 @@ import {
 } from "@/lib/supabase/admin";
 
 import {
-  checkPermissionApi,
+  getAccessContext,
 } from "@/lib/admin/require-admin";
 
 
@@ -104,71 +104,22 @@ export async function GET(
 
 
     // ========================================================
-    // AUTH
+    // AUTH + ACCESS CONTEXT
     // ========================================================
-
-    const {
-      data: {
-        user,
-      },
-    } =
-      await supabase.auth.getUser();
-
-
-    if (!user) {
-      return NextResponse.redirect(
-        new URL(
-          "/auth/login",
-          request.url
-        )
-      );
-    }
-
-    const viewAccess =
-      await checkPermissionApi(
-        "reports.view"
-      );
-
-    const hasReportsView =
-      viewAccess.ok;
-
-
-
-    const allOutletAccess =
-      await checkPermissionApi(
-        "reports.all_outlets"
-      );
-
-    const hasAllOutlets =
-      allOutletAccess.ok;
 
     const admin =
       createAdminClient();
 
-
-
     const {
-      data:
+      user,
+      profile:
         requesterProfile,
-      error:
-        requesterProfileError,
+      isAdmin,
+      permissionCodes,
     } =
-      await admin
-        .from("profiles")
-        .select(`
-          id,
-          organization_id,
-          is_active
-        `)
-        .eq(
-          "id",
-          user.id
-        )
-        .maybeSingle();
-
+      await getAccessContext();
 
     if (
-      requesterProfileError ||
       !requesterProfile ||
       !requesterProfile.organization_id ||
       requesterProfile.is_active === false
@@ -183,6 +134,19 @@ export async function GET(
         }
       );
     }
+
+    const hasReportsView =
+      isAdmin ||
+      permissionCodes.includes(
+        "reports.view"
+      );
+
+    const hasAllOutlets =
+      isAdmin ||
+      permissionCodes.includes(
+        "reports.all_outlets"
+      );
+
 
     // Scoped users continue through normal RLS.
     // BOD / ORG_ADMIN organization-wide readers use trusted
@@ -213,7 +177,10 @@ export async function GET(
           outlet_id,
           form_id,
           report_number,
-          pdf_storage_path
+          pdf_storage_path,
+          forms (
+            code
+          )
         `)
         .eq(
           "id",
@@ -293,9 +260,6 @@ const reportAccessDenied =
       // parent PDF can contain multiple areas / PIC sections.
       // ======================================================
 
-      const admin =
-        createAdminClient();
-
       const {
         data:
           scopedReport,
@@ -309,7 +273,10 @@ const reportAccessDenied =
             outlet_id,
             form_id,
             report_number,
-            pdf_storage_path
+            pdf_storage_path,
+            forms (
+              code
+            )
           `)
           .eq(
             "id",
@@ -338,37 +305,10 @@ const reportAccessDenied =
       if (
         scopedReport
       ) {
-        const {
-          data:
-            scopedForm,
-          error:
-            scopedFormError,
-        } =
-          await admin
-            .from("forms")
-            .select(`
-              id,
-              code
-            `)
-            .eq(
-              "id",
-              scopedReport.form_id
-            )
-            .maybeSingle();
-
-        if (
-          scopedFormError
-        ) {
-          return NextResponse.json(
-            {
-              error:
-                scopedFormError.message,
-            },
-            {
-              status: 500,
-            }
+        const scopedForm =
+          relationOne(
+            scopedReport.forms
           );
-        }
 
         const scopedFormCode =
           String(
@@ -478,33 +418,15 @@ const reportAccessDenied =
     // FORM
     // ========================================================
 
-    const {
-      data:
-        form,
-      error:
-        formError,
-    } =
-      await reportClient
-        .from("forms")
-        .select(`
-          id,
-          code
-        `)
-        .eq(
-          "id",
-          report.form_id
-        )
-        .maybeSingle();
+    const form =
+      relationOne(
+        report.forms
+      );
 
-
-    if (
-      formError ||
-      !form
-    ) {
+    if (!form) {
       return NextResponse.json(
         {
           error:
-            formError?.message ||
             "Form report tidak ditemukan.",
         },
         {
