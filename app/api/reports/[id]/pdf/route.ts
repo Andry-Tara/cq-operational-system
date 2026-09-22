@@ -31,10 +31,12 @@ function relationOne(
 }
 
 
-async function redirectToStoredReportPdf({
+async function streamStoredReportPdf({
+  request,
   admin,
   storagePath,
 }: {
+  request: NextRequest;
   admin: any;
   storagePath: string;
 }) {
@@ -68,18 +70,87 @@ async function redirectToStoredReportPdf({
     );
   }
 
-  const response =
-    NextResponse.redirect(
+  const range =
+    request.headers.get("range");
+
+  const upstream =
+    await fetch(
       data.signedUrl,
-      302
+      {
+        cache: "no-store",
+        headers: range
+          ? {
+              Range: range,
+            }
+          : undefined,
+      }
     );
 
-  response.headers.set(
+  if (
+    !upstream.ok &&
+    upstream.status !== 206
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "Unable to open PDF.",
+      },
+      {
+        status:
+          upstream.status || 502,
+      }
+    );
+  }
+
+  const headers =
+    new Headers();
+
+  headers.set(
+    "Content-Type",
+    upstream.headers.get("content-type") ||
+      "application/pdf"
+  );
+
+  headers.set(
+    "Content-Disposition",
+    `inline; filename="${storagePath
+      .split("/")
+      .pop()
+      ?.replace(/[^a-zA-Z0-9._-]/g, "_") || "report.pdf"}"`
+  );
+
+  headers.set(
     "Cache-Control",
     "private, no-store, max-age=0"
   );
 
-  return response;
+  for (
+    const key of [
+      "accept-ranges",
+      "content-length",
+      "content-range",
+      "etag",
+      "last-modified",
+    ]
+  ) {
+    const value =
+      upstream.headers.get(key);
+
+    if (value) {
+      headers.set(
+        key,
+        value
+      );
+    }
+  }
+
+  return new NextResponse(
+    upstream.body,
+    {
+      status: upstream.status,
+      headers,
+    }
+  );
 }
 
 
@@ -391,7 +462,8 @@ const reportAccessDenied =
             scopedReport
               .pdf_storage_path
           ) {
-            return redirectToStoredReportPdf({
+            return streamStoredReportPdf({
+              request,
               admin,
               storagePath:
                 scopedReport
@@ -732,13 +804,14 @@ const reportAccessDenied =
 
 
     // ========================================================
-    // REDIRECT TO PRIVATE PDF SIGNED URL
+    // STREAM PRIVATE PDF THROUGH APP ROUTE
     //
-    // Keep permission checks in this route, but do not proxy the
-    // whole PDF through the application server.
+    // Keep permission checks in this route and keep the browser URL
+    // on the application domain while streaming the PDF body.
     // ========================================================
 
-    return redirectToStoredReportPdf({
+    return streamStoredReportPdf({
+      request,
       admin,
       storagePath:
         report.pdf_storage_path,
