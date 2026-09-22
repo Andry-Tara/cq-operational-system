@@ -1540,22 +1540,7 @@ export default async function ProtectedPage({
   if (
     useFastSplitDashboard
   ) {
-    const __fastPerfStart =
-      performance.now();
-
-    const __fastPerf = (
-      label: string
-    ) => {
-      console.info(
-        `[PERF][DASHBOARD_FAST] ${label}: ${Math.round(
-          performance.now() -
-            __fastPerfStart
-        )}ms`
-      );
-    };
-
-    __fastPerf("START");
-    const fastSplitOperations =
+const fastSplitOperations =
       await loadSplitOutletOperationCards({
         supabase,
         organizationId:
@@ -1570,9 +1555,6 @@ export default async function ProtectedPage({
         isAdmin,
       });
 
-    __fastPerf(
-      "OPERATIONS"
-    );
 
 
     // ======================================================
@@ -1616,9 +1598,6 @@ export default async function ProtectedPage({
           "SUBMITTED"
         );
 
-    __fastPerf(
-      "FLOOR_MAPPING"
-    );
 
 
     if (
@@ -1747,9 +1726,6 @@ export default async function ProtectedPage({
           "SUBMITTED"
         );
 
-    __fastPerf(
-      "TEST_FOOD_SESSIONS"
-    );
 
 
     const fastTestFoodShiftCount =
@@ -1923,9 +1899,6 @@ export default async function ProtectedPage({
       }
     }
 
-    __fastPerf(
-      "TEST_FOOD_DETAIL"
-    );
 
 
     const fastTestFoodStatus =
@@ -2012,9 +1985,6 @@ export default async function ProtectedPage({
           "SUBMITTED"
         );
 
-    __fastPerf(
-      "BRIEFING"
-    );
 
 
     const fastBriefingCount =
@@ -2138,9 +2108,6 @@ export default async function ProtectedPage({
           4
         );
 
-    __fastPerf(
-      "RECENT_ACTIVITY"
-    );
 
 
     if (
@@ -2303,9 +2270,6 @@ export default async function ProtectedPage({
     }
 
 
-    __fastPerf(
-      "READY"
-    );
 
     const fastAssigned =
       fastHubOperations.length;
