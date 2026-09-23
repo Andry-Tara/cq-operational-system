@@ -1838,7 +1838,7 @@ export default async function VoidSalesPage({
                       </div>
 
 
-                      <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="mt-3">
 
                         <div className="rounded-[14px] bg-[#F8F7F4] p-3">
 
@@ -1857,22 +1857,6 @@ export default async function VoidSalesPage({
                         </div>
 
 
-                        <div className="rounded-[14px] bg-[#F8F7F4] p-3">
-
-                          <p className="text-[8px] font-black uppercase tracking-[0.12em] text-neutral-400">
-                            Approved By
-                          </p>
-
-                          <p className="mt-1 text-[11px] font-black">
-                            {
-                              managerLabel(
-                                row
-                                  .void_manager_by_raw
-                              )
-                            }
-                          </p>
-
-                        </div>
 
                       </div>
 
