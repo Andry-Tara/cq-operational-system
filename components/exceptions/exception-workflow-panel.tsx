@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -42,6 +43,119 @@ type WorkflowEvent = {
   createdAt: string;
 };
 
+type WorkflowEvidence = {
+  id: string;
+  originalFilename: string | null;
+  mimeType: string | null;
+  fileSize: number | null;
+  note: string | null;
+  uploadedAt: string;
+  signedUrl: string;
+};
+
+
+
+function autoDueAtFromSlaHours(
+  value: string
+) {
+  const hours =
+    Number(
+      value
+    );
+
+  if (
+    !Number.isFinite(
+      hours
+    ) ||
+    hours < 1
+  ) {
+    return null;
+  }
+
+  const date =
+    new Date();
+
+  date.setHours(
+    date.getHours() +
+    hours
+  );
+
+  return date;
+}
+
+function toDateTimeLocalValue(
+  value: Date | null
+) {
+  if (!value) {
+    return "";
+  }
+
+  const offsetMs =
+    value.getTimezoneOffset() *
+    60 *
+    1000;
+
+  return new Date(
+    value.getTime() -
+    offsetMs
+  )
+    .toISOString()
+    .slice(
+      0,
+      16
+    );
+}
+
+function dateFromDateTimeLocalValue(
+  value: string
+) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed =
+    new Date(
+      value
+    );
+
+  if (
+    Number.isNaN(
+      parsed.getTime()
+    )
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function dateTimeInputLabel(
+  value: Date | null
+) {
+  if (!value) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat(
+    "en-GB",
+    {
+      day:
+        "2-digit",
+      month:
+        "short",
+      year:
+        "numeric",
+      hour:
+        "2-digit",
+      minute:
+        "2-digit",
+      timeZone:
+        "Asia/Jakarta",
+    }
+  ).format(
+    value
+  );
+}
 
 function dateLabel(
   value:
@@ -85,6 +199,182 @@ function statusLabel(
     );
 }
 
+
+function fileToDataUrl(
+  file: File
+) {
+  return new Promise<string>(
+    (
+      resolve,
+      reject
+    ) => {
+      const reader =
+        new FileReader();
+
+      reader.onload = () =>
+        resolve(
+          String(
+            reader.result ||
+            ""
+          )
+        );
+
+      reader.onerror = () =>
+        reject(
+          new Error(
+            "Unable to read completion photo."
+          )
+        );
+
+      reader.readAsDataURL(
+        file
+      );
+    }
+  );
+}
+
+function loadImage(
+  dataUrl: string
+) {
+  return new Promise<HTMLImageElement>(
+    (
+      resolve,
+      reject
+    ) => {
+      const image =
+        new Image();
+
+      image.onload = () =>
+        resolve(
+          image
+        );
+
+      image.onerror = () =>
+        reject(
+          new Error(
+            "Unable to prepare completion photo."
+          )
+        );
+
+      image.src =
+        dataUrl;
+    }
+  );
+}
+
+async function fileToEvidencePhoto(
+  file: File
+) {
+  const originalDataUrl =
+    await fileToDataUrl(
+      file
+    );
+
+  try {
+    const image =
+      await loadImage(
+        originalDataUrl
+      );
+
+    const maxSide =
+      1600;
+    const longestSide =
+      Math.max(
+        image.naturalWidth,
+        image.naturalHeight
+      );
+    const scale =
+      longestSide > maxSide
+        ? maxSide /
+          longestSide
+        : 1;
+
+    const width =
+      Math.max(
+        1,
+        Math.round(
+          image.naturalWidth *
+          scale
+        )
+      );
+    const height =
+      Math.max(
+        1,
+        Math.round(
+          image.naturalHeight *
+          scale
+        )
+      );
+
+    const canvas =
+      document.createElement(
+        "canvas"
+      );
+
+    canvas.width =
+      width;
+    canvas.height =
+      height;
+
+    const context =
+      canvas.getContext(
+        "2d"
+      );
+
+    if (!context) {
+      throw new Error(
+        "Canvas unavailable."
+      );
+    }
+
+    context.drawImage(
+      image,
+      0,
+      0,
+      width,
+      height
+    );
+
+    const dataUrl =
+      canvas.toDataURL(
+        "image/jpeg",
+        0.78
+      );
+
+    const size =
+      Math.ceil(
+        (
+          dataUrl.split(
+            ","
+          )[1]?.length ||
+          0
+        ) * 0.75
+      );
+
+    return {
+      name:
+        file.name ||
+        "completion-photo.jpg",
+      type:
+        "image/jpeg",
+      size,
+      dataUrl,
+    };
+  } catch {
+    return {
+      name:
+        file.name ||
+        "completion-photo",
+      type:
+        file.type ||
+        "image/jpeg",
+      size:
+        file.size,
+      dataUrl:
+        originalDataUrl,
+    };
+  }
+}
 
 function statusClass(
   value: string
@@ -188,22 +478,6 @@ export function ExceptionWorkflowPanel({
 
 
   const [
-    dueDate,
-    setDueDate,
-  ] =
-    useState(
-      workflow?.due_at
-        ? workflow
-            .due_at
-            .slice(
-              0,
-              10
-            )
-        : ""
-    );
-
-
-  const [
     slaHours,
     setSlaHours,
   ] =
@@ -215,6 +489,20 @@ export function ExceptionWorkflowPanel({
       )
     );
 
+  const [
+    manualDueAtValue,
+    setManualDueAtValue,
+  ] =
+    useState(
+      workflow?.due_at
+        ? toDateTimeLocalValue(
+            new Date(
+              workflow.due_at
+            )
+          )
+        : ""
+    );
+
 
   const [
     resolutionNote,
@@ -222,6 +510,30 @@ export function ExceptionWorkflowPanel({
   ] =
     useState(
       ""
+    );
+
+  const [
+    resolutionPhoto,
+    setResolutionPhoto,
+  ] =
+    useState<File | null>(
+      null
+    );
+
+  const [
+    evidenceRows,
+    setEvidenceRows,
+  ] =
+    useState<
+      WorkflowEvidence[]
+    >([]);
+
+  const [
+    evidenceLoading,
+    setEvidenceLoading,
+  ] =
+    useState(
+      false
     );
 
 
@@ -277,6 +589,121 @@ export function ExceptionWorkflowPanel({
       ]
     );
 
+  const automaticDueAt =
+    useMemo(
+      () =>
+        autoDueAtFromSlaHours(
+          slaHours
+        ),
+      [
+        slaHours,
+      ]
+    );
+
+  const selectedDueAt =
+    useMemo(
+      () =>
+        manualDueAtValue
+          ? dateFromDateTimeLocalValue(
+              manualDueAtValue
+            )
+          : automaticDueAt,
+      [
+        manualDueAtValue,
+        automaticDueAt,
+      ]
+    );
+
+  const dueAtInputValue =
+    manualDueAtValue ||
+    toDateTimeLocalValue(
+      automaticDueAt
+    );
+
+
+  useEffect(
+    () => {
+      const workflowId =
+        workflow?.id ??
+        "";
+
+      if (!workflowId) {
+        setEvidenceRows(
+          []
+        );
+        return;
+      }
+
+      let active =
+        true;
+
+      async function loadEvidence() {
+        setEvidenceLoading(
+          true
+        );
+
+        try {
+          const response =
+            await fetch(
+              `/api/exceptions/evidence?workflowId=${encodeURIComponent(
+                workflowId
+              )}`,
+              {
+                cache:
+                  "no-store",
+              }
+            );
+
+          const payload =
+            await response
+              .json()
+              .catch(
+                () => ({})
+              );
+
+          if (
+            !response.ok
+          ) {
+            throw new Error(
+              payload?.error ||
+              "Unable to load evidence."
+            );
+          }
+
+          if (active) {
+            setEvidenceRows(
+              payload?.evidence ??
+              []
+            );
+          }
+        } catch {
+          if (active) {
+            setEvidenceRows(
+              []
+            );
+          }
+        } finally {
+          if (active) {
+            setEvidenceLoading(
+              false
+            );
+          }
+        }
+      }
+
+      loadEvidence();
+
+      return () => {
+        active =
+          false;
+      };
+    },
+    [
+      workflow?.id,
+      message,
+    ]
+  );
+
 
   async function runAction(
     action: string,
@@ -287,7 +714,7 @@ export function ExceptionWorkflowPanel({
       > = {}
   ) {
     if (busy) {
-      return;
+      return false;
     }
 
     setBusy(
@@ -352,6 +779,8 @@ export function ExceptionWorkflowPanel({
 
       router.refresh();
 
+      return true;
+
     } catch (
       exception: any
     ) {
@@ -359,6 +788,8 @@ export function ExceptionWorkflowPanel({
         exception?.message ||
         "Unable to update workflow."
       );
+
+      return false;
 
     } finally {
       setBusy(
@@ -368,7 +799,7 @@ export function ExceptionWorkflowPanel({
   }
 
 
-  async function saveAssignment() {
+  function buildAssignmentPayload() {
     if (
       !assignedTo
     ) {
@@ -376,35 +807,81 @@ export function ExceptionWorkflowPanel({
         "Select PIC first."
       );
 
+      return null;
+    }
+
+    const parsedSlaHours =
+      Number(
+        slaHours
+      );
+
+    if (
+      !Number.isInteger(
+        parsedSlaHours
+      ) ||
+      parsedSlaHours < 1
+    ) {
+      setError(
+        "SLA hours must be at least 1 hour."
+      );
+
+      return null;
+    }
+
+    return {
+      assignedTo,
+      dueAt:
+        selectedDueAt
+          ?.toISOString() ??
+        null,
+      slaHours:
+        parsedSlaHours,
+    };
+  }
+
+
+  async function saveAssignment() {
+    const payload =
+      buildAssignmentPayload();
+
+    if (!payload) {
       return;
     }
 
-
-    let dueAt:
-      string | null =
-      null;
-
-
-    if (
-      dueDate
-    ) {
-      dueAt =
-        new Date(
-          `${dueDate}T23:59:59+07:00`
-        )
-          .toISOString();
-    }
-
-
     await runAction(
       "assign",
+      payload
+    );
+  }
+
+
+  async function escalate() {
+    const payload =
+      buildAssignmentPayload();
+
+    if (!payload) {
+      return;
+    }
+
+    const assignmentSaved =
+      await runAction(
+        "assign",
+        payload
+      );
+
+    if (
+      !assignmentSaved
+    ) {
+      return;
+    }
+
+    await runAction(
+      "escalate",
       {
-        assignedTo,
-        dueAt,
-        slaHours:
-          Number(
-            slaHours
-          ),
+        note:
+          actionNote
+            .trim() ||
+          undefined,
       }
     );
   }
@@ -424,11 +901,25 @@ export function ExceptionWorkflowPanel({
       return;
     }
 
+    if (!resolutionPhoto) {
+      setError(
+        "Completion photo is required."
+      );
+
+      return;
+    }
+
+    const evidencePhoto =
+      await fileToEvidencePhoto(
+        resolutionPhoto
+      );
+
 
     await runAction(
       "resolve",
       {
         note,
+        evidencePhoto,
       }
     );
   }
@@ -648,47 +1139,62 @@ export function ExceptionWorkflowPanel({
                       </select>
 
 
-                      <input
-                        type="date"
-                        value={
-                          dueDate
-                        }
-                        onChange={
-                          event =>
-                            setDueDate(
-                              event
-                                .target
-                                .value
-                            )
-                        }
-                        disabled={
-                          busy
-                        }
-                        className="h-11 rounded-xl border border-[#E2DDD5] bg-white px-3 text-xs font-bold text-[#292824]"
-                      />
+                      <div className="relative flex h-11 items-center rounded-xl border border-[#E2DDD5] bg-[#F8F6F2] px-3">
+                        <span
+                          aria-hidden="true"
+                          className="mr-2 shrink-0"
+                        >
+                          📅
+                        </span>
+                        <input
+                          type="datetime-local"
+                          value={
+                            dueAtInputValue
+                          }
+                          onChange={
+                            event =>
+                              setManualDueAtValue(
+                                event
+                                  .target
+                                  .value
+                              )
+                          }
+                          onClick={
+                            event =>
+                              event.currentTarget.showPicker?.()
+                          }
+                          disabled={
+                            busy
+                          }
+                          className="h-full w-full cursor-pointer bg-transparent text-xs font-black text-[#292824] outline-none"
+                        />
+                      </div>
 
-
-                      <input
-                        type="number"
-                        min="1"
-                        max="8760"
-                        value={
-                          slaHours
-                        }
-                        onChange={
-                          event =>
-                            setSlaHours(
-                              event
-                                .target
-                                .value
-                            )
-                        }
-                        disabled={
-                          busy
-                        }
-                        placeholder="SLA Hours"
-                        className="h-11 rounded-xl border border-[#E2DDD5] bg-white px-3 text-xs font-bold text-[#292824]"
-                      />
+                      <div className="flex h-11 items-center rounded-xl border border-[#E2DDD5] bg-white px-3">
+                        <input
+                          type="number"
+                          min="1"
+                          max="8760"
+                          value={
+                            slaHours
+                          }
+                          onChange={
+                            event =>
+                              setSlaHours(
+                                event
+                                  .target
+                                  .value
+                              )
+                          }
+                          disabled={
+                            busy
+                          }
+                          className="h-full w-full bg-transparent text-xs font-bold text-[#292824] outline-none"
+                        />
+                        <span className="ml-2 shrink-0 text-[10px] font-black uppercase tracking-[0.12em] text-[#918B82]">
+                          hours
+                        </span>
+                      </div>
 
 
                       <button
@@ -746,17 +1252,8 @@ export function ExceptionWorkflowPanel({
                     <button
                       type="button"
                       onClick={
-                        () =>
-                          runAction(
-                            "escalate",
-                            {
-                              note:
-                                actionNote
-                                  .trim() ||
-                                null,
-                            }
-                          )
-                      }
+                          escalate
+                        }
                       disabled={
                         busy
                       }
@@ -795,6 +1292,34 @@ export function ExceptionWorkflowPanel({
                       Resolution
                     </p>
 
+
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.15em] text-[#918B82]">
+                        Completion Photo
+                      </p>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={
+                          busy
+                        }
+                        onChange={
+                          event =>
+                            setResolutionPhoto(
+                              event.target.files?.[0] ||
+                              null
+                            )
+                        }
+                        className="mt-3 block w-full rounded-xl border border-[#E2DDD5] bg-white px-3 py-3 text-xs font-bold text-[#292824]"
+                      />
+                      {
+                        resolutionPhoto && (
+                          <p className="mt-2 text-[10px] font-bold text-[#777067]">
+                            Selected: {resolutionPhoto.name}
+                          </p>
+                        )
+                      }
+                    </div>
 
                     <textarea
                       value={
@@ -951,6 +1476,75 @@ export function ExceptionWorkflowPanel({
         <div className="flex items-center justify-between gap-3">
 
           <div>
+              <div className="mb-5 rounded-[22px] border border-[#EEEAE4] bg-[#F8F6F2] p-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.15em] text-[#918B82]">
+                  Resolution Evidence
+                </p>
+
+                {
+                  evidenceLoading ? (
+                    <p className="mt-3 text-xs font-bold text-[#777067]">
+                      Loading evidence...
+                    </p>
+                  ) : evidenceRows.length ? (
+                    <div className="mt-3 grid gap-3">
+                      {
+                        evidenceRows.map(
+                          evidence => (
+                            <a
+                              key={
+                                evidence.id
+                              }
+                              href={
+                                evidence.signedUrl ||
+                                "#"
+                              }
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block overflow-hidden rounded-[18px] border border-[#E6E1DA] bg-white"
+                            >
+                              {
+                                evidence.signedUrl && (
+                                  <img
+                                    src={
+                                      evidence.signedUrl
+                                    }
+                                    alt={
+                                      evidence.originalFilename ||
+                                      "Resolution evidence"
+                                    }
+                                    className="h-44 w-full object-cover"
+                                  />
+                                )
+                              }
+                              <div className="p-3">
+                                <p className="text-xs font-black text-[#292824]">
+                                  {
+                                    evidence.originalFilename ||
+                                    "Completion photo"
+                                  }
+                                </p>
+                                <p className="mt-1 text-[10px] font-bold text-[#777067]">
+                                  {
+                                    dateLabel(
+                                      evidence.uploadedAt
+                                    )
+                                  }
+                                </p>
+                              </div>
+                            </a>
+                          )
+                        )
+                      }
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-xs font-bold text-[#777067]">
+                      No completion evidence uploaded yet.
+                    </p>
+                  )
+                }
+              </div>
+
             <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#918B82]">
               Activity
             </p>
