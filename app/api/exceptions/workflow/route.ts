@@ -1,3 +1,5 @@
+import { randomUUID } from "crypto";
+
 import { NextResponse } from "next/server";
 
 import {
@@ -35,6 +37,227 @@ const PIC_ACTIONS =
     "escalate",
     "resolve",
   ]);
+
+
+type ParsedEvidencePhoto = {
+  originalFilename: string;
+  mimeType: string;
+  fileSize: number;
+  buffer: Buffer;
+  extension: string;
+};
+
+type EvidenceParseResult =
+  | {
+      ok: true;
+      photo: ParsedEvidencePhoto;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+const MAX_EVIDENCE_PHOTO_BYTES =
+  6 * 1024 * 1024;
+
+const ALLOWED_EVIDENCE_MIME_TYPES =
+  new Set([
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+  ]);
+
+function cleanText(
+  value: unknown
+) {
+  return String(
+    value ??
+    ""
+  ).trim();
+}
+
+function evidenceExtension(
+  mimeType: string,
+  fileName: string
+) {
+  const lowerName =
+    fileName.toLowerCase();
+
+  if (
+    lowerName.endsWith(
+      ".png"
+    )
+  ) {
+    return "png";
+  }
+
+  if (
+    lowerName.endsWith(
+      ".webp"
+    )
+  ) {
+    return "webp";
+  }
+
+  if (
+    lowerName.endsWith(
+      ".heic"
+    )
+  ) {
+    return "heic";
+  }
+
+  if (
+    lowerName.endsWith(
+      ".heif"
+    )
+  ) {
+    return "heif";
+  }
+
+  if (
+    mimeType ===
+    "image/png"
+  ) {
+    return "png";
+  }
+
+  if (
+    mimeType ===
+    "image/webp"
+  ) {
+    return "webp";
+  }
+
+  if (
+    mimeType ===
+    "image/heic"
+  ) {
+    return "heic";
+  }
+
+  if (
+    mimeType ===
+    "image/heif"
+  ) {
+    return "heif";
+  }
+
+  return "jpg";
+}
+
+function parseEvidencePhoto(
+  value: unknown
+): EvidenceParseResult {
+  if (
+    !value ||
+    typeof value !==
+      "object"
+  ) {
+    return {
+      ok: false,
+      error:
+        "Completion photo is required.",
+    };
+  }
+
+  const record =
+    value as Record<
+      string,
+      unknown
+    >;
+
+  const dataUrl =
+    cleanText(
+      record.dataUrl
+    );
+
+  const originalFilename =
+    cleanText(
+      record.name
+    ).slice(
+      0,
+      240
+    ) ||
+    "completion-photo.jpg";
+
+  const match =
+    dataUrl.match(
+      /^data:([^;]+);base64,([\s\S]+)$/
+    );
+
+  if (!match) {
+    return {
+      ok: false,
+      error:
+        "Invalid completion photo.",
+    };
+  }
+
+  const mimeType =
+    cleanText(
+      record.type
+    ) ||
+    match[1];
+
+  if (
+    !ALLOWED_EVIDENCE_MIME_TYPES.has(
+      mimeType
+    )
+  ) {
+    return {
+      ok: false,
+      error:
+        "Completion photo must be JPG, PNG, WEBP, HEIC, or HEIF.",
+    };
+  }
+
+  const buffer =
+    Buffer.from(
+      match[2],
+      "base64"
+    );
+
+  if (
+    buffer.length <=
+    0
+  ) {
+    return {
+      ok: false,
+      error:
+        "Completion photo is empty.",
+    };
+  }
+
+  if (
+    buffer.length >
+    MAX_EVIDENCE_PHOTO_BYTES
+  ) {
+    return {
+      ok: false,
+      error:
+        "Completion photo is too large. Maximum size is 6 MB.",
+    };
+  }
+
+  return {
+    ok: true,
+    photo: {
+      originalFilename,
+      mimeType,
+      fileSize:
+        buffer.length,
+      buffer,
+      extension:
+        evidenceExtension(
+          mimeType,
+          originalFilename
+        ),
+    },
+  };
+}
 
 
 function normalizeSource(
@@ -384,6 +607,39 @@ export async function POST(
         : null;
 
 
+    let evidencePhoto:
+      ParsedEvidencePhoto |
+      null =
+      null;
+
+    if (
+      action ===
+      "resolve"
+    ) {
+      const parsedEvidencePhoto =
+        parseEvidencePhoto(
+          body.evidencePhoto
+        );
+
+      if (
+        !parsedEvidencePhoto.ok
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              parsedEvidencePhoto.error,
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+      evidencePhoto =
+        parsedEvidencePhoto.photo;
+    }
+
+
     const admin =
       createAdminClient();
 
@@ -514,6 +770,73 @@ export async function POST(
     }
 
 
+    let uploadedEvidence:
+      | {
+          storageBucket: string;
+          storagePath: string;
+          originalFilename: string;
+          mimeType: string;
+          fileSize: number;
+        }
+      | null =
+      null;
+
+    if (
+      evidencePhoto
+    ) {
+      const storageBucket =
+        "operational-photos";
+
+      const storagePath =
+        [
+          "exceptions",
+          organizationId,
+          sourceType,
+          sourceId,
+          `${randomUUID()}.${evidencePhoto.extension}`,
+        ].join(
+          "/"
+        );
+
+      const {
+        error:
+          uploadError,
+      } =
+        await admin
+          .storage
+          .from(
+            storageBucket
+          )
+          .upload(
+            storagePath,
+            evidencePhoto.buffer,
+            {
+              contentType:
+                evidencePhoto.mimeType,
+              upsert:
+                false,
+            }
+          );
+
+      if (
+        uploadError
+      ) {
+        throw uploadError;
+      }
+
+      uploadedEvidence = {
+        storageBucket,
+        storagePath,
+        originalFilename:
+          evidencePhoto.originalFilename,
+        mimeType:
+          evidencePhoto.mimeType,
+        fileSize:
+          evidencePhoto.fileSize,
+      };
+    }
+
+
     const {
       data,
       error,
@@ -552,7 +875,100 @@ export async function POST(
 
 
     if (error) {
+
+      if (
+        uploadedEvidence
+      ) {
+        await admin
+          .storage
+          .from(
+            uploadedEvidence.storageBucket
+          )
+          .remove([
+            uploadedEvidence.storagePath,
+          ]);
+      }
+
       throw error;
+
+    }
+
+
+    if (
+      uploadedEvidence
+    ) {
+      const workflowId =
+        cleanText(
+          (data as any)?.id
+        );
+
+      if (
+        !UUID.test(
+          workflowId
+        )
+      ) {
+        await admin
+          .storage
+          .from(
+            uploadedEvidence.storageBucket
+          )
+          .remove([
+            uploadedEvidence.storagePath,
+          ]);
+
+        throw new Error(
+          "Unable to attach completion evidence."
+        );
+      }
+
+      const {
+        error:
+          evidenceInsertError,
+      } =
+        await admin
+          .from(
+            "exception_workflow_evidence"
+          )
+          .insert({
+            workflow_id:
+              workflowId,
+            organization_id:
+              organizationId,
+            source_type:
+              sourceType,
+            source_id:
+              sourceId,
+            evidence_type:
+              "resolution_photo",
+            storage_bucket:
+              uploadedEvidence.storageBucket,
+            storage_path:
+              uploadedEvidence.storagePath,
+            original_filename:
+              uploadedEvidence.originalFilename,
+            mime_type:
+              uploadedEvidence.mimeType,
+            file_size:
+              uploadedEvidence.fileSize,
+            note,
+            uploaded_by:
+              actorUserId,
+          });
+
+      if (
+        evidenceInsertError
+      ) {
+        await admin
+          .storage
+          .from(
+            uploadedEvidence.storageBucket
+          )
+          .remove([
+            uploadedEvidence.storagePath,
+          ]);
+
+        throw evidenceInsertError;
+      }
     }
 
 
