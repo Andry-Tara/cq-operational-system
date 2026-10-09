@@ -49,9 +49,14 @@ export function LoginForm() {
   const router = useRouter();
 
   async function handleLogin(
-    event: React.FormEvent
+    event?: React.FormEvent
   ) {
-    event.preventDefault();
+    event?.preventDefault();
+
+    if (isLoading) {
+      return;
+    }
+
 
     const supabase =
       createClient();
@@ -60,7 +65,9 @@ export function LoginForm() {
     setError(null);
 
     try {
+
       const {
+        data: loginData,
         error: loginError,
       } =
         await supabase.auth.signInWithPassword({
@@ -69,10 +76,16 @@ export function LoginForm() {
         });
 
       if (loginError) {
+        console.error(
+          "[LOGIN] Supabase rejected sign in",
+          loginError.message
+        );
+
         throw loginError;
       }
 
-      router.push("/protected");
+
+      router.replace("/protected");
       router.refresh();
     } catch (error) {
       console.error(
@@ -153,7 +166,9 @@ export function LoginForm() {
 
         <form
           onSubmit={handleLogin}
+          method="post"
           className="space-y-5"
+          suppressHydrationWarning
         >
 
           {/* EMAIL */}
@@ -166,6 +181,7 @@ export function LoginForm() {
             </label>
 
             <input
+              suppressHydrationWarning
               id="email"
               type="email"
               autoComplete="email"
@@ -204,7 +220,8 @@ export function LoginForm() {
 
             <div className="relative">
               <input
-                id="password"
+                suppressHydrationWarning
+              id="password"
                 type={
                   showPassword
                     ? "text"
@@ -259,8 +276,11 @@ export function LoginForm() {
 
           {/* SIGN IN */}
           <button
-            type="submit"
+            type="button"
             disabled={isLoading}
+            onClick={() => {
+              void handleLogin();
+            }}
             className="flex w-full items-center justify-center gap-2 rounded-2xl bg-red-700 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-red-800 focus:outline-none focus:ring-4 focus:ring-red-100 disabled:cursor-not-allowed disabled:bg-red-400"
           >
             {isLoading && (

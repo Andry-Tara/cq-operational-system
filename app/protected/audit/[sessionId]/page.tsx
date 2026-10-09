@@ -128,6 +128,42 @@ export default async function AuditResultPage({
     session.auditor_user_id ===
     user.id;
 
+  let hasAssignedOutletAccess =
+    false;
+
+  if (
+    !isAdmin &&
+    !isOwner &&
+    canSubmitAudit
+  ) {
+    const {
+      data: outletAccess,
+      error: outletAccessError,
+    } = await admin
+      .from("user_outlets")
+      .select("outlet_id")
+      .eq(
+        "user_id",
+        user.id,
+      )
+      .eq(
+        "outlet_id",
+        session.outlet_id,
+      )
+      .eq(
+        "is_active",
+        true,
+      )
+      .maybeSingle();
+
+    if (outletAccessError) {
+      throw outletAccessError;
+    }
+
+    hasAssignedOutletAccess =
+      Boolean(outletAccess);
+  }
+
   const managementReadOnly =
     !isAdmin &&
     !isOwner &&
@@ -135,10 +171,19 @@ export default async function AuditResultPage({
     session.status ===
       "submitted";
 
+  const auditorSharedReadOnly =
+    !isAdmin &&
+    !isOwner &&
+    canSubmitAudit &&
+    hasAssignedOutletAccess &&
+    session.status ===
+      "submitted";
+
   const canReadSession =
     isAdmin ||
     isOwner ||
-    managementReadOnly;
+    managementReadOnly ||
+    auditorSharedReadOnly;
 
   if (!canReadSession) {
     return (

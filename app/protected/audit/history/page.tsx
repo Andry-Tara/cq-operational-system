@@ -278,16 +278,7 @@ export default async function AuditHistoryPage({
             ascending: false,
           },
         );
-
-    if (!isAdmin) {
-      query =
-        query.eq(
-          "auditor_user_id",
-          user.id,
-        );
-    }
-
-    if (selectedOutletId) {
+if (selectedOutletId) {
       query =
         query.eq(
           "outlet_id",

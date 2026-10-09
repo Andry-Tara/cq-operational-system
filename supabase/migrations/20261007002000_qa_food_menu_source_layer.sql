@@ -1,0 +1,723 @@
+begin;
+
+-- ============================================================
+-- QA FOOD STANDARD — MENU SOURCE / CANONICAL LAYER
+--
+-- Sources supported:
+--   HOTPOT_WEB
+--   EXTERNAL_API_ORDER
+--   TEST_FOOD_V1
+--   MANUAL
+--
+-- Existing qa_food_menus remains the canonical runtime menu.
+-- Raw/source observations are stored separately.
+-- ============================================================
+
+
+-- ============================================================
+-- 1. NORMALIZATION HELPER
+-- ============================================================
+
+create or replace function
+public.qa_food_normalize_name(
+  p_value text
+)
+returns text
+language sql
+immutable
+as $$
+  select trim(
+    regexp_replace(
+      regexp_replace(
+        lower(
+          coalesce(
+            p_value,
+            ''
+          )
+        ),
+        '[^a-z0-9]+',
+        ' ',
+        'g'
+      ),
+      '\s+',
+      ' ',
+      'g'
+    )
+  );
+$$;
+
+
+-- ============================================================
+-- 2. EXTEND CANONICAL MENU MASTER
+-- ============================================================
+
+alter table public.qa_food_menus
+  add column if not exists canonical_key text;
+
+alter table public.qa_food_menus
+  add column if not exists sku text;
+
+alter table public.qa_food_menus
+  add column if not exists lifecycle_status text
+    not null
+    default 'CURRENT';
+
+alter table public.qa_food_menus
+  add column if not exists current_web_visible boolean
+    not null
+    default false;
+
+alter table public.qa_food_menus
+  add column if not exists seen_in_api_orders boolean
+    not null
+    default false;
+
+alter table public.qa_food_menus
+  add column if not exists first_seen_at timestamptz;
+
+alter table public.qa_food_menus
+  add column if not exists last_seen_at timestamptz;
+
+alter table public.qa_food_menus
+  add column if not exists last_ordered_at timestamptz;
+
+alter table public.qa_food_menus
+  add column if not exists metadata jsonb
+    not null
+    default '{}'::jsonb;
+
+
+update public.qa_food_menus
+set
+  canonical_key =
+    coalesce(
+      nullif(
+        canonical_key,
+        ''
+      ),
+      public.qa_food_normalize_name(
+        name
+      )
+    ),
+
+  first_seen_at =
+    coalesce(
+      first_seen_at,
+      created_at,
+      now()
+    ),
+
+  last_seen_at =
+    coalesce(
+      last_seen_at,
+      updated_at,
+      created_at,
+      now()
+    );
+
+
+alter table public.qa_food_menus
+  alter column canonical_key
+  set not null;
+
+
+alter table public.qa_food_menus
+  drop constraint if exists
+  qa_food_menus_lifecycle_status_chk;
+
+alter table public.qa_food_menus
+  add constraint
+  qa_food_menus_lifecycle_status_chk
+  check (
+    lifecycle_status in (
+      'CURRENT',
+      'HISTORICAL',
+      'REVIEW'
+    )
+  );
+
+
+create index if not exists
+qa_food_menus_canonical_key_idx
+on public.qa_food_menus (
+  organization_id,
+  canonical_key
+);
+
+
+create index if not exists
+qa_food_menus_sku_idx
+on public.qa_food_menus (
+  organization_id,
+  sku
+)
+where sku is not null;
+
+
+create index if not exists
+qa_food_menus_lifecycle_idx
+on public.qa_food_menus (
+  organization_id,
+  lifecycle_status,
+  is_active
+);
+
+
+-- ============================================================
+-- 3. SOURCE BRANCH MAPPING
+-- ============================================================
+
+create table if not exists
+public.qa_food_source_branches (
+  id uuid
+    primary key
+    default gen_random_uuid(),
+
+  organization_id uuid
+    not null
+    references public.organizations(id)
+    on delete restrict,
+
+  source text
+    not null,
+
+  source_branch_id text
+    not null,
+
+  source_branch_name text,
+
+  outlet_id uuid
+    references public.outlets(id)
+    on delete set null,
+
+  mapping_status text
+    not null
+    default 'UNMAPPED',
+
+  first_seen_at timestamptz
+    not null
+    default now(),
+
+  last_seen_at timestamptz
+    not null
+    default now(),
+
+  metadata jsonb
+    not null
+    default '{}'::jsonb,
+
+  created_at timestamptz
+    not null
+    default now(),
+
+  updated_at timestamptz
+    not null
+    default now(),
+
+  constraint qa_food_source_branches_key
+    unique (
+      organization_id,
+      source,
+      source_branch_id
+    ),
+
+  constraint qa_food_source_branches_status_chk
+    check (
+      mapping_status in (
+        'MAPPED',
+        'UNMAPPED',
+        'IGNORED'
+      )
+    )
+);
+
+
+create index if not exists
+qa_food_source_branches_outlet_idx
+on public.qa_food_source_branches (
+  outlet_id,
+  source
+);
+
+
+drop trigger if exists
+qa_food_source_branches_set_updated_at
+on public.qa_food_source_branches;
+
+create trigger
+qa_food_source_branches_set_updated_at
+before update
+on public.qa_food_source_branches
+for each row
+execute function public.set_updated_at();
+
+
+-- ============================================================
+-- 4. RAW MENU OBSERVATIONS
+--
+-- One row = one unique source identity.
+-- observation_key is generated by ingestion logic.
+--
+-- Examples:
+-- HOTPOT_WEB:
+--   branch:3:menu:445
+--
+-- EXTERNAL_API_ORDER:
+--   menu:445
+--   menu:488:variant:94
+--
+-- TEST_FOOD_V1:
+--   MEATBALL_PLATTER
+-- ============================================================
+
+create table if not exists
+public.qa_food_menu_observations (
+  id uuid
+    primary key
+    default gen_random_uuid(),
+
+  organization_id uuid
+    not null
+    references public.organizations(id)
+    on delete restrict,
+
+  canonical_menu_id uuid
+    references public.qa_food_menus(id)
+    on delete set null,
+
+  outlet_id uuid
+    references public.outlets(id)
+    on delete set null,
+
+  source text
+    not null,
+
+  observation_key text
+    not null,
+
+  source_menu_id text,
+
+  source_variant_id text,
+
+  source_branch_id text,
+
+  sku text,
+
+  variant_sku text,
+
+  menu_name text
+    not null,
+
+  normalized_name text
+    not null,
+
+  category text,
+
+  menu_description text,
+
+  is_variant boolean
+    not null
+    default false,
+
+  is_package boolean
+    not null
+    default false,
+
+  is_current_visible boolean,
+
+  first_seen_at timestamptz
+    not null
+    default now(),
+
+  last_seen_at timestamptz
+    not null
+    default now(),
+
+  last_ordered_at timestamptz,
+
+  raw_payload jsonb
+    not null
+    default '{}'::jsonb,
+
+  created_at timestamptz
+    not null
+    default now(),
+
+  updated_at timestamptz
+    not null
+    default now(),
+
+  constraint qa_food_menu_observations_source_key
+    unique (
+      organization_id,
+      source,
+      observation_key
+    ),
+
+  constraint qa_food_menu_observations_name_chk
+    check (
+      btrim(
+        menu_name
+      ) <> ''
+    ),
+
+  constraint qa_food_menu_observations_normalized_name_chk
+    check (
+      btrim(
+        normalized_name
+      ) <> ''
+    )
+);
+
+
+create index if not exists
+qa_food_menu_observations_canonical_idx
+on public.qa_food_menu_observations (
+  canonical_menu_id,
+  source
+);
+
+
+create index if not exists
+qa_food_menu_observations_name_idx
+on public.qa_food_menu_observations (
+  organization_id,
+  normalized_name
+);
+
+
+create index if not exists
+qa_food_menu_observations_sku_idx
+on public.qa_food_menu_observations (
+  organization_id,
+  sku
+)
+where sku is not null;
+
+
+create index if not exists
+qa_food_menu_observations_branch_idx
+on public.qa_food_menu_observations (
+  organization_id,
+  source,
+  source_branch_id
+);
+
+
+drop trigger if exists
+qa_food_menu_observations_set_updated_at
+on public.qa_food_menu_observations;
+
+create trigger
+qa_food_menu_observations_set_updated_at
+before update
+on public.qa_food_menu_observations
+for each row
+execute function public.set_updated_at();
+
+
+-- ============================================================
+-- 5. SYNC RUN LOG
+-- ============================================================
+
+create table if not exists
+public.qa_food_sync_runs (
+  id uuid
+    primary key
+    default gen_random_uuid(),
+
+  organization_id uuid
+    not null
+    references public.organizations(id)
+    on delete restrict,
+
+  source text
+    not null,
+
+  outlet_id uuid
+    references public.outlets(id)
+    on delete set null,
+
+  status text
+    not null
+    default 'RUNNING',
+
+  started_at timestamptz
+    not null
+    default now(),
+
+  completed_at timestamptz,
+
+  source_rows integer
+    not null
+    default 0,
+
+  observation_rows integer
+    not null
+    default 0,
+
+  created_menus integer
+    not null
+    default 0,
+
+  updated_menus integer
+    not null
+    default 0,
+
+  review_rows integer
+    not null
+    default 0,
+
+  error_message text,
+
+  metadata jsonb
+    not null
+    default '{}'::jsonb,
+
+  created_at timestamptz
+    not null
+    default now(),
+
+  constraint qa_food_sync_runs_status_chk
+    check (
+      status in (
+        'RUNNING',
+        'COMPLETED',
+        'PARTIAL',
+        'FAILED'
+      )
+    )
+);
+
+
+create index if not exists
+qa_food_sync_runs_org_source_idx
+on public.qa_food_sync_runs (
+  organization_id,
+  source,
+  started_at desc
+);
+
+
+-- ============================================================
+-- 6. BACKFILL EXISTING QA MENUS AS OBSERVATIONS
+-- ============================================================
+
+insert into public.qa_food_menu_observations (
+  organization_id,
+  canonical_menu_id,
+  source,
+  observation_key,
+  source_menu_id,
+  menu_name,
+  normalized_name,
+  category,
+  is_variant,
+  is_package,
+  is_current_visible,
+  first_seen_at,
+  last_seen_at,
+  raw_payload
+)
+select
+  m.organization_id,
+  m.id,
+  m.source,
+  m.source_menu_key,
+  m.source_menu_key,
+  m.name,
+  public.qa_food_normalize_name(
+    m.name
+  ),
+  m.category,
+  false,
+  false,
+  case
+    when m.source = 'HOTPOT_WEB'
+      then true
+    else null
+  end,
+  coalesce(
+    m.first_seen_at,
+    m.created_at
+  ),
+  coalesce(
+    m.last_seen_at,
+    m.updated_at
+  ),
+  jsonb_build_object(
+    'bootstrap',
+    true,
+    'source',
+    m.source,
+    'source_menu_key',
+    m.source_menu_key
+  )
+from public.qa_food_menus m
+on conflict (
+  organization_id,
+  source,
+  observation_key
+)
+do update set
+  canonical_menu_id =
+    excluded.canonical_menu_id,
+
+  menu_name =
+    excluded.menu_name,
+
+  normalized_name =
+    excluded.normalized_name,
+
+  category =
+    excluded.category,
+
+  last_seen_at =
+    greatest(
+      public.qa_food_menu_observations.last_seen_at,
+      excluded.last_seen_at
+    ),
+
+  updated_at =
+    now();
+
+
+-- ============================================================
+-- 7. SOURCE SUMMARY VIEW
+-- ============================================================
+
+create or replace view
+public.qa_food_menu_source_summary
+as
+select
+  m.id as menu_id,
+  m.organization_id,
+  m.name,
+  m.category,
+  m.sku,
+  m.lifecycle_status,
+  m.current_web_visible,
+  m.seen_in_api_orders,
+  m.first_seen_at,
+  m.last_seen_at,
+  m.last_ordered_at,
+
+  count(
+    o.id
+  ) as source_observation_count,
+
+  count(
+    distinct o.source
+  ) as source_count,
+
+  array_remove(
+    array_agg(
+      distinct o.source
+    ),
+    null
+  ) as sources
+
+from public.qa_food_menus m
+
+left join public.qa_food_menu_observations o
+  on o.canonical_menu_id =
+     m.id
+
+group by
+  m.id,
+  m.organization_id,
+  m.name,
+  m.category,
+  m.sku,
+  m.lifecycle_status,
+  m.current_web_visible,
+  m.seen_in_api_orders,
+  m.first_seen_at,
+  m.last_seen_at,
+  m.last_ordered_at;
+
+
+-- ============================================================
+-- 8. RLS / ACCESS
+-- ============================================================
+
+alter table public.qa_food_source_branches
+  enable row level security;
+
+alter table public.qa_food_menu_observations
+  enable row level security;
+
+alter table public.qa_food_sync_runs
+  enable row level security;
+
+
+revoke all
+on table public.qa_food_source_branches
+from public, anon, authenticated;
+
+revoke all
+on table public.qa_food_menu_observations
+from public, anon, authenticated;
+
+revoke all
+on table public.qa_food_sync_runs
+from public, anon, authenticated;
+
+
+grant select, insert, update, delete
+on table public.qa_food_source_branches
+to service_role;
+
+grant select, insert, update, delete
+on table public.qa_food_menu_observations
+to service_role;
+
+grant select, insert, update, delete
+on table public.qa_food_sync_runs
+to service_role;
+
+grant select
+on public.qa_food_menu_source_summary
+to service_role;
+
+
+revoke all
+on function public.qa_food_normalize_name(text)
+from public, anon, authenticated;
+
+grant execute
+on function public.qa_food_normalize_name(text)
+to service_role;
+
+
+-- ============================================================
+-- 9. VALIDATION
+-- ============================================================
+
+do $$
+declare
+  v_menu_count integer;
+  v_observation_count integer;
+begin
+  select count(*)
+  into v_menu_count
+  from public.qa_food_menus;
+
+  select count(*)
+  into v_observation_count
+  from public.qa_food_menu_observations;
+
+  if v_menu_count > 0
+     and v_observation_count = 0 then
+    raise exception
+      'QA FOOD SOURCE LAYER STOP: existing menus were not backfilled into observations.';
+  end if;
+
+  raise notice
+    'QA Food source layer ready: % canonical menus, % observations.',
+    v_menu_count,
+    v_observation_count;
+end;
+$$;
+
+commit;

@@ -551,11 +551,19 @@ export function ProtectedHeader({
               )}
 
               {showAuditInput && (
-                <MenuLink
-                  href="/protected/audit"
-                  label="Audit Outlet"
-                  onClick={() => setMenuOpen(false)}
-                />
+                <>
+                  <MenuLink
+                    href="/protected/audit"
+                    label="Audit Outlet"
+                    onClick={() => setMenuOpen(false)}
+                  />
+
+                  <MenuLink
+                    href="/protected/audit/food-standard"
+                    label="QA Food Standard"
+                    onClick={() => setMenuOpen(false)}
+                  />
+                </>
               )}
 
               {showAuditManagement && (

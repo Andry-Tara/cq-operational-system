@@ -77,19 +77,101 @@ export async function POST() {
       return NextResponse.json({ error: "Outlet tidak ditemukan." }, { status: 404 });
     }
 
-    const { data: existingDraft, error: draftError } = await admin
+    const today =
+      businessDate(
+        outlet.timezone ||
+          "Asia/Jakarta",
+      );
+
+    const {
+      data: existingToday,
+      error: existingTodayError,
+    } = await admin
       .from("audit_sessions")
-      .select("id,audit_number,audit_date,status,form_version_id,started_at,submitted_at,score")
-      .eq("auditor_user_id", user.id)
-      .eq("outlet_id", outlet.id)
-      .eq("status", "draft")
-      .order("started_at", { ascending: false })
+      .select(`
+        id,
+        audit_number,
+        audit_date,
+        status,
+        form_version_id,
+        auditor_user_id,
+        auditor_name_snapshot,
+        started_at,
+        submitted_at,
+        score
+      `)
+      .eq(
+        "organization_id",
+        profile.organization_id,
+      )
+      .eq(
+        "outlet_id",
+        outlet.id,
+      )
+      .eq(
+        "audit_date",
+        today,
+      )
+      .in(
+        "status",
+        ["draft", "submitted"],
+      )
+      .order(
+        "started_at",
+        { ascending: false },
+      )
       .limit(1)
       .maybeSingle();
 
-    if (draftError) throw draftError;
-    if (existingDraft) {
-      return NextResponse.json({ session: existingDraft, resumed: true });
+    if (existingTodayError) {
+      throw existingTodayError;
+    }
+
+    if (existingToday) {
+      const ownerName =
+        existingToday.auditor_name_snapshot ||
+        "auditor lain";
+
+      if (
+        existingToday.status === "draft" &&
+        existingToday.auditor_user_id === user.id
+      ) {
+        return NextResponse.json({
+          session: existingToday,
+          resumed: true,
+        });
+      }
+
+      const isSubmitted =
+        existingToday.status === "submitted";
+
+      return NextResponse.json(
+        {
+          error: isSubmitted
+            ? `Audit ${outlet.name} hari ini sudah disubmit oleh ${ownerName}.`
+            : `Audit ${outlet.name} sedang dikerjakan oleh ${ownerName}.`,
+
+          code: isSubmitted
+            ? "AUDIT_ALREADY_SUBMITTED"
+            : "AUDIT_IN_PROGRESS_BY_OTHER",
+
+          existingSession: {
+            id: existingToday.id,
+            status: existingToday.status,
+            auditNumber:
+              existingToday.audit_number,
+            auditorName:
+              ownerName,
+            startedAt:
+              existingToday.started_at,
+            submittedAt:
+              existingToday.submitted_at,
+            score:
+              existingToday.score,
+          },
+        },
+        { status: 409 },
+      );
     }
 
     const { data: form, error: formError } = await admin
@@ -107,7 +189,7 @@ export async function POST() {
       );
     }
 
-    const today = businessDate(outlet.timezone || "Asia/Jakarta");
+
 
     const { data: assignment, error: assignmentError } = await admin
       .from("outlet_form_assignments")

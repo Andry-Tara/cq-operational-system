@@ -109,7 +109,7 @@ export default async function OutletAuditPage() {
   const { data: fullOutlet, error: outletError } =
     await admin
       .from("outlets")
-      .select("id,code,name,timezone,default_locale,organization_id,is_active")
+      .select("id,code,name,timezone,default_locale,organization_id,is_active,latitude,longitude,photo_geofence_radius_m,photo_location_accuracy_threshold_m")
       .eq("id", outlet.id)
       .eq("organization_id", profile.organization_id)
       .eq("is_active", true)
@@ -297,7 +297,13 @@ export default async function OutletAuditPage() {
           created_at,
           audit_finding_photos (
             id,
-            original_filename
+            original_filename,
+            capture_source,
+            captured_at,
+            uploaded_at,
+            location_status,
+            location_accuracy_m,
+            distance_from_outlet_m
           )
         `)
         .eq("audit_session_id", draft.id)
@@ -320,6 +326,24 @@ export default async function OutletAuditPage() {
       code: fullOutlet.code,
       name: fullOutlet.name,
       timezone: fullOutlet.timezone || "Asia/Jakarta",
+      latitude:
+        fullOutlet.latitude == null
+          ? null
+          : Number(fullOutlet.latitude),
+      longitude:
+        fullOutlet.longitude == null
+          ? null
+          : Number(fullOutlet.longitude),
+      geofenceRadiusM:
+        Number(
+          fullOutlet.photo_geofence_radius_m ??
+            150,
+        ),
+      accuracyThresholdM:
+        Number(
+          fullOutlet.photo_location_accuracy_threshold_m ??
+            100,
+        ),
     },
     auditor: {
       id: user.id,
@@ -380,7 +404,24 @@ export default async function OutletAuditPage() {
         createdAt: finding.created_at,
         photo: photo
           ? {
-              originalFilename: photo.original_filename || null,
+              originalFilename:
+                photo.original_filename || null,
+              captureSource:
+                photo.capture_source || null,
+              capturedAt:
+                photo.captured_at || null,
+              uploadedAt:
+                photo.uploaded_at || null,
+              locationStatus:
+                photo.location_status || null,
+              locationAccuracyM:
+                photo.location_accuracy_m == null
+                  ? null
+                  : Number(photo.location_accuracy_m),
+              distanceFromOutletM:
+                photo.distance_from_outlet_m == null
+                  ? null
+                  : Number(photo.distance_from_outlet_m),
             }
           : null,
       };

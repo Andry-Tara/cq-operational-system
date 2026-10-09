@@ -1084,10 +1084,7 @@ export default async function ProtectedPage({
             "organization_id",
             profile.organization_id
           )
-          .eq(
-            "auditor_user_id",
-            user.id
-          )
+
           .in(
             "outlet_id",
             outletIds

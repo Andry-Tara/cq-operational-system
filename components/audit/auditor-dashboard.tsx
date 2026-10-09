@@ -78,8 +78,10 @@ function timeLabel(
     return new Intl.DateTimeFormat(
       "en-GB",
       {
+        timeZone: "Asia/Jakarta",
         hour: "2-digit",
         minute: "2-digit",
+        hour12: false,
       },
     ).format(
       new Date(value),
@@ -235,6 +237,18 @@ export function AuditorDashboard({
           );
 
       if (!response.ok) {
+        if (
+          payload?.code ===
+            "AUDIT_ALREADY_SUBMITTED" &&
+          payload?.existingSession?.id
+        ) {
+          window.location.assign(
+            `/protected/audit/${payload.existingSession.id}`,
+          );
+
+          return;
+        }
+
         throw new Error(
           payload?.error ||
             "Unable to open audit.",

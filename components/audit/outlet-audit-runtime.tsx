@@ -1,6 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+
+import {
+  prepareCameraEvidence,
+} from "@/lib/photo-evidence/prepare-camera-photo";
 
 export type AuditRuntimeData = {
   runtimeMode: "assigned" | "staging";
@@ -9,6 +13,10 @@ export type AuditRuntimeData = {
     code: string;
     name: string;
     timezone: string;
+    latitude: number | null;
+    longitude: number | null;
+    geofenceRadiusM: number;
+    accuracyThresholdM: number;
   };
   auditor: {
     id: string;
@@ -54,7 +62,12 @@ type AuditSession = {
 type Question =
   AuditRuntimeData["groups"][number]["questions"][number];
 
-type Risk = "minor" | "medium" | "major" | "critical";
+type Risk =
+  | "none"
+  | "minor"
+  | "medium"
+  | "major"
+  | "critical";
 
 type Finding = {
   id: string;
@@ -72,14 +85,43 @@ type Finding = {
   createdAt: string;
   photo: {
     originalFilename: string | null;
+    captureSource?: string | null;
+    capturedAt?: string | null;
+    uploadedAt?: string | null;
+    locationStatus?: string | null;
+    locationAccuracyM?: number | null;
+    distanceFromOutletM?: number | null;
   } | null;
 };
 
-const riskOptions: Array<{ value: Risk; label: string }> = [
-  { value: "minor", label: "Minor" },
-  { value: "medium", label: "Medium" },
-  { value: "major", label: "Major" },
-  { value: "critical", label: "Critical" },
+type AuditPhotoMetadata = {
+  captureSource:
+    | "CAMERA"
+    | "GALLERY";
+  capturedAt: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  locationAccuracyM: number | null;
+  distanceFromOutletM: number | null;
+  locationStatus:
+    | "VERIFIED"
+    | "OUTSIDE_AREA"
+    | "LOW_ACCURACY"
+    | "LOCATION_UNAVAILABLE"
+    | "GALLERY";
+  outletTimezone: string;
+  watermarkVersion: string | null;
+};
+
+const riskOptions: Array<{
+  value: Risk;
+  label: string;
+}> = [
+  { value: "none", label: "None · 0" },
+  { value: "minor", label: "Minor · -1" },
+  { value: "medium", label: "Medium · -2" },
+  { value: "major", label: "Major · -10" },
+  { value: "critical", label: "Critical · -20" },
 ];
 
 function normalize(value: string) {
@@ -165,11 +207,45 @@ export function OutletAuditRuntime({
       question: Question;
     } | null>(null);
 
-  const [risk, setRisk] = useState<Risk>("minor");
+  const [risk, setRisk] = useState<Risk>("none");
   const [categoryId, setCategoryId] =
     useState(data.categories[0]?.id || "");
   const [notes, setNotes] = useState("");
-  const [photo, setPhoto] = useState<File | null>(null);
+  const [photo, setPhoto] =
+    useState<File | null>(null);
+
+  const [
+    photoOriginalFilename,
+    setPhotoOriginalFilename,
+  ] =
+    useState<string | null>(null);
+
+  const [
+    photoMetadata,
+    setPhotoMetadata,
+  ] =
+    useState<AuditPhotoMetadata | null>(
+      null,
+    );
+
+  const [
+    photoPreview,
+    setPhotoPreview,
+  ] =
+    useState<string | null>(null);
+
+  const [
+    photoBusy,
+    setPhotoBusy,
+  ] =
+    useState(false);
+
+  const cameraInputRef =
+    useRef<HTMLInputElement>(null);
+
+  const galleryInputRef =
+    useRef<HTMLInputElement>(null);
+
   const [busy, setBusy] = useState(false);
   const [message, setMessage] =
     useState<string | null>(
@@ -233,6 +309,232 @@ export function OutletAuditRuntime({
 
   const isDraft = session?.status === "draft";
 
+  function resetPhotoEvidence() {
+    setPhoto(null);
+    setPhotoOriginalFilename(null);
+    setPhotoMetadata(null);
+    setPhotoPreview(null);
+
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = "";
+    }
+
+    if (galleryInputRef.current) {
+      galleryInputRef.current.value = "";
+    }
+  }
+
+  function setPreviewFromFile(
+    file: File,
+  ) {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      setPhotoPreview(
+        typeof reader.result === "string"
+          ? reader.result
+          : null,
+      );
+    };
+
+    reader.readAsDataURL(file);
+  }
+
+  async function selectEvidencePhoto(
+    file: File,
+    source:
+      | "CAMERA"
+      | "GALLERY",
+  ) {
+    if (
+      busy ||
+      photoBusy
+    ) {
+      return;
+    }
+
+    if (
+      !file.type.startsWith(
+        "image/",
+      )
+    ) {
+      setError(
+        "Photo evidence harus berupa image.",
+      );
+      return;
+    }
+
+    setPhotoBusy(true);
+    setError(null);
+
+    try {
+      if (
+        source ===
+        "CAMERA"
+      ) {
+        const prepared =
+          await prepareCameraEvidence({
+            file,
+
+            outlet: {
+              outletName:
+                data.outlet.name,
+
+              timezone:
+                data.outlet.timezone,
+
+              latitude:
+                data.outlet.latitude,
+
+              longitude:
+                data.outlet.longitude,
+
+              geofenceRadiusM:
+                data.outlet
+                  .geofenceRadiusM,
+
+              accuracyThresholdM:
+                data.outlet
+                  .accuracyThresholdM,
+            },
+
+            moduleLabel:
+              "Outlet Audit",
+
+            subjectLabel:
+              selected
+                ? `${selected.groupName} · ${selected.question.code}`
+                : "Finding",
+          });
+
+        setPhoto(
+          prepared.file,
+        );
+
+        setPhotoOriginalFilename(
+          prepared.originalFilename,
+        );
+
+        setPhotoMetadata(
+          prepared.metadata,
+        );
+
+        setPreviewFromFile(
+          prepared.file,
+        );
+      } else {
+        const optimized =
+          await compressPhoto(
+            file,
+          );
+
+        setPhoto(
+          optimized,
+        );
+
+        setPhotoOriginalFilename(
+          file.name,
+        );
+
+        setPhotoMetadata({
+          captureSource:
+            "GALLERY",
+
+          capturedAt:
+            null,
+
+          latitude:
+            null,
+
+          longitude:
+            null,
+
+          locationAccuracyM:
+            null,
+
+          distanceFromOutletM:
+            null,
+
+          locationStatus:
+            "GALLERY",
+
+          outletTimezone:
+            data.outlet.timezone,
+
+          watermarkVersion:
+            null,
+        });
+
+        setPreviewFromFile(
+          optimized,
+        );
+      }
+    } catch (
+      exception: any
+    ) {
+      setError(
+        exception?.message ||
+          "Unable to prepare photo evidence.",
+      );
+    } finally {
+      setPhotoBusy(false);
+
+      if (
+        cameraInputRef.current
+      ) {
+        cameraInputRef.current.value =
+          "";
+      }
+
+      if (
+        galleryInputRef.current
+      ) {
+        galleryInputRef.current.value =
+          "";
+      }
+    }
+  }
+
+  function photoTimeLabel(
+    value: string | null,
+  ) {
+    if (!value) return null;
+
+    try {
+      const formatted =
+        new Intl.DateTimeFormat(
+          "en-GB",
+          {
+            timeZone:
+              data.outlet.timezone,
+
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          },
+        ).format(
+          new Date(value),
+        );
+
+      const zone =
+        data.outlet.timezone ===
+        "Asia/Makassar"
+          ? "WITA"
+          : data.outlet.timezone ===
+              "Asia/Jayapura"
+            ? "WIT"
+            : "WIB";
+
+      return `${formatted} ${zone}`;
+    } catch {
+      return value;
+    }
+  }
+
+
   async function startAudit() {
     setBusy(true);
     setError(null);
@@ -280,10 +582,10 @@ export function OutletAuditRuntime({
     if (!isDraft) return;
 
     setSelected({ groupCode, groupName, question });
-    setRisk("minor");
+    setRisk("none");
     setCategoryId(data.categories[0]?.id || "");
     setNotes("");
-    setPhoto(null);
+    resetPhotoEvidence();
     setError(null);
   }
 
@@ -303,8 +605,77 @@ export function OutletAuditRuntime({
       formData.set("notes", notes.trim());
 
       if (photo) {
-        const optimized = await compressPhoto(photo);
-        formData.set("photo", optimized, optimized.name);
+        formData.set(
+          "photo",
+          photo,
+          photo.name,
+        );
+
+        formData.set(
+          "photoOriginalFilename",
+          photoOriginalFilename ||
+            photo.name,
+        );
+
+        formData.set(
+          "photoCaptureSource",
+          photoMetadata?.captureSource ||
+            "GALLERY",
+        );
+
+        if (
+          photoMetadata?.capturedAt
+        ) {
+          formData.set(
+            "photoCapturedAt",
+            photoMetadata.capturedAt,
+          );
+        }
+
+        if (
+          photoMetadata?.latitude !=
+          null
+        ) {
+          formData.set(
+            "photoLatitude",
+            String(
+              photoMetadata.latitude,
+            ),
+          );
+        }
+
+        if (
+          photoMetadata?.longitude !=
+          null
+        ) {
+          formData.set(
+            "photoLongitude",
+            String(
+              photoMetadata.longitude,
+            ),
+          );
+        }
+
+        if (
+          photoMetadata?.locationAccuracyM !=
+          null
+        ) {
+          formData.set(
+            "photoLocationAccuracyM",
+            String(
+              photoMetadata.locationAccuracyM,
+            ),
+          );
+        }
+
+        if (
+          photoMetadata?.watermarkVersion
+        ) {
+          formData.set(
+            "photoWatermarkVersion",
+            photoMetadata.watermarkVersion,
+          );
+        }
       }
 
       const response = await fetch("/api/audit/findings", {
@@ -335,14 +706,33 @@ export function OutletAuditRuntime({
         notes: raw.notes || "",
         createdAt: raw.created_at,
         photo: raw.photo
-          ? { originalFilename: raw.photo.original_filename || null }
+          ? {
+              originalFilename:
+                raw.photo.original_filename || null,
+              captureSource:
+                raw.photo.capture_source || null,
+              capturedAt:
+                raw.photo.captured_at || null,
+              uploadedAt:
+                raw.photo.uploaded_at || null,
+              locationStatus:
+                raw.photo.location_status || null,
+              locationAccuracyM:
+                raw.photo.location_accuracy_m == null
+                  ? null
+                  : Number(raw.photo.location_accuracy_m),
+              distanceFromOutletM:
+                raw.photo.distance_from_outlet_m == null
+                  ? null
+                  : Number(raw.photo.distance_from_outlet_m),
+            }
           : null,
       };
 
       setFindings((current) => [...current, finding]);
       setSelected(null);
       setNotes("");
-      setPhoto(null);
+      resetPhotoEvidence();
       setMessage("Finding saved.");
     } catch (exception: any) {
       setError(exception?.message || "Unable to save finding.");
@@ -426,7 +816,7 @@ export function OutletAuditRuntime({
       // Move directly to the immutable result / history view
       // instead of leaving the auditor inside the runtime.
       window.location.assign(
-        `/protected/audit/${raw.id || session.id}`,
+        `/protected/audit/${session.id}`,
       );
     } catch (exception: any) {
       setError(exception?.message || "Unable to submit audit.");
@@ -894,24 +1284,155 @@ export function OutletAuditRuntime({
                 />
               </label>
 
-              <label className="grid gap-2">
+              <div className="grid gap-2">
                 <span className="text-xs font-bold uppercase tracking-[0.12em] text-neutral-500">
                   Photo Evidence
                 </span>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    disabled={
+                      busy ||
+                      photoBusy
+                    }
+                    onClick={() =>
+                      cameraInputRef.current?.click()
+                    }
+                    className="rounded-xl bg-neutral-900 px-3 py-3 text-xs font-black text-white disabled:opacity-40"
+                  >
+                    {photoBusy
+                      ? "Preparing..."
+                      : "Take Photo"}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={
+                      busy ||
+                      photoBusy
+                    }
+                    onClick={() =>
+                      galleryInputRef.current?.click()
+                    }
+                    className="rounded-xl border border-neutral-200 bg-white px-3 py-3 text-xs font-black text-neutral-700 disabled:opacity-40"
+                  >
+                    Gallery
+                  </button>
+                </div>
+
                 <input
+                  ref={cameraInputRef}
                   type="file"
                   accept="image/*"
                   capture="environment"
-                  disabled={busy}
-                  onChange={(event) =>
-                    setPhoto(event.target.files?.[0] || null)
+                  disabled={
+                    busy ||
+                    photoBusy
                   }
-                  className="block w-full rounded-xl border border-dashed border-neutral-300 bg-neutral-50 px-3 py-3 text-xs text-neutral-700 [color-scheme:light] file:mr-3 file:rounded-lg file:border-0 file:bg-neutral-900 file:px-3 file:py-2 file:text-xs file:font-bold file:text-white disabled:bg-neutral-100 disabled:text-neutral-400"
+                  onChange={(event) => {
+                    const file =
+                      event.target.files?.[0];
+
+                    if (file) {
+                      void selectEvidencePhoto(
+                        file,
+                        "CAMERA",
+                      );
+                    }
+                  }}
+                  className="hidden"
                 />
+
+                <input
+                  ref={galleryInputRef}
+                  type="file"
+                  accept="image/*"
+                  disabled={
+                    busy ||
+                    photoBusy
+                  }
+                  onChange={(event) => {
+                    const file =
+                      event.target.files?.[0];
+
+                    if (file) {
+                      void selectEvidencePhoto(
+                        file,
+                        "GALLERY",
+                      );
+                    }
+                  }}
+                  className="hidden"
+                />
+
+                {photoPreview ? (
+                  <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+                    <div className="relative bg-neutral-950">
+                      <img
+                        src={photoPreview}
+                        alt="Finding evidence preview"
+                        className="aspect-[4/3] max-h-[300px] w-full object-contain"
+                      />
+
+                      <button
+                        type="button"
+                        disabled={
+                          busy ||
+                          photoBusy
+                        }
+                        onClick={
+                          resetPhotoEvidence
+                        }
+                        className="absolute right-2 top-2 rounded-lg bg-black/70 px-2.5 py-1.5 text-[10px] font-black text-white"
+                      >
+                        Remove
+                      </button>
+                    </div>
+
+                    <div className="space-y-1 px-3 py-2.5">
+                      <p className="truncate text-[10px] font-bold text-neutral-500">
+                        {photoOriginalFilename ||
+                          photo?.name}
+                      </p>
+
+                      <p className="text-[9px] font-black uppercase tracking-wide text-neutral-400">
+                        {photoMetadata?.captureSource ||
+                          "GALLERY"}
+
+                        {photoMetadata?.locationStatus &&
+                        photoMetadata.locationStatus !==
+                          photoMetadata.captureSource
+                          ? ` · ${photoMetadata.locationStatus.replaceAll(
+                              "_",
+                              " ",
+                            )}`
+                          : ""}
+                      </p>
+
+                      {photoMetadata?.captureSource ===
+                        "CAMERA" &&
+                      photoMetadata.capturedAt ? (
+                        <p className="text-[10px] font-semibold text-neutral-500">
+                          Captured{" "}
+                          {photoTimeLabel(
+                            photoMetadata.capturedAt,
+                          )}
+                        </p>
+                      ) : (
+                        <p className="text-[10px] font-semibold text-neutral-500">
+                          Gallery photo · upload time will be recorded when the finding is saved.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
                 <span className="text-[11px] leading-5 text-neutral-400">
-                  Foto dikompres sebelum upload. Untuk A5, photo masih optional.
+                  Take Photo adds timestamp, location evidence and watermark.
+                  Gallery is stored as uploaded evidence and is not marked as location verified.
                 </span>
-              </label>
+              </div>
 
               {error ? (
                 <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">

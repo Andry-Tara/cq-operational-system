@@ -4,14 +4,46 @@ import { checkPermissionApi } from "@/lib/admin/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
+import {
+  distanceMeters,
+} from "@/lib/photo-evidence/distance";
+
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const RISKS = new Set(["minor", "medium", "major", "critical"]);
+const RISKS = new Set([
+  "none",
+  "minor",
+  "medium",
+  "major",
+  "critical",
+]);
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 
 function getText(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
+}
+
+function getOptionalNumber(
+  formData: FormData,
+  key: string,
+) {
+  const raw =
+    getText(
+      formData,
+      key,
+    );
+
+  if (!raw) {
+    return null;
+  }
+
+  const value =
+    Number(raw);
+
+  return Number.isFinite(value)
+    ? value
+    : null;
 }
 
 export async function POST(request: Request) {
@@ -36,6 +68,53 @@ export async function POST(request: Request) {
     const rawPhoto = formData.get("photo");
     const photo = rawPhoto instanceof File && rawPhoto.size > 0 ? rawPhoto : null;
 
+    const photoOriginalFilename =
+      getText(
+        formData,
+        "photoOriginalFilename",
+      );
+
+    const rawCaptureSource =
+      getText(
+        formData,
+        "photoCaptureSource",
+      ).toUpperCase();
+
+    const captureSource =
+      rawCaptureSource === "CAMERA"
+        ? "CAMERA"
+        : "GALLERY";
+
+    const photoCapturedAt =
+      getText(
+        formData,
+        "photoCapturedAt",
+      );
+
+    const photoLatitude =
+      getOptionalNumber(
+        formData,
+        "photoLatitude",
+      );
+
+    const photoLongitude =
+      getOptionalNumber(
+        formData,
+        "photoLongitude",
+      );
+
+    const photoLocationAccuracyM =
+      getOptionalNumber(
+        formData,
+        "photoLocationAccuracyM",
+      );
+
+    const photoWatermarkVersion =
+      getText(
+        formData,
+        "photoWatermarkVersion",
+      );
+
     if (!UUID.test(sessionId) || !UUID.test(questionId) ||
         !UUID.test(categoryId) || !RISKS.has(risk)) {
       return NextResponse.json({ error: "Invalid finding payload." }, { status: 400 });
@@ -48,11 +127,119 @@ export async function POST(request: Request) {
       );
     }
 
+    if (
+      photo &&
+      rawCaptureSource &&
+      rawCaptureSource !== "CAMERA" &&
+      rawCaptureSource !== "GALLERY"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Invalid photo capture source.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (
+      photoLatitude != null &&
+      (
+        photoLatitude < -90 ||
+        photoLatitude > 90
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Invalid photo latitude.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (
+      photoLongitude != null &&
+      (
+        photoLongitude < -180 ||
+        photoLongitude > 180
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Invalid photo longitude.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (
+      photoLocationAccuracyM != null &&
+      photoLocationAccuracyM < 0
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Invalid photo location accuracy.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (
+      photo &&
+      captureSource === "CAMERA" &&
+      (
+        !photoCapturedAt ||
+        Number.isNaN(
+          Date.parse(
+            photoCapturedAt,
+          ),
+        )
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Camera evidence requires a valid capture timestamp.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (
+      photo &&
+      captureSource === "CAMERA" &&
+      photoWatermarkVersion !==
+        "OPS_PHOTO_V1"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Camera evidence must contain OPS timestamp watermark.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
     const admin = createAdminClient();
 
     const { data: session, error: sessionError } = await admin
       .from("audit_sessions")
-      .select("id,organization_id,form_version_id,auditor_user_id,status")
+      .select("id,organization_id,outlet_id,form_version_id,auditor_user_id,status")
       .eq("id", sessionId)
       .maybeSingle();
 
@@ -69,6 +256,238 @@ export async function POST(request: Request) {
         { error: "Audit sudah disubmit dan tidak dapat diubah." },
         { status: 409 },
       );
+    }
+
+    let photoEvidence:
+      | {
+          originalFilename:
+            string | null;
+          captureSource:
+            "CAMERA" | "GALLERY";
+          capturedAt:
+            string | null;
+          uploadedAt:
+            string;
+          latitude:
+            number | null;
+          longitude:
+            number | null;
+          locationAccuracyM:
+            number | null;
+          outletLatitude:
+            number | null;
+          outletLongitude:
+            number | null;
+          distanceFromOutletM:
+            number | null;
+          locationStatus:
+            | "VERIFIED"
+            | "OUTSIDE_AREA"
+            | "LOW_ACCURACY"
+            | "LOCATION_UNAVAILABLE"
+            | "GALLERY";
+          outletTimezone:
+            string;
+          watermarkVersion:
+            string | null;
+        }
+      | null =
+      null;
+
+    if (photo) {
+      const {
+        data: photoOutlet,
+        error: photoOutletError,
+      } = await admin
+        .from("outlets")
+        .select(`
+          id,
+          name,
+          timezone,
+          latitude,
+          longitude,
+          photo_geofence_radius_m,
+          photo_location_accuracy_threshold_m
+        `)
+        .eq(
+          "id",
+          session.outlet_id,
+        )
+        .eq(
+          "organization_id",
+          session.organization_id,
+        )
+        .maybeSingle();
+
+      if (
+        photoOutletError ||
+        !photoOutlet
+      ) {
+        throw (
+          photoOutletError ||
+          new Error(
+            "Outlet photo context not found.",
+          )
+        );
+      }
+
+      const outletTimezone =
+        photoOutlet.timezone ||
+        "Asia/Jakarta";
+
+      const outletLatitude =
+        photoOutlet.latitude == null
+          ? null
+          : Number(
+              photoOutlet.latitude,
+            );
+
+      const outletLongitude =
+        photoOutlet.longitude == null
+          ? null
+          : Number(
+              photoOutlet.longitude,
+            );
+
+      const geofenceRadiusM =
+        Number(
+          photoOutlet
+            .photo_geofence_radius_m ??
+            150,
+        );
+
+      const accuracyThresholdM =
+        Number(
+          photoOutlet
+            .photo_location_accuracy_threshold_m ??
+            100,
+        );
+
+      let locationStatus:
+        | "VERIFIED"
+        | "OUTSIDE_AREA"
+        | "LOW_ACCURACY"
+        | "LOCATION_UNAVAILABLE"
+        | "GALLERY" =
+        captureSource ===
+        "GALLERY"
+          ? "GALLERY"
+          : "LOCATION_UNAVAILABLE";
+
+      let distanceFromOutletM:
+        number | null =
+        null;
+
+      const cameraHasGps =
+        captureSource ===
+          "CAMERA" &&
+        photoLatitude != null &&
+        photoLongitude != null &&
+        photoLocationAccuracyM !=
+          null;
+
+      const outletHasGps =
+        outletLatitude != null &&
+        outletLongitude != null &&
+        Number.isFinite(
+          outletLatitude,
+        ) &&
+        Number.isFinite(
+          outletLongitude,
+        );
+
+      if (
+        cameraHasGps &&
+        outletHasGps
+      ) {
+        const rawDistance =
+          distanceMeters(
+            photoLatitude!,
+            photoLongitude!,
+            outletLatitude!,
+            outletLongitude!,
+          );
+
+        distanceFromOutletM =
+          Math.round(
+            rawDistance * 100,
+          ) / 100;
+
+        if (
+          photoLocationAccuracyM! >
+          accuracyThresholdM
+        ) {
+          locationStatus =
+            "LOW_ACCURACY";
+        } else if (
+          rawDistance >
+          geofenceRadiusM
+        ) {
+          locationStatus =
+            "OUTSIDE_AREA";
+        } else {
+          locationStatus =
+            "VERIFIED";
+        }
+      }
+
+      photoEvidence = {
+        originalFilename:
+          photoOriginalFilename ||
+          photo.name ||
+          null,
+
+        captureSource,
+
+        capturedAt:
+          captureSource ===
+            "CAMERA"
+            ? new Date(
+                photoCapturedAt,
+              ).toISOString()
+            : null,
+
+        uploadedAt:
+          new Date()
+            .toISOString(),
+
+        latitude:
+          captureSource ===
+            "CAMERA"
+            ? photoLatitude
+            : null,
+
+        longitude:
+          captureSource ===
+            "CAMERA"
+            ? photoLongitude
+            : null,
+
+        locationAccuracyM:
+          captureSource ===
+            "CAMERA"
+            ? photoLocationAccuracyM
+            : null,
+
+        outletLatitude,
+        outletLongitude,
+
+        distanceFromOutletM:
+          captureSource ===
+            "CAMERA"
+            ? distanceFromOutletM
+            : null,
+
+        locationStatus,
+
+        outletTimezone,
+
+        watermarkVersion:
+          captureSource ===
+            "CAMERA"
+            ? "OPS_PHOTO_V1"
+            : null,
+      };
     }
 
     const { data: versionSections, error: sectionError } = await admin
@@ -197,11 +616,71 @@ export async function POST(request: Request) {
             audit_finding_id: finding.id,
             storage_bucket: "operational-photos",
             storage_path: storagePath,
-            original_filename: photo.name || null,
-            mime_type: photo.type || null,
-            file_size: photo.size,
-            sort_order: 10,
-            created_by: user.id,
+            original_filename:
+              photoEvidence?.originalFilename ||
+              photo.name ||
+              null,
+
+            mime_type:
+              photo.type ||
+              null,
+
+            file_size:
+              photo.size,
+
+            sort_order:
+              10,
+
+            created_by:
+              user.id,
+
+            captured_at:
+              photoEvidence?.capturedAt ||
+              null,
+
+            uploaded_at:
+              photoEvidence?.uploadedAt ||
+              new Date().toISOString(),
+
+            capture_source:
+              photoEvidence?.captureSource ||
+              "GALLERY",
+
+            latitude:
+              photoEvidence?.latitude ??
+              null,
+
+            longitude:
+              photoEvidence?.longitude ??
+              null,
+
+            location_accuracy_m:
+              photoEvidence?.locationAccuracyM ??
+              null,
+
+            outlet_latitude:
+              photoEvidence?.outletLatitude ??
+              null,
+
+            outlet_longitude:
+              photoEvidence?.outletLongitude ??
+              null,
+
+            distance_from_outlet_m:
+              photoEvidence?.distanceFromOutletM ??
+              null,
+
+            location_status:
+              photoEvidence?.locationStatus ||
+              "GALLERY",
+
+            outlet_timezone:
+              photoEvidence?.outletTimezone ||
+              "Asia/Jakarta",
+
+            watermark_version:
+              photoEvidence?.watermarkVersion ||
+              null,
           });
 
         if (photoRowError) throw photoRowError;
@@ -221,7 +700,34 @@ export async function POST(request: Request) {
           ? {
               storage_bucket: "operational-photos",
               storage_path: uploadedPath,
-              original_filename: photo?.name || null,
+              original_filename:
+                photoEvidence?.originalFilename ||
+                photo?.name ||
+                null,
+
+              capture_source:
+                photoEvidence?.captureSource ||
+                "GALLERY",
+
+              captured_at:
+                photoEvidence?.capturedAt ||
+                null,
+
+              uploaded_at:
+                photoEvidence?.uploadedAt ||
+                null,
+
+              location_status:
+                photoEvidence?.locationStatus ||
+                "GALLERY",
+
+              location_accuracy_m:
+                photoEvidence?.locationAccuracyM ??
+                null,
+
+              distance_from_outlet_m:
+                photoEvidence?.distanceFromOutletM ??
+                null,
             }
           : null,
       },
