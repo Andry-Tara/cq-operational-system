@@ -300,6 +300,32 @@ export default async function AuditResultPage({
       ? scoring.period
       : session.audit_date.slice(0, 7);
 
+  const weights = {
+    minor:
+      Number(
+        scoring.weights?.minor ??
+          1,
+      ),
+
+    medium:
+      Number(
+        scoring.weights?.medium ??
+          2,
+      ),
+
+    major:
+      Number(
+        scoring.weights?.major ??
+          10,
+      ),
+
+    critical:
+      Number(
+        scoring.weights?.critical ??
+          20,
+      ),
+  };
+
   const areaCount = new Set(
     findings.map(
       (row) =>
@@ -444,22 +470,22 @@ export default async function AuditResultPage({
                 <PenaltyRow
                   label="Minor"
                   count={risks.minor}
-                  weight={2}
+                  weight={weights.minor}
                 />
                 <PenaltyRow
                   label="Medium"
                   count={risks.medium}
-                  weight={5}
+                  weight={weights.medium}
                 />
                 <PenaltyRow
                   label="Major"
                   count={risks.major}
-                  weight={10}
+                  weight={weights.major}
                 />
                 <PenaltyRow
                   label="Critical"
                   count={risks.critical}
-                  weight={20}
+                  weight={weights.critical}
                 />
               </div>
             </div>

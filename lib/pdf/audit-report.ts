@@ -1063,12 +1063,12 @@ export async function buildAuditReportPdf(
     [
       "Minor",
       counts.minor,
-      2,
+      1,
     ],
     [
       "Medium",
       counts.medium,
-      5,
+      2,
     ],
     [
       "Major",
