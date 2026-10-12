@@ -645,15 +645,39 @@ export default function FoodQualityAssessmentButton({
           },
         );
 
-      const payload =
-        await response.json();
+      const responseText =
+        await response.text();
+
+      let payload:
+        any =
+        null;
+
+      if (
+        responseText.trim()
+      ) {
+        try {
+          payload =
+            JSON.parse(
+              responseText,
+            );
+
+        } catch {
+          if (
+            !response.ok
+          ) {
+            throw new Error(
+              `Unable to save assessment (${response.status}).`,
+            );
+          }
+        }
+      }
 
       if (
         !response.ok
       ) {
         throw new Error(
           payload?.error ||
-            "Unable to save assessment.",
+            `Unable to save assessment (${response.status}).`,
         );
       }
 
